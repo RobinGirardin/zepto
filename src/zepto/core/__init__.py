@@ -7,7 +7,20 @@ from .composition import (
     build_graph,
 )
 from .errors import *
-from .functional import add, identity, matmul, multiply, relu, reshape, split, transpose
+from .functional import (
+    add,
+    divide,
+    identity,
+    matmul,
+    maximum,
+    minimum,
+    multiply,
+    reshape,
+    split,
+    sqrt,
+    substract,
+    transpose,
+)
 from .graph import StructuralGraph, StructuralGraphBuilder
 from .ids import *
 from .metadata import (
@@ -31,12 +44,16 @@ from .operation import (
     StructuralOperation,
     Operation,
     Add,
+    Divide,
     Identity,
     MatMul,
+    Maximum,
+    Minimum,
     Multiply,
-    ReLU,
     Reshape,
     Split,
+    SquareRoot,
+    Substract,
     Transpose,
 )
 from .parameter import Parameter
@@ -76,18 +93,26 @@ __all__ = [
     "identity",
     "matmul",
     "add",
+    "divide",
     "multiply",
+    "substract",
     "Add",
+    "Divide",
     "Identity",
     "MatMul",
+    "Maximum",
+    "Minimum",
     "Multiply",
-    "ReLU",
     "Reshape",
     "Split",
+    "SquareRoot",
+    "Substract",
     "Transpose",
+    "maximum",
+    "minimum",
     "reshape",
-    "relu",
     "split",
+    "sqrt",
     "transpose",
     "metadata_compatible",
 ]

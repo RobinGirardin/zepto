@@ -78,8 +78,12 @@ class Split(Operation):
         """Save nothing because split gradients only concatenate."""
         return ()
 
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def forward_flops(self, context: EstimationContext) -> int:
         """Return zero because splitting performs no arithmetic."""
+        return 0
+
+    def backward_flops(self, context: EstimationContext) -> int:
+        """Return zero because splitting derivative performs no arithmetic."""
         return 0
 
     def resource_events(

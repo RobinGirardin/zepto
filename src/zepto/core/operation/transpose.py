@@ -84,8 +84,12 @@ class Transpose(Operation):
         """Save nothing because the inverse permutation is declarative."""
         return ()
 
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def forward_flops(self, context: EstimationContext) -> int:
         """Return zero because transpose performs no arithmetic."""
+        return 0
+
+    def backward_flops(self, context: EstimationContext) -> int:
+        """Return zero because transpose derivative performs no arithmetic."""
         return 0
 
     def resource_events(

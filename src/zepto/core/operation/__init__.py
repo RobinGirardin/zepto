@@ -2,12 +2,16 @@
 
 from .base import EstimationOperation, Operation, SemanticOperation
 from .add import Add
+from .divide import Divide
 from .identity import Identity
 from .matmul import MatMul
+from .maximum import Maximum
+from .minimum import Minimum
 from .multiply import Multiply
-from .relu import ReLU
 from .reshape import Reshape
 from .split import Split
+from .square_root import SquareRoot
+from .substract import Substract
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -23,10 +27,11 @@ from .structural import StructuralOperation
 from .transpose import Transpose
 
 __all__ = [
-    "Add", "AliasSpec", "BackwardSpec", "EstimationContext",
+    "Add", "AliasSpec", "BackwardSpec", "Divide", "EstimationContext",
     "EstimationOperation", "Identity", "IncompleteOperationError",
-    "MatMul", "Materialization", "Multiply", "Operation",
+    "MatMul", "Materialization", "Maximum", "Minimum", "Multiply", "Operation",
     "OperationError", "OperationResult",
-    "ReLU", "ResourceEvent", "ResourceEventKind", "Reshape",
-    "SemanticOperation", "Split", "StructuralOperation", "Transpose",
+    "ResourceEvent", "ResourceEventKind", "Reshape",
+    "SemanticOperation", "Split", "SquareRoot", "StructuralOperation",
+    "Substract", "Transpose",
 ]

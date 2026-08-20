@@ -132,7 +132,7 @@ class MetadataIdentity(Operation):
             gradient_outputs=("input",),
         )
 
-    def forward_flops(self, context, result):
+    def forward_flops(self, context):
         return 0
 
     def resource_events(self, context, result):

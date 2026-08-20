@@ -89,8 +89,12 @@ class Reshape(Operation):
         """Save nothing because the backward reshape needs only shapes."""
         return ()
 
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def forward_flops(self, context: EstimationContext) -> int:
         """Return zero because reshape performs no arithmetic."""
+        return 0
+
+    def backward_flops(self, context: EstimationContext) -> int:
+        """Return zero because reshape derivative performs no arithmetic."""
         return 0
 
     def resource_events(

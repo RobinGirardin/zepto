@@ -1,4 +1,4 @@
-"""Rectified-linear-unit operation declaration."""
+"""Elementwise square-root operation declaration."""
 
 from ..metadata import TensorMetadata
 from ..ports import PortSpec
@@ -7,13 +7,13 @@ from .helpers import allocate, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-class ReLU(Operation):
-    """Apply ReLU and retain its output for backward masking."""
+class SquareRoot(Operation):
+    """Apply an elementwise square root and retain its output for backward."""
 
     @property
     def family(self) -> str:
-        """Return the stable ReLU family name."""
-        return "relu"
+        """Return the stable square-root family name."""
+        return "square_root"
 
     @property
     def input_ports(self) -> tuple[PortSpec, ...]:
@@ -35,7 +35,11 @@ class ReLU(Operation):
 
     @property
     def backward(self) -> BackwardSpec:
-        """Declare the output used to recover the backward mask."""
+        """Declare the output reused by the backward pass.
+
+        The input gradient is ``grad / (2 * output)``, so saving the forward
+        output avoids recomputing the square root.
+        """
         return BackwardSpec(
             supported=True,
             saved_for_backward=("output",),
@@ -46,7 +50,7 @@ class ReLU(Operation):
     def infer_outputs(
         self, inputs: tuple[TensorMetadata, ...]
     ) -> tuple[TensorMetadata, ...]:
-        """Preserve the input metadata for the activation output."""
+        """Preserve the input metadata for the square-root output."""
         return inputs
 
     def saved_for_backward(
@@ -54,16 +58,30 @@ class ReLU(Operation):
         inputs: tuple[TensorMetadata, ...],
         outputs: tuple[TensorMetadata, ...],
     ) -> tuple[str, ...]:
-        """Save the output used to recover the backward mask."""
-        return ("output",)
+        """Save the output only when the input gradient is requested."""
+        if inputs[0].require_grad:
+            return ("output",)
+        return ()
 
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
-        """Return one conditional multiply per element, as in Atto."""
-        return numel(result.outputs[0])
+    def forward_flops(self, context: EstimationContext) -> int:
+        """Return one square root per output element."""
+        output = context.metadata_for("output")
+        if output is None:
+            raise ValueError("Estimation context must provide an 'output' port")
+        return numel(output)
 
-    def backward_flops(self, context: EstimationContext, result: OperationResult) -> int:
-        """Return one conditional multiply per element for the backward mask."""
-        return numel(result.outputs[0])
+    def backward_flops(self, context: EstimationContext) -> int:
+        """Return two operations per element for ``grad / (2 * output)``."""
+        metadata = context.metadata_for("input")
+        output = context.metadata_for("output")
+        if metadata is None or output is None:
+            raise ValueError(
+                "Estimation context must provide 'input' and 'output' ports"
+            )
+        flop = 0
+        if metadata.require_grad:
+            flop += 3 * numel(output)
+        return flop
 
     def resource_events(
         self, context: EstimationContext, result: OperationResult
@@ -71,4 +89,5 @@ class ReLU(Operation):
         """Report allocation events for the output."""
         return allocate(result)
 
-__all__ = ["ReLU"]
+
+__all__ = ["SquareRoot"]

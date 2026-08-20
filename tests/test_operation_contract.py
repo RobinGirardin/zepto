@@ -11,11 +11,12 @@ from zepto.core import (
     Identity,
     Module,
     MatMul,
+    Maximum,
+    Minimum,
     Multiply,
     Operation,
     OperationError,
     PortSpec,
-    ReLU,
     Reshape,
     ResourceEvent,
     Split,
@@ -24,7 +25,7 @@ from zepto.core import (
     build_graph,
     identity,
     matmul,
-    relu,
+    maximum,
 )
 
 
@@ -55,7 +56,7 @@ class _IdentityOperation(Operation):
         return BackwardSpec(True, ("input",))
 
 
-    def forward_flops(self, context, result):
+    def forward_flops(self, context):
         return 0
 
     def resource_events(self, context, result):
@@ -103,7 +104,6 @@ def test_matmul_uses_two_flops_per_multiply_add():
                     ("right", TensorMetadata((3, 5))),
                 )
             ),
-            result,
         )
         == 2 * 2 * 3 * 5
     )
@@ -123,19 +123,27 @@ def test_identity_is_an_alias_and_not_a_composite_module():
 
 
 def test_saved_backward_names_are_resolved_to_graph_port_references():
-    class ReLUModule(Module):
-        def forward(self, value):
-            return relu(value)
+    class MaximumModule(Module):
+        def forward(self, left, right):
+            return maximum(left, right)
 
-    graph = build_graph(ReLUModule(), (TensorMetadata((2,)),))
+    graph = build_graph(
+        MaximumModule(),
+        (
+            TensorMetadata((2,), require_grad=True),
+            TensorMetadata((2,), require_grad=True),
+        ),
+    )
     operation = graph.operation(graph.operations[0])
 
-    assert operation.result.saved_for_backward == ("output",)
-    assert len(operation.saved_for_backward) == 1
-    saved = operation.saved_for_backward[0]
-    assert saved.operation_id == operation.id
-    assert saved.port_name == "output"
-    assert saved.role == "output"
+    assert operation.result.saved_for_backward == ("left", "right")
+    assert len(operation.saved_for_backward) == 2
+    for saved, port_name in zip(
+        operation.saved_for_backward, ("left", "right"), strict=True
+    ):
+        assert saved.operation_id == operation.id
+        assert saved.port_name == port_name
+        assert saved.role == "input"
 
 
 def test_tensor_metadata_requires_concrete_non_negative_dimensions():
@@ -179,7 +187,11 @@ def test_multiply_declares_product_rule_backward_state(
     operation = Multiply()
     result = operation.infer_result((left, right))
     context = EstimationContext(
-        port_metadata=(("left", left), ("right", right))
+        port_metadata=(
+            ("left", left),
+            ("right", right),
+            ("output", result.outputs[0]),
+        )
     )
 
     assert not isinstance(operation, Add)
@@ -187,7 +199,7 @@ def test_multiply_declares_product_rule_backward_state(
         left_requires_grad or right_requires_grad
     )
     assert result.saved_for_backward == saved
-    assert operation.backward_flops(context, result) == factor * 6
+    assert operation.backward_flops(context) == factor * 6
 
 
 @pytest.mark.parametrize(
@@ -210,14 +222,18 @@ def test_matmul_gradient_contract_follows_inputs(
     operation = MatMul()
     result = operation.infer_result((left, right))
     context = EstimationContext(
-        port_metadata=(("left", left), ("right", right))
+        port_metadata=(
+            ("left", left),
+            ("right", right),
+            ("output", result.outputs[0]),
+        )
     )
     require_grad = left_requires_grad or right_requires_grad
 
     assert result.outputs[0].require_grad is require_grad
     assert result.saved_for_backward == saved
-    assert operation.forward_flops(context, result) == 60
-    assert operation.backward_flops(context, result) == expected_backward
+    assert operation.forward_flops(context) == 60
+    assert operation.backward_flops(context) == expected_backward
 
 
 @pytest.mark.parametrize("operation", (Add(), Multiply()))
@@ -253,14 +269,30 @@ def test_operations_without_backward_state_save_nothing(operation, inputs):
     assert result.saved_for_backward == ()
 
 
-@pytest.mark.parametrize("require_grad", (False, True))
-def test_relu_always_saves_its_output_for_the_backward_mask(require_grad):
-    inputs = (TensorMetadata((3,), require_grad=require_grad),)
-    operation = ReLU()
+@pytest.mark.parametrize("operation", (Maximum(), Minimum()))
+@pytest.mark.parametrize(
+    ("left_requires_grad", "right_requires_grad", "saved"),
+    (
+        (False, False, ()),
+        (True, False, ("left", "right")),
+        (False, True, ("left", "right")),
+        (True, True, ("left", "right")),
+    ),
+)
+def test_extremum_saves_both_operands_for_the_backward_mask(
+    operation,
+    left_requires_grad,
+    right_requires_grad,
+    saved,
+):
+    inputs = (
+        TensorMetadata((3,), require_grad=left_requires_grad),
+        TensorMetadata((3,), require_grad=right_requires_grad),
+    )
     result = operation.infer_result(inputs)
 
-    assert operation.saved_for_backward(inputs, result.outputs) == ("output",)
-    assert result.saved_for_backward == ("output",)
+    assert operation.saved_for_backward(inputs, result.outputs) == saved
+    assert result.saved_for_backward == saved
 
 
 @pytest.mark.parametrize("operation", (Multiply(), MatMul()))

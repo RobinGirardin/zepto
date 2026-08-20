@@ -89,11 +89,16 @@ class EstimationOperation(ABC):
     """Describe theoretical cost and resource behavior."""
 
     @abstractmethod
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
-        """Return the theoretical forward FLOP count."""
+    def forward_flops(self, context: EstimationContext) -> int:
+        """Return the theoretical forward FLOP count.
+
+        The context carries resolved metadata for every input and output
+        port, so estimators look up outputs by port name (for example
+        ``context.metadata_for("output")``) just like inputs.
+        """
         ...
 
-    def backward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def backward_flops(self, context: EstimationContext) -> int:
         """Return the theoretical backward FLOP count."""
         return 0
 
@@ -235,8 +240,8 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
             )
         )
         for flops in (
-            self.forward_flops(context, result),
-            self.backward_flops(replace(context, phase="backward"), result),
+            self.forward_flops(context),
+            self.backward_flops(replace(context, phase="backward")),
         ):
             if not isinstance(flops, int) or flops < 0:
                 raise OperationError("FLOP counts must be non-negative integers")

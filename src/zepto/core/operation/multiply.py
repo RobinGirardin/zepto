@@ -67,30 +67,28 @@ class Multiply(Operation):
             names.append("right")
         return tuple(names)
 
-    def forward_flops(
-        self,
-        context: EstimationContext,
-        result: OperationResult,
-    ) -> int:
+    def forward_flops(self, context: EstimationContext) -> int:
         """Return one multiplication per output element."""
-        return numel(result.outputs[0])
+        output = context.metadata_for("output")
+        if output is None:
+            raise ValueError("Estimation context must provide an 'output' port")
+        return numel(output)
 
-    def backward_flops(
-        self,
-        context: EstimationContext,
-        result: OperationResult,
-    ) -> int:
+    def backward_flops(self, context: EstimationContext) -> int:
         """Return one multiplication per requested operand gradient."""
         left = context.metadata_for("left")
         right = context.metadata_for("right")
-        if left is None or right is None:
+        output = context.metadata_for("output")
+        if left is None or right is None or output is None:
             raise ValueError(
-                "Estimation context must provide both a 'left' and 'right' port"
+                "Estimation context must provide 'left', 'right', and 'output' ports"
             )
-        gradient_count = sum(
-            value.require_grad for value in (left, right)
-        )
-        return gradient_count * numel(result.outputs[0])
+        flop = 0
+        if left.require_grad:
+            flop += numel(output)
+        if right.require_grad:
+            flop += numel(output)
+        return flop
 
     def resource_events(
         self,

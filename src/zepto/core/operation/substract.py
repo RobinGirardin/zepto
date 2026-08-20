@@ -1,4 +1,4 @@
-"""Elementwise addition operation declaration."""
+"""Elementwise subtraction operation declaration."""
 
 from ..metadata import TensorMetadata
 from ..ports import PortSpec
@@ -7,13 +7,13 @@ from .helpers import allocate, broadcast_metadata, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-class Add(Operation):
-    """Add two equal-rank tensors with singleton-dimension broadcasting."""
+class Substract(Operation):
+    """Subtract the right tensor from the left with broadcast semantics."""
 
     @property
     def family(self) -> str:
-        """Return the stable addition family name."""
-        return "add"
+        """Return the stable subtraction family name."""
+        return "substract"
 
     @property
     def input_ports(self) -> tuple[PortSpec, ...]:
@@ -59,7 +59,7 @@ class Add(Operation):
         inputs: tuple[TensorMetadata, ...],
         outputs: tuple[TensorMetadata, ...],
     ) -> tuple[str, ...]:
-        """Save nothing because addition gradients pass through unchanged."""
+        """Save nothing because subtraction gradients pass through (negated)."""
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
@@ -91,4 +91,5 @@ class Add(Operation):
         """Report allocation events for the output."""
         return allocate(result)
 
-__all__ = ["Add"]
+
+__all__ = ["Substract"]

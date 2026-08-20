@@ -99,7 +99,7 @@ class MatMul(Operation):
             names.append("right")
         return tuple(names)
 
-    def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def forward_flops(self, context: EstimationContext) -> int:
         """Return ``2 * batch * M * K * N`` for concrete dimensions."""
         left = context.metadata_for("left")
         right = context.metadata_for("right")
@@ -110,19 +110,38 @@ class MatMul(Operation):
         batch = numel(TensorMetadata(left.shape[:-2]))
         return 2 * batch * left.shape[-2] * left.shape[-1] * right.shape[-1]
 
-    def backward_flops(self, context: EstimationContext, result: OperationResult) -> int:
+    def backward_flops(self, context: EstimationContext) -> int:
         """Return one forward-sized GEMM per requested operand gradient."""
         left = context.metadata_for("left")
         right = context.metadata_for("right")
-        if left is None or right is None:
+        output = context.metadata_for("output")
+        if left is None or right is None or output is None:
             raise ValueError(
-                "Estimation context must provide both a 'left' and 'right' port"
+                "Estimation context must provide 'left', 'right', and 'output' ports"
             )
-        return sum(
-            self.forward_flops(context, result)
-            for value in (left, right) if value.require_grad
-        )
-
+        flop = 0
+        batch = numel(TensorMetadata(left.shape[:-2]))
+        if left.require_grad:
+            b_transpose_flop = 0 # View
+            flop += (
+                2
+                * batch
+                * output.shape[-2]
+                * output.shape[-1]
+                * right.shape[-2]  # -2, instead of -1 due to B^T
+                + b_transpose_flop
+            )
+        if right.require_grad:
+            a_transpose_flop = 0 # View
+            flop += (
+                2
+                * batch
+                * output.shape[-2]
+                * output.shape[-1]
+                * left.shape[-1]  # contracting dimension K of A^T @ dY
+                + a_transpose_flop
+            )
+        return flop
 
     def resource_events(
         self, context: EstimationContext, result: OperationResult
