@@ -1,7 +1,9 @@
+"""Eager graph composition context and user-facing module base class."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Callable, Iterable
+from typing import Iterable
 
 from .errors import GraphCompositionError, MetadataMismatchError, PortArityError
 from .graph import StructuralGraph, StructuralGraphBuilder
@@ -9,6 +11,7 @@ from .metadata import TensorMetadata, metadata_compatible
 from .ports import PortSpec
 from .provenance import Provenance
 from .ids import ParameterId, TensorId
+from .operation import Operation
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,34 +20,6 @@ class GraphTensor:
 
     id: TensorId
     metadata: TensorMetadata
-
-
-@dataclass(frozen=True, slots=True)
-class OperationSpec:
-    """Reusable structural operation declaration.
-
-    An ``OperationSpec`` declares stable port identities and supplies the
-    output metadata inference rule. It is not graph-bound: metadata is bound
-    to immutable port copies by :meth:`GraphCompositionContext.apply`.
-    """
-
-    family: str
-    input_ports: tuple[PortSpec, ...]
-    output_ports: tuple[PortSpec, ...]
-    infer_outputs: Callable[[tuple[TensorMetadata, ...]], tuple[TensorMetadata, ...]]
-
-    def infer_output_metadata(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
-        """Infer output metadata from input metadata.
-
-        Args:
-            inputs: Ordered metadata for the operation inputs.
-
-        Returns:
-            Ordered metadata for the operation outputs.
-        """
-        return self.infer_outputs(inputs)
 
 
 class Module:
@@ -84,7 +59,7 @@ class Module:
             *inputs: Symbolic graph inputs.
 
         Returns:
-            One symbolic output or a tuple of symbolic outputs.
+            One graph output or a tuple of graph outputs.
 
         Raises:
             GraphCompositionError: If no composition context is active.
@@ -151,10 +126,11 @@ class GraphCompositionContext:
 
     @classmethod
     def current(cls) -> GraphCompositionContext | None:
+        """Return the currently active composition context, if any."""
         return cls._active
 
     def input(self, metadata: TensorMetadata) -> GraphTensor:
-        """Declare and return a symbolic graph input."""
+        """Declare and return a graph input handle."""
         tensor_id = self.builder.add_input(metadata)
         return GraphTensor(tensor_id, metadata)
 
@@ -166,7 +142,7 @@ class GraphCompositionContext:
 
     def apply(
         self,
-        operation: OperationSpec,
+        operation: Operation,
         *inputs: GraphTensor,
         parameters: tuple[ParameterId, ...] = (),
         module_path: tuple[str, ...] | None = None,
@@ -184,14 +160,15 @@ class GraphCompositionContext:
             source_label: Optional source-level label.
 
         Returns:
-            One symbolic output or a tuple of symbolic outputs.
+            One graph output or a tuple of graph outputs.
 
         Raises:
             MetadataMismatchError: If a declared port contract is not met.
             PortArityError: If port, input, or inferred output counts differ.
         """
         input_metadata = tuple(value.metadata for value in inputs)
-        output_metadata = operation.infer_output_metadata(input_metadata)
+        result = operation.infer(input_metadata)
+        output_metadata = result.outputs
         input_ports, output_ports = self._bind_ports(
             operation,
             input_metadata,
@@ -215,7 +192,8 @@ class GraphCompositionContext:
             output_metadata=output_metadata,
             parameter_ids=parameters,
             provenance=provenance,
-            declaration=operation,
+            operation=operation,
+            result=result,
         )
         values = tuple(
             GraphTensor(tensor_id, metadata)
@@ -225,19 +203,19 @@ class GraphCompositionContext:
 
     def _bind_ports(
         self,
-        operation: OperationSpec,
+        operation: Operation,
         input_metadata: tuple[TensorMetadata, ...],
         output_metadata: tuple[TensorMetadata, ...],
     ) -> tuple[tuple[PortSpec, ...], tuple[PortSpec, ...]]:
         """Validate and bind actual metadata onto an operation's ports.
 
-        ``OperationSpec`` remains reusable and unchanged. The returned port
-        declarations are immutable copies containing the actual metadata used
+        The operation declaration remains reusable and unchanged. The returned
+        port declarations are immutable copies containing the actual metadata used
         by this graph invocation.
 
         Args:
             operation: Unbound operation declaration.
-            input_metadata: Metadata from the supplied symbolic inputs.
+            input_metadata: Metadata from the supplied graph inputs.
             output_metadata: Metadata produced by the inference rule.
 
         Returns:
@@ -289,7 +267,7 @@ class GraphCompositionContext:
 
     @staticmethod
     def _bind_port(
-        operation: OperationSpec,
+        operation: Operation,
         port: PortSpec,
         actual: TensorMetadata,
         *,
@@ -319,7 +297,7 @@ class GraphCompositionContext:
             self._module_path = previous_path
 
     def mark_output(self, value: GraphTensor) -> None:
-        """Expose a symbolic value as a graph output."""
+        """Expose a graph value as a graph output."""
         self.builder.mark_output(value.id)
 
     def build(self) -> StructuralGraph:

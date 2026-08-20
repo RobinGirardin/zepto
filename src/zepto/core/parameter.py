@@ -1,3 +1,5 @@
+"""Structural graph parameter declarations."""
+
 from dataclasses import dataclass
 
 from .ids import ParameterId
@@ -10,4 +12,3 @@ class Parameter:
 
     id: ParameterId
     metadata: TensorMetadata
-    requires_grad: bool = True

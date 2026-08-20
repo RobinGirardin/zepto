@@ -1,3 +1,5 @@
+"""Structural graph storage, validation, and construction."""
+
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Mapping
@@ -5,7 +7,6 @@ from typing import Mapping
 from .errors import (
     CrossGraphReferenceError,
     DuplicatePortError,
-    ForeignDimensionScopeError,
     GraphAlreadyFinalizedError,
     InvalidGraphOutputError,
     InvalidOperationOrderError,
@@ -16,14 +17,14 @@ from .errors import (
     UnknownTensorError,
 )
 from .ids import (
-    DimensionScope,
     GraphId,
     OperationId,
     ParameterId,
+    StorageId,
     TensorId,
 )
-from .metadata import SymbolicDim, TensorMetadata
-from .operation import StructuralOperation
+from .metadata import TensorMetadata
+from .operation import Operation, OperationError, OperationResult, StructuralOperation
 from .parameter import Parameter
 from .ports import PortRef, PortSpec
 from .provenance import Provenance
@@ -123,6 +124,19 @@ class StructuralGraph:
                 raise CrossGraphReferenceError(
                     f"Operation {operation_id} does not belong to graph {self.id}"
                 )
+            if operation.declaration is None:
+                raise ValueError(f"Operation {operation_id} has no complete contract")
+            operation.declaration.validate_declaration()
+            if operation.result is not None:
+                operation.declaration.validate_result(
+                    tuple(
+                        self.tensor(tensor_id).metadata
+                        for tensor_id in operation.input_tensors
+                    ),
+                    operation.result,
+                )
+            for saved_ref in operation.saved_for_backward:
+                saved_ref.resolve(operation)
             if len(operation.input_ports) != len(operation.input_tensors):
                 raise PortArityError(f"Input arity mismatch for {operation_id}")
             if len(operation.output_ports) != len(operation.output_tensors):
@@ -156,11 +170,10 @@ class StructuralGraphBuilder:
                 is generated when omitted.
         """
         self._graph_id = graph_id or GraphId.new()
-        self._dimension_scope = DimensionScope.new()
-        self._dimensions: dict[str, SymbolicDim] = {}
         self._next_tensor = 0
         self._next_parameter = 0
         self._next_operation = 0
+        self._next_storage = 0
         self._inputs: list[TensorId] = []
         self._outputs: list[TensorId] = []
         self._tensors: dict[TensorId, Tensor] = {}
@@ -171,22 +184,8 @@ class StructuralGraphBuilder:
 
     @property
     def graph_id(self) -> GraphId:
+        """Return the graph identity owned by this builder."""
         return self._graph_id
-
-    def symbolic_dim(self, name: str) -> SymbolicDim:
-        """Return the canonical symbolic dimension for ``name``.
-
-        Args:
-            name: Human-readable name within this builder's dimension scope.
-
-        Returns:
-            A stable symbolic dimension reused by subsequent calls with the
-            same name.
-        """
-        self._ensure_open()
-        if name not in self._dimensions:
-            self._dimensions[name] = SymbolicDim(name, self._dimension_scope)
-        return self._dimensions[name]
 
     def add_input(
         self,
@@ -207,8 +206,10 @@ class StructuralGraphBuilder:
         self._validate_metadata(metadata)
         tensor_id = TensorId(self._graph_id, self._next_tensor)
         self._next_tensor += 1
+        storage_id = StorageId(self._graph_id, self._next_storage)
+        self._next_storage += 1
         self._tensors[tensor_id] = Tensor(
-            tensor_id, metadata, provenance, None, ()
+            tensor_id, metadata, provenance, None, (), storage_id
         )
         self._inputs.append(tensor_id)
         return tensor_id
@@ -247,14 +248,12 @@ class StructuralGraphBuilder:
         output_metadata: tuple[TensorMetadata, ...],
         parameter_ids: tuple[ParameterId, ...] = (),
         provenance: Provenance,
-        declaration: object | None = None,
+        operation: Operation,
+        result: OperationResult | None = None,
     ) -> tuple[TensorId, ...]:
         """Append an operation and connect it to existing input tensors.
 
-        This method registers the operation, records consumer references on
-        the supplied input tensors, and allocates/registers its output
-        tensors. Input tensors and parameters must already belong to this
-        builder.
+        This method registers the operation, records consumer references on the supplied input tensors, and allocates/registers its output tensors. Input tensors and parameters must already belong to this builder.
 
         Args:
             operation_family: Stable semantic family of the operation.
@@ -264,8 +263,7 @@ class StructuralGraphBuilder:
             output_metadata: Metadata for the newly allocated outputs.
             parameter_ids: Existing parameters referenced by the operation.
             provenance: Structured origin metadata.
-            declaration: Optional opaque operation declaration for later
-                semantic and estimation contracts.
+            operation: Complete semantic and estimation operation declaration.
 
         Returns:
             Output tensor identities in output-port order.
@@ -285,15 +283,41 @@ class StructuralGraphBuilder:
             self._require_parameter(parameter_id)
         for metadata in output_metadata:
             self._validate_metadata(metadata)
+        operation.validate_declaration()
+        if operation.family != operation_family:
+            raise OperationError("Operation family does not match its declaration")
+        if (
+            tuple((p.name, p.value_kind) for p in operation.input_ports)
+            != tuple((p.name, p.value_kind) for p in input_ports)
+            or tuple((p.name, p.value_kind) for p in operation.output_ports)
+            != tuple((p.name, p.value_kind) for p in output_ports)
+        ):
+            raise OperationError("Bound ports do not match the operation declaration")
+        input_metadata = tuple(
+            self._tensors[tensor_id].metadata for tensor_id in input_tensors
+        )
+
+        if result is None:
+            result = operation.infer(input_metadata)
+        operation.validate_result(input_metadata, result)
 
         operation_id = OperationId(self._graph_id, self._next_operation)
         self._next_operation += 1
+        input_port_names = {port.name for port in input_ports}
+        saved_for_backward = tuple(
+            PortRef(
+                operation_id,
+                saved_name,
+                "input" if saved_name in input_port_names else "output",
+            )
+            for saved_name in result.saved_for_backward
+        )
         output_tensors = tuple(
             TensorId(self._graph_id, self._next_tensor + offset)
             for offset in range(len(output_metadata))
         )
         self._next_tensor += len(output_tensors)
-        operation = StructuralOperation(
+        self._operations[operation_id] = StructuralOperation(
             operation_id,
             operation_family,
             input_ports,
@@ -302,9 +326,10 @@ class StructuralGraphBuilder:
             output_tensors,
             parameter_ids,
             provenance,
-            declaration,
+            operation,
+            result,
+            saved_for_backward,
         )
-        self._operations[operation_id] = operation
         self._operation_order.append(operation_id)
 
         for tensor_id, port in zip(input_tensors, input_ports, strict=True):
@@ -313,15 +338,30 @@ class StructuralGraphBuilder:
                 self._tensors[tensor_id],
                 consumers=(*self._tensors[tensor_id].consumers, ref),
             )
-        for tensor_id, metadata, port in zip(
-            output_tensors, output_metadata, output_ports, strict=True
+        for index, (tensor_id, metadata, port) in enumerate(
+            zip(
+                output_tensors, output_metadata, output_ports, strict=True
+            )
         ):
+            alias = result.aliases[index] if result.aliases else None
+            storage_id = None
+            if alias is not None:
+                source_index = next(
+                    index
+                    for index, input_port in enumerate(input_ports)
+                    if input_port.name == alias.source_port
+                )
+                storage_id = self._tensors[input_tensors[source_index]].storage_id
+            if storage_id is None:
+                storage_id = StorageId(self._graph_id, self._next_storage)
+                self._next_storage += 1
             self._tensors[tensor_id] = Tensor(
                 tensor_id,
                 metadata,
                 provenance,
                 PortRef(operation_id, port.name, "output"),
                 (),
+                storage_id,
             )
         return output_tensors
 
@@ -361,26 +401,23 @@ class StructuralGraphBuilder:
         return graph
 
     def _ensure_open(self) -> None:
+        """Raise when the builder has already been finalized."""
         if self._finalized:
             raise GraphAlreadyFinalizedError(
                 "Structural graph builder has already been finalized"
             )
 
     def _validate_metadata(self, metadata: TensorMetadata) -> None:
-        for dimension in metadata.shape:
-            if (
-                isinstance(dimension, SymbolicDim)
-                and dimension.scope != self._dimension_scope
-            ):
-                raise ForeignDimensionScopeError(
-                    f"Dimension {dimension.name!r} belongs to another scope"
-                )
+        """Validate concrete metadata before adding it to this graph."""
+        if not isinstance(metadata, TensorMetadata):
+            raise TypeError("Graph metadata must be TensorMetadata")
 
     def _validate_ports(
         self,
         input_ports: tuple[PortSpec, ...],
         output_ports: tuple[PortSpec, ...],
     ) -> None:
+        """Validate port uniqueness and concrete metadata ownership."""
         input_names = [port.name for port in input_ports]
         output_names = [port.name for port in output_ports]
         if len(input_names) != len(set(input_names)):
@@ -394,6 +431,7 @@ class StructuralGraphBuilder:
                 self._validate_metadata(port.metadata)
 
     def _require_tensor(self, tensor_id: TensorId) -> None:
+        """Require that a tensor belongs to this builder."""
         if tensor_id.graph_id != self._graph_id:
             raise CrossGraphReferenceError(
                 f"Tensor {tensor_id} belongs to another graph"
@@ -402,6 +440,7 @@ class StructuralGraphBuilder:
             raise UnknownTensorError(tensor_id)
 
     def _require_parameter(self, parameter_id: ParameterId) -> None:
+        """Require that a parameter belongs to this builder."""
         if parameter_id.graph_id != self._graph_id:
             raise CrossGraphReferenceError(
                 f"Parameter {parameter_id} belongs to another graph"

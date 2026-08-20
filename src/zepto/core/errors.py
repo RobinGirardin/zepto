@@ -1,3 +1,5 @@
+"""Domain errors raised by structural graph and composition APIs."""
+
 class GraphError(ValueError):
     """Base error for invalid structural graph declarations."""
 
@@ -10,12 +12,6 @@ class GraphAlreadyFinalizedError(GraphError):
 
 class CrossGraphReferenceError(GraphError):
     """Raised when a graph-owned identity belongs to another graph."""
-
-    pass
-
-
-class ForeignDimensionScopeError(GraphError):
-    """Raised when metadata uses another builder's symbolic dimension."""
 
     pass
 

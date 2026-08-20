@@ -1,3 +1,5 @@
+"""Structural graph tensor values and connectivity metadata."""
+
 from dataclasses import dataclass
 
 from .ids import StorageId, TensorId

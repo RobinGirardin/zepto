@@ -1,3 +1,5 @@
+"""Operation port declarations and concrete port references."""
+
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, TYPE_CHECKING
@@ -27,6 +29,7 @@ class PortSpec:
     metadata: TensorMetadata | None = None
 
     def __post_init__(self) -> None:
+        """Reject port declarations without a name."""
         if not self.name:
             raise ValueError("Port name cannot be empty")
 

@@ -1,3 +1,5 @@
+"""Stable graph, value, operation, and storage identities."""
+
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -11,18 +13,6 @@ class GraphId:
     @classmethod
     def new(cls) -> "GraphId":
         """Generate a new graph identity."""
-        return cls(uuid4())
-
-
-@dataclass(frozen=True, slots=True)
-class DimensionScope:
-    """Namespace that prevents symbolic dimensions from colliding."""
-
-    value: UUID
-
-    @classmethod
-    def new(cls) -> "DimensionScope":
-        """Generate a new symbolic-dimension namespace."""
         return cls(uuid4())
 
 

@@ -1,12 +1,15 @@
 import pytest
 
 from zepto.core import (
+    BackwardSpec,
     CrossGraphReferenceError,
     GraphAlreadyFinalizedError,
     GraphCompositionContext,
+    Identity,
     Module,
     MetadataMismatchError,
-    OperationSpec,
+    Operation,
+    OperationResult,
     PortSpec,
     Provenance,
     StructuralGraphBuilder,
@@ -14,7 +17,6 @@ from zepto.core import (
     UnknownOperationError,
     build_graph,
     identity,
-    linear,
 )
 
 
@@ -31,6 +33,7 @@ def test_builder_preserves_order_and_shared_parameters() -> None:
         output_metadata=(TensorMetadata((8,)),),
         parameter_ids=(parameter,),
         provenance=provenance,
+        operation=Identity(),
     )[0]
     second = builder.add_operation(
         operation_family="identity",
@@ -40,6 +43,7 @@ def test_builder_preserves_order_and_shared_parameters() -> None:
         output_metadata=(TensorMetadata((8,)),),
         parameter_ids=(parameter,),
         provenance=Provenance((), "Fixture", "identity", 1),
+        operation=Identity(),
     )[0]
     builder.mark_output(second)
 
@@ -65,6 +69,7 @@ def test_cross_graph_reference_is_rejected() -> None:
             input_tensors=(foreign,),
             output_metadata=(TensorMetadata((1,)),),
             provenance=Provenance((), None, "identity", 0),
+            operation=Identity(),
         )
 
 
@@ -97,63 +102,68 @@ def test_module_composition_records_provenance() -> None:
     assert operation.output_ports[0].metadata == TensorMetadata((2,))
 
 
-def test_linear_binds_inferred_metadata_to_output_port() -> None:
-    class LinearModule(Module):
-        def forward(self, value):
-            return linear(value, output_features=4)
+class MetadataIdentity(Operation):
+    def __init__(self, input_metadata=None, output_metadata=None):
+        self._input_metadata = input_metadata
+        self._output_metadata = output_metadata
 
-    graph = build_graph(LinearModule(), (TensorMetadata((2, 8)),))
-    operation = graph.operation(graph.operations[0])
+    @property
+    def family(self):
+        return "metadata_identity"
 
-    assert operation.output_ports[0].metadata == TensorMetadata((2, 4))
+    @property
+    def input_ports(self):
+        return (PortSpec("input", metadata=self._input_metadata),)
+
+    @property
+    def output_ports(self):
+        return (PortSpec("output", metadata=self._output_metadata),)
+
+    def infer_result(self, inputs):
+        return OperationResult(inputs)
+
+    @property
+    def backward(self):
+        return BackwardSpec(
+            supported=True,
+            gradient_inputs=("output",),
+            gradient_outputs=("input",),
+        )
+
+    def forward_flops(self, context, result):
+        return 0
+
+    def resource_events(self, context, result):
+        return ()
 
 
-def test_operation_spec_is_not_mutated_by_metadata_binding() -> None:
-    spec = OperationSpec(
-        family="identity",
-        input_ports=(PortSpec("input"),),
-        output_ports=(PortSpec("output"),),
-        infer_outputs=lambda inputs: inputs,
-    )
+def test_operation_declaration_is_not_mutated_by_metadata_binding() -> None:
+    operation = MetadataIdentity()
 
     with GraphCompositionContext() as context:
         value = context.input(TensorMetadata((3,)))
-        context.apply(spec, value)
+        context.apply(operation, value)
 
-    assert spec.input_ports[0].metadata is None
-    assert spec.output_ports[0].metadata is None
+    assert operation.input_ports[0].metadata is None
+    assert operation.output_ports[0].metadata is None
 
 
 def test_declared_port_metadata_mismatch_is_rejected() -> None:
-    spec = OperationSpec(
-        family="identity",
-        input_ports=(
-            PortSpec("input", metadata=TensorMetadata((4,))),
-        ),
-        output_ports=(PortSpec("output"),),
-        infer_outputs=lambda inputs: inputs,
-    )
+    operation = MetadataIdentity(input_metadata=TensorMetadata((4,)))
 
     with GraphCompositionContext() as context:
         value = context.input(TensorMetadata((3,)))
         with pytest.raises(MetadataMismatchError):
-            context.apply(spec, value)
+            context.apply(operation, value)
 
 
 def test_declared_output_metadata_mismatch_is_rejected() -> None:
-    spec = OperationSpec(
-        family="identity",
-        input_ports=(PortSpec("input"),),
-        output_ports=(
-            PortSpec("output", metadata=TensorMetadata((4,))),
-        ),
-        infer_outputs=lambda inputs: inputs,
-    )
+    operation = MetadataIdentity(output_metadata=TensorMetadata((4,)))
 
     with GraphCompositionContext() as context:
         value = context.input(TensorMetadata((3,)))
         with pytest.raises(MetadataMismatchError):
-            context.apply(spec, value)
+            context.apply(operation, value)
 
 
 def test_output_inference_is_called_once() -> None:
@@ -164,15 +174,13 @@ def test_output_inference_is_called_once() -> None:
         calls += 1
         return inputs
 
-    spec = OperationSpec(
-        family="identity",
-        input_ports=(PortSpec("input"),),
-        output_ports=(PortSpec("output"),),
-        infer_outputs=infer,
-    )
+    class CountingIdentity(MetadataIdentity):
+        def infer_result(self, inputs):
+            infer(inputs)
+            return super().infer_result(inputs)
 
     with GraphCompositionContext() as context:
         value = context.input(TensorMetadata((3,)))
-        context.apply(spec, value)
+        context.apply(CountingIdentity(), value)
 
     assert calls == 1

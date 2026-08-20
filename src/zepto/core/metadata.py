@@ -1,22 +1,10 @@
+"""Backend-neutral tensor shape and semantic metadata."""
+
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from .ids import DimensionScope
 
-
-@dataclass(frozen=True, slots=True)
-class SymbolicDim:
-    """Named dimension whose concrete size is resolved later by a context."""
-
-    name: str
-    scope: DimensionScope
-
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("Symbolic dimension name cannot be empty")
-
-
-Dim: TypeAlias = int | SymbolicDim
+Dim: TypeAlias = int
 Shape: TypeAlias = tuple[Dim, ...]
 
 
@@ -26,10 +14,12 @@ class TensorMetadata:
 
     shape: Shape
     semantic_type: str = "tensor"
+    require_grad: bool = False
 
     def __post_init__(self) -> None:
-        if any(isinstance(dim, int) and dim < 0 for dim in self.shape):
-            raise ValueError("Tensor dimensions cannot be negative")
+        """Reject non-concrete or negative dimensions and empty semantic types."""
+        if any(not isinstance(dim, int) or dim < 0 for dim in self.shape):
+            raise ValueError("Tensor dimensions must be non-negative integers")
         if not self.semantic_type:
             raise ValueError("Semantic type cannot be empty")
 
@@ -40,10 +30,7 @@ def metadata_compatible(
 ) -> bool:
     """Return whether actual metadata satisfies an expected contract.
 
-    Concrete dimensions must match exactly. A symbolic expected dimension may
-    match either the same symbolic identity or a concrete resolved dimension.
-    This permits a later estimation context to resolve a symbolic shape while
-    preserving strictness for declared concrete dimensions and semantic types.
+    Concrete dimensions and semantic types must match exactly.
 
     Args:
         expected: Metadata declared by a port.
@@ -58,10 +45,7 @@ def metadata_compatible(
         return False
 
     for expected_dim, actual_dim in zip(expected.shape, actual.shape, strict=True):
-        if isinstance(expected_dim, int):
-            if expected_dim != actual_dim:
-                return False
-        elif isinstance(actual_dim, SymbolicDim) and expected_dim != actual_dim:
+        if expected_dim != actual_dim:
             return False
 
     return True
