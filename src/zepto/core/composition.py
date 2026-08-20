@@ -167,7 +167,7 @@ class GraphCompositionContext:
             PortArityError: If port, input, or inferred output counts differ.
         """
         input_metadata = tuple(value.metadata for value in inputs)
-        result = operation.infer(input_metadata)
+        result = operation.infer_result(input_metadata)
         output_metadata = result.outputs
         input_ports, output_ports = self._bind_ports(
             operation,

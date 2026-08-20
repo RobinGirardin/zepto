@@ -43,12 +43,19 @@ class ReLU(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Preserve metadata and retain the post-activation output."""
-        return OperationResult(
-            outputs=inputs,
-            saved_for_backward=("output",),
-        )
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
+        """Preserve the input metadata for the activation output."""
+        return inputs
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save the output used to recover the backward mask."""
+        return ("output",)
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return one conditional multiply per element, as in Atto."""

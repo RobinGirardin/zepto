@@ -6,6 +6,7 @@ from dataclasses import replace
 from ..metadata import TensorMetadata
 from ..ports import PortSpec
 from .records import (
+    AliasSpec,
     BackwardSpec,
     EstimationContext,
     OperationError,
@@ -46,15 +47,42 @@ class SemanticOperation(ABC):
         ...
 
     @abstractmethod
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Infer the result metadata for one operation invocation."""
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
+        """Infer the output tensor metadata for one operation invocation."""
         ...
+
+    def output_aliases(self) -> tuple[AliasSpec | None, ...]:
+        """Return per-output alias declarations, in output-port order.
+
+        The default empty tuple means every output is materialized in fresh
+        storage. View and copy operations override this to declare their
+        storage relationship to an input port.
+        """
+        return ()
 
     @property
     @abstractmethod
     def backward(self) -> BackwardSpec:
         """Return the operation's backend-neutral backward requirements."""
         return BackwardSpec()
+
+    @abstractmethod
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Select the port names saved for this concrete invocation.
+
+        ``BackwardSpec.saved_for_backward`` declares the names an operation
+        is *allowed* to save. This method selects the subset actually needed
+        for one invocation, based on which inputs participate in gradients.
+        Operations whose backward pass needs no saved forward values return
+        an empty tuple.
+        """
+        ...
 
 
 class EstimationOperation(ABC):
@@ -112,8 +140,14 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
         ):
             raise OperationError("Unsupported backward operation declares requirements")
 
-    def infer(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Validate inputs, infer one result, and validate that result."""
+    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
+        """Validate inputs, compose one result, and validate that result.
+
+        The result is constructed exactly once from the operation's hooks:
+        ``infer_outputs()`` supplies the output metadata, ``output_aliases()``
+        supplies the storage relationships, and ``saved_for_backward()``
+        selects the invocation-specific saved values.
+        """
         self.validate_declaration()
         if len(inputs) != len(self.input_ports):
             raise OperationError(
@@ -121,7 +155,14 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
             )
         if not all(isinstance(value, TensorMetadata) for value in inputs):
             raise OperationError("Operation inputs must be TensorMetadata")
-        result = self.infer_result(inputs)
+        outputs = self.infer_outputs(inputs)
+        if not isinstance(outputs, tuple):
+            raise OperationError("infer_outputs must return a tuple")
+        result = OperationResult(
+            outputs=outputs,
+            aliases=self.output_aliases(),
+            saved_for_backward=self.saved_for_backward(inputs, outputs),
+        )
         self.validate_result(inputs, result)
         return result
 
@@ -156,6 +197,24 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
                 output_size = _numel(result.outputs[index])
                 if source_size is not None and output_size is not None and source_size != output_size:
                     raise OperationError("View aliases must preserve tensor shape")
+        selection = self.saved_for_backward(inputs, result.outputs)
+        if not isinstance(selection, tuple) or not all(
+            isinstance(name, str) and name for name in selection
+        ):
+            raise OperationError(
+                "saved_for_backward must return a tuple of port names"
+            )
+        if len(selection) != len(set(selection)):
+            raise OperationError("saved_for_backward selection must be unique")
+        if not self.backward.supported and selection:
+            raise OperationError(
+                "Unsupported backward operation selects saved values"
+            )
+        if result.saved_for_backward != selection:
+            raise OperationError(
+                "Result saved values do not match the operation's "
+                "saved_for_backward selection"
+            )
         saved_names = set(result.saved_for_backward)
         if not saved_names.issubset(set(self.backward.saved_for_backward)):
             raise OperationError("Result saves an undeclared backward value")

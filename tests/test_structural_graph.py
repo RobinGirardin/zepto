@@ -9,7 +9,6 @@ from zepto.core import (
     Module,
     MetadataMismatchError,
     Operation,
-    OperationResult,
     PortSpec,
     Provenance,
     StructuralGraphBuilder,
@@ -119,8 +118,11 @@ class MetadataIdentity(Operation):
     def output_ports(self):
         return (PortSpec("output", metadata=self._output_metadata),)
 
-    def infer_result(self, inputs):
-        return OperationResult(inputs)
+    def infer_outputs(self, inputs):
+        return inputs
+
+    def saved_for_backward(self, inputs, outputs):
+        return ()
 
     @property
     def backward(self):
@@ -175,9 +177,9 @@ def test_output_inference_is_called_once() -> None:
         return inputs
 
     class CountingIdentity(MetadataIdentity):
-        def infer_result(self, inputs):
+        def infer_outputs(self, inputs):
             infer(inputs)
-            return super().infer_result(inputs)
+            return super().infer_outputs(inputs)
 
     with GraphCompositionContext() as context:
         value = context.input(TensorMetadata((3,)))

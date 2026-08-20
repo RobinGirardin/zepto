@@ -53,8 +53,10 @@ class Transpose(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Infer the permuted shape and preserve input storage."""
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
+        """Infer the permuted shape from the input metadata."""
         rank = len(inputs[0].shape)
         normalized = tuple(
             axis if axis >= 0 else axis + rank for axis in self.permutation
@@ -62,14 +64,25 @@ class Transpose(Operation):
         if len(normalized) != rank or sorted(normalized) != list(range(rank)):
             raise ValueError("transpose permutation must cover every dimension once")
         shape = tuple(inputs[0].shape[index] for index in normalized)
-        return OperationResult(
-            (TensorMetadata(
+        return (
+            TensorMetadata(
                 shape,
                 inputs[0].semantic_type,
                 require_grad=inputs[0].require_grad,
-            ),),
-            (AliasSpec("input"),),
+            ),
         )
+
+    def output_aliases(self) -> tuple[AliasSpec | None, ...]:
+        """Declare the output as a view of the input storage."""
+        return (AliasSpec("input"),)
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save nothing because the inverse permutation is declarative."""
+        return ()
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return zero because transpose performs no arithmetic."""

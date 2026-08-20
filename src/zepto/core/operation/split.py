@@ -49,7 +49,9 @@ class Split(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
         """Infer the ordered metadata for each split output."""
         if not self.sizes or any(size < 0 for size in self.sizes):
             raise ValueError("split sizes must be non-negative and non-empty")
@@ -59,14 +61,22 @@ class Split(Operation):
             or sum(self.sizes) != inputs[0].shape[0]
         ):
             raise ValueError("split sizes must sum to the leading dimension")
-        return OperationResult(tuple(
+        return tuple(
             TensorMetadata(
                 (size, *inputs[0].shape[1:]),
                 inputs[0].semantic_type,
                 require_grad=inputs[0].require_grad,
             )
             for size in self.sizes
-        ))
+        )
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save nothing because split gradients only concatenate."""
+        return ()
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return zero because splitting performs no arithmetic."""

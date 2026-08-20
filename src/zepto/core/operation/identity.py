@@ -48,9 +48,23 @@ class Identity(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Infer an output that aliases the input storage."""
-        return OperationResult(inputs, (AliasSpec("input"),))
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
+        """Preserve the input metadata unchanged."""
+        return inputs
+
+    def output_aliases(self) -> tuple[AliasSpec | None, ...]:
+        """Declare the output as a view of the input storage."""
+        return (AliasSpec("input"),)
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save nothing because the identity gradient passes through."""
+        return ()
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return zero because identity performs no arithmetic."""

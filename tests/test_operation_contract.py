@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from zepto.core import (
@@ -6,14 +8,19 @@ from zepto.core import (
     BackwardSpec,
     EstimationContext,
     GraphCompositionContext,
+    Identity,
     Module,
     MatMul,
     Multiply,
     Operation,
-    OperationResult,
+    OperationError,
     PortSpec,
+    ReLU,
+    Reshape,
     ResourceEvent,
+    Split,
     TensorMetadata,
+    Transpose,
     build_graph,
     identity,
     matmul,
@@ -34,8 +41,14 @@ class _IdentityOperation(Operation):
     def output_ports(self):
         return (PortSpec("output"),)
 
-    def infer_result(self, inputs):
-        return OperationResult(inputs, (AliasSpec("input"),))
+    def infer_outputs(self, inputs):
+        return inputs
+
+    def output_aliases(self):
+        return (AliasSpec("input"),)
+
+    def saved_for_backward(self, inputs, outputs):
+        return ()
 
     @property
     def backward(self):
@@ -164,7 +177,7 @@ def test_multiply_declares_product_rule_backward_state(
     left = TensorMetadata((2, 3), require_grad=left_requires_grad)
     right = TensorMetadata((2, 3), require_grad=right_requires_grad)
     operation = Multiply()
-    result = operation.infer((left, right))
+    result = operation.infer_result((left, right))
     context = EstimationContext(
         port_metadata=(("left", left), ("right", right))
     )
@@ -178,32 +191,31 @@ def test_multiply_declares_product_rule_backward_state(
 
 
 @pytest.mark.parametrize(
-    ("left_requires_grad", "right_requires_grad", "expected_backward"),
+    ("left_requires_grad", "right_requires_grad", "saved", "expected_backward"),
     (
-        (False, False, 0),
-        (True, False, 60),
-        (False, True, 60),
-        (True, True, 120),
+        (False, False, (), 0),
+        (True, False, ("right",), 60),
+        (False, True, ("left",), 60),
+        (True, True, ("left", "right"), 120),
     ),
 )
 def test_matmul_gradient_contract_follows_inputs(
     left_requires_grad,
     right_requires_grad,
+    saved,
     expected_backward,
 ):
     left = TensorMetadata((2, 3), require_grad=left_requires_grad)
     right = TensorMetadata((3, 5), require_grad=right_requires_grad)
     operation = MatMul()
-    result = operation.infer((left, right))
+    result = operation.infer_result((left, right))
     context = EstimationContext(
         port_metadata=(("left", left), ("right", right))
     )
     require_grad = left_requires_grad or right_requires_grad
 
     assert result.outputs[0].require_grad is require_grad
-    assert result.saved_for_backward == (
-        ("left", "right") if require_grad else ()
-    )
+    assert result.saved_for_backward == saved
     assert operation.forward_flops(context, result) == 60
     assert operation.backward_flops(context, result) == expected_backward
 
@@ -211,14 +223,61 @@ def test_matmul_gradient_contract_follows_inputs(
 @pytest.mark.parametrize("operation", (Add(), Multiply()))
 def test_elementwise_operations_reject_incompatible_broadcast_shapes(operation):
     with pytest.raises(ValueError, match=f"{operation.family} shapes"):
-        operation.infer((TensorMetadata((2, 3)), TensorMetadata((4, 3))))
+        operation.infer_result((TensorMetadata((2, 3)), TensorMetadata((4, 3))))
 
 
 def test_multiply_broadcast_metadata_matches_add():
     left = TensorMetadata((2, 1, 3), require_grad=True)
     right = TensorMetadata((3,), require_grad=False)
 
-    add_result = Add().infer((left, right))
-    multiply_result = Multiply().infer((left, right))
+    add_result = Add().infer_result((left, right))
+    multiply_result = Multiply().infer_result((left, right))
 
     assert multiply_result.outputs == add_result.outputs
+
+
+@pytest.mark.parametrize(
+    ("operation", "inputs"),
+    (
+        (Add(), (TensorMetadata((2,), require_grad=True),) * 2),
+        (Identity(), (TensorMetadata((2,), require_grad=True),)),
+        (Reshape((4,)), (TensorMetadata((2, 2), require_grad=True),)),
+        (Transpose((1, 0)), (TensorMetadata((2, 3), require_grad=True),)),
+        (Split((1, 1)), (TensorMetadata((2,), require_grad=True),)),
+    ),
+)
+def test_operations_without_backward_state_save_nothing(operation, inputs):
+    result = operation.infer_result(inputs)
+
+    assert operation.saved_for_backward(inputs, result.outputs) == ()
+    assert result.saved_for_backward == ()
+
+
+@pytest.mark.parametrize("require_grad", (False, True))
+def test_relu_always_saves_its_output_for_the_backward_mask(require_grad):
+    inputs = (TensorMetadata((3,), require_grad=require_grad),)
+    operation = ReLU()
+    result = operation.infer_result(inputs)
+
+    assert operation.saved_for_backward(inputs, result.outputs) == ("output",)
+    assert result.saved_for_backward == ("output",)
+
+
+@pytest.mark.parametrize("operation", (Multiply(), MatMul()))
+def test_saved_selection_uses_only_the_opposite_operand(operation):
+    left = TensorMetadata((2, 2), require_grad=True)
+    right = TensorMetadata((2, 2), require_grad=False)
+    result = operation.infer_result((left, right))
+
+    assert operation.saved_for_backward((left, right), result.outputs) == ("right",)
+
+
+def test_hand_built_result_cannot_bypass_the_saved_selection():
+    left = TensorMetadata((2, 2), require_grad=True)
+    right = TensorMetadata((2, 2), require_grad=False)
+    operation = MatMul()
+    result = operation.infer_result((left, right))
+    tampered = replace(result, saved_for_backward=("left", "right"))
+
+    with pytest.raises(OperationError, match="saved_for_backward selection"):
+        operation.validate_result((left, right), tampered)

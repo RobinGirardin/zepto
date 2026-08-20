@@ -46,7 +46,9 @@ class MatMul(Operation):
             gradient_outputs=("left", "right"),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
         """Infer the batched matrix-product metadata."""
         left, right = inputs
         if len(left.shape) < 2 or len(right.shape) < 2:
@@ -71,18 +73,31 @@ class MatMul(Operation):
                 f"incompatible MatMul contracting dimensions: {left.shape} @ {right.shape}"
             )
         require_grad = any(value.require_grad for value in inputs)
-        return OperationResult(
-            outputs=(
-                TensorMetadata(
-                    shape=(*left_batch, m, n),
-                    semantic_type=left.semantic_type,
-                    require_grad=require_grad,
-                ),
-            ),
-            saved_for_backward=(
-                ("left", "right") if require_grad else ()
+        return (
+            TensorMetadata(
+                shape=(*left_batch, m, n),
+                semantic_type=left.semantic_type,
+                require_grad=require_grad,
             ),
         )
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save only the operands required by the requested gradients.
+
+        The gradient of ``left`` contracts the output gradient with
+        ``right``, and the gradient of ``right`` contracts it with ``left``.
+        """
+        left, right = inputs
+        names: list[str] = []
+        if right.require_grad:
+            names.append("left")
+        if left.require_grad:
+            names.append("right")
+        return tuple(names)
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return ``2 * batch * M * K * N`` for concrete dimensions."""

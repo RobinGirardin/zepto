@@ -40,28 +40,32 @@ class Multiply(Operation):
             gradient_outputs=("left", "right"),
         )
 
-    def infer_result(
+    def infer_outputs(
         self,
         inputs: tuple[TensorMetadata, ...],
-    ) -> OperationResult:
-        """Infer product metadata and values required by product-rule VJPs."""
+    ) -> tuple[TensorMetadata, ...]:
+        """Infer the broadcast product metadata."""
         left, right = inputs
         output = broadcast_metadata(
             (left, right),
             family=self.family,
             semantic_type="tensor",
         )
+        return (output,)
 
-        saved_for_backward: list[str] = []
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save the opposite operand for each requested product-rule VJP."""
+        left, right = inputs
+        names: list[str] = []
         if right.require_grad:
-            saved_for_backward.append("left")
+            names.append("left")
         if left.require_grad:
-            saved_for_backward.append("right")
-
-        return OperationResult(
-            outputs=(output,),
-            saved_for_backward=tuple(saved_for_backward),
-        )
+            names.append("right")
+        return tuple(names)
 
     def forward_flops(
         self,

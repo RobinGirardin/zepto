@@ -42,7 +42,9 @@ class Add(Operation):
             gradient_outputs=("left", "right"),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
         """Infer the broadcast-compatible output metadata."""
         left, right = inputs
         output = broadcast_metadata(
@@ -50,7 +52,15 @@ class Add(Operation):
             family=self.family,
             semantic_type="tensor",
         )
-        return OperationResult((output,))
+        return (output,)
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save nothing because addition gradients pass through unchanged."""
+        return ()
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return one arithmetic FLOP per output element."""

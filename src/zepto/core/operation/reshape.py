@@ -53,8 +53,10 @@ class Reshape(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
-        """Infer the requested shape and preserve input storage."""
+    def infer_outputs(
+        self, inputs: tuple[TensorMetadata, ...]
+    ) -> tuple[TensorMetadata, ...]:
+        """Infer the requested shape from the input metadata."""
         if not self.shape or any(dim <= 0 for dim in self.shape):
             raise ValueError("reshape dimensions must be positive and non-empty")
         input_numel = 1
@@ -67,14 +69,25 @@ class Reshape(Operation):
             raise ValueError(
                 f"reshape element count mismatch: {inputs[0].shape} -> {self.shape}"
             )
-        return OperationResult(
-            (TensorMetadata(
+        return (
+            TensorMetadata(
                 self.shape,
                 inputs[0].semantic_type,
                 require_grad=inputs[0].require_grad,
-            ),),
-            (AliasSpec("input"),),
+            ),
         )
+
+    def output_aliases(self) -> tuple[AliasSpec | None, ...]:
+        """Declare the output as a view of the input storage."""
+        return (AliasSpec("input"),)
+
+    def saved_for_backward(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Save nothing because the backward reshape needs only shapes."""
+        return ()
 
     def forward_flops(self, context: EstimationContext, result: OperationResult) -> int:
         """Return zero because reshape performs no arithmetic."""

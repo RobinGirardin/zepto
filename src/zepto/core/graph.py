@@ -298,7 +298,7 @@ class StructuralGraphBuilder:
         )
 
         if result is None:
-            result = operation.infer(input_metadata)
+            result = operation.infer_result(input_metadata)
         operation.validate_result(input_metadata, result)
 
         operation_id = OperationId(self._graph_id, self._next_operation)

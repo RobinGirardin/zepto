@@ -39,6 +39,13 @@ _Avoid_: Opaque saved state
 A tensor returned through an operation or module's user-facing result.
 _Avoid_: Every operation tensor
 
+**Saved backward value**:
+An ordinary graph tensor that one operation invocation retains because its
+backward computation depends on it. The operation's backward declaration
+lists the ports it is allowed to save; each invocation selects only the
+subset required by the requested gradients.
+_Avoid_: Context blob, implicit saved lifetime
+
 **Provenance**:
 Structured origin metadata linking an operation or tensor to its module path, component, source operation, and graph-local identity for attribution and diagnostics.
 _Avoid_: Display name, string ID

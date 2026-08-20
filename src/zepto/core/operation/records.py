@@ -43,7 +43,12 @@ class AliasSpec:
 
 @dataclass(frozen=True, slots=True)
 class BackwardSpec:
-    """Describe backend-neutral backward and saved-state requirements."""
+    """Describe backend-neutral backward and saved-state requirements.
+
+    ``saved_for_backward`` declares the port names an operation is *allowed*
+    to save. The invocation-specific subset is selected by the operation's
+    ``saved_for_backward(inputs, outputs)`` method, never declared here.
+    """
 
     supported: bool = False
     saved_for_backward: tuple[str, ...] = ()
@@ -55,9 +60,13 @@ class BackwardSpec:
 class OperationResult:
     """Resolved metadata and logical storage semantics for one invocation.
 
-    ``saved_for_backward`` contains logical input or state port names. These
-    names are resolved to graph-specific ``PortRef`` values when the enclosing
-    structural operation is created.
+    ``saved_for_backward`` records the invocation-specific selection made by
+    the operation's ``saved_for_backward(inputs, outputs)`` method. It must
+    be a subset of the names declared by ``BackwardSpec.saved_for_backward``;
+    ``Operation.infer_result()`` composes the selection into the result and
+    ``Operation.validate_result()`` rejects results that disagree with it.
+    The names are resolved to graph-specific ``PortRef`` values when the
+    enclosing structural operation is created.
     """
 
     outputs: tuple[TensorMetadata, ...]
