@@ -65,6 +65,30 @@ class SemanticOperation(ABC):
         """
         return ()
 
+    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
+        """Return internal tensor ports not exposed as public functional outputs."""
+        return ()
+
+    def infer_auxiliary_outputs(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[TensorMetadata, ...]:
+        """Return auxiliary metadata in ``auxiliary_ports`` order."""
+        return ()
+
+    def active_auxiliary_ports(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        """Return the subset of auxiliary ports live for this invocation."""
+        return ()
+
+    def auxiliary_aliases(self) -> tuple[AliasSpec | None, ...]:
+        """Return per-auxiliary alias declarations (default: fresh storage)."""
+        return ()
+
     @property
     @abstractmethod
     def backward(self) -> BackwardSpec:
@@ -133,10 +157,14 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
         outputs = self.infer_outputs(inputs)
         if not isinstance(outputs, tuple):
             raise OperationError("infer_outputs must return a tuple")
+        auxiliary_outputs = self.infer_auxiliary_outputs(inputs, outputs)
         result = OperationResult(
             outputs=outputs,
+            auxiliary_outputs=auxiliary_outputs,
             aliases=self.output_aliases(),
+            auxiliary_aliases=self.auxiliary_aliases(),
             saved_for_backward=self.saved_for_backward(inputs, outputs),
+            active_auxiliary_ports=self.active_auxiliary_ports(inputs, outputs),
         )
         self.validate_result(inputs, result)
         return result

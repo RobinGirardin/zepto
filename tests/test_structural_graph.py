@@ -11,6 +11,7 @@ from zepto.core import (
     Materialization,
     MetadataMismatchError,
     Module,
+    Multiply,
     Operation,
     PortSpec,
     Provenance,
@@ -20,6 +21,7 @@ from zepto.core import (
     build_graph,
     identity,
 )
+from zepto.core.operation.helpers import GRAD_RIGHT, GRAD_RIGHT_UNREDUCED
 
 
 def test_builder_preserves_order_and_shared_parameters() -> None:
@@ -294,3 +296,47 @@ def test_add_parameter_trainable_round_trips() -> None:
     parameter = graph.parameter(parameter_id)
     assert parameter.trainable is False
     assert parameter.metadata.requires_grad is True
+
+
+def test_multiply_allocates_active_aux_tensors_only() -> None:
+    builder = StructuralGraphBuilder()
+    x = builder.add_input(TensorMetadata((32, 128, 512), requires_grad=True))
+    bias = builder.add_input(TensorMetadata((512,), requires_grad=True))
+    provenance = Provenance((), "Fixture", "multiply", 0)
+    output = builder.add_operation(
+        operation_family="multiply",
+        input_ports=(PortSpec("left"), PortSpec("right")),
+        output_ports=(PortSpec("output"),),
+        input_tensors=(x, bias),
+        output_metadata=(TensorMetadata((32, 128, 512)),),
+        provenance=provenance,
+        operation=Multiply(),
+    )[0]
+    graph = builder.build()
+    operation = graph.operation(graph.operations[0])
+    assert operation.auxiliary_tensors is not None
+    assert set(operation.auxiliary_tensors) == {
+        GRAD_RIGHT,
+        GRAD_RIGHT_UNREDUCED,
+    }
+    assert output in graph.tensors
+    for aux_id in operation.auxiliary_tensors.values():
+        assert aux_id in graph.tensors
+
+
+def test_inactive_aux_ports_have_no_tensor_id() -> None:
+    builder = StructuralGraphBuilder()
+    left = builder.add_input(TensorMetadata((2, 3), requires_grad=True))
+    right = builder.add_input(TensorMetadata((2, 3), requires_grad=True))
+    builder.add_operation(
+        operation_family="multiply",
+        input_ports=(PortSpec("left"), PortSpec("right")),
+        output_ports=(PortSpec("output"),),
+        input_tensors=(left, right),
+        output_metadata=(TensorMetadata((2, 3)),),
+        provenance=Provenance((), "Fixture", "multiply", 0),
+        operation=Multiply(),
+    )
+    graph = builder.build()
+    operation = graph.operation(graph.operations[0])
+    assert GRAD_RIGHT_UNREDUCED not in (operation.auxiliary_tensors or {})

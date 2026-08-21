@@ -113,10 +113,18 @@ def port_tensor_id(
     role: str,
 ) -> TensorId:
     """Resolve a port name to its bound structural tensor id."""
-    ports = structural.input_ports if role == "input" else structural.output_ports
-    tensor_ids = (
-        structural.input_tensors if role == "input" else structural.output_tensors
-    )
+    if role == "input":
+        ports = structural.input_ports
+        tensor_ids = structural.input_tensors
+    elif role == "output":
+        ports = structural.output_ports
+        tensor_ids = structural.output_tensors
+    elif role == "auxiliary":
+        if structural.auxiliary_tensors is None:
+            raise KeyError(f"Unknown auxiliary port {port_name!r}")
+        return structural.auxiliary_tensors[port_name]
+    else:
+        raise KeyError(f"Unknown port role {role!r}")
     for port, tensor_id in zip(ports, tensor_ids, strict=True):
         if port.name == port_name:
             return tensor_id
@@ -136,6 +144,9 @@ def remap_events(
         lowered = tensor_map[structural.output_tensors[index]]
         port_targets[port.name] = lowered
         port_targets[f"output:{index}"] = lowered
+    if structural.auxiliary_tensors is not None:
+        for port_name, tensor_id in structural.auxiliary_tensors.items():
+            port_targets[port_name] = tensor_map[tensor_id]
 
     def remap(value: str | None) -> str | None:
         if value is None:

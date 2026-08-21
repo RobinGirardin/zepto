@@ -7,6 +7,32 @@ This distinction is important because both require diffent FLOP computation form
 * *Elementwise multiplication*: matrices have the same shape. As such, the number of elements in one of the matrices corresponds to the number of operation is requires.
 * *matrix multiplication*: requires to use the *2mnk* rule.
 
+## Broadcasting
+
+All elementwise binaries and `MatMul` support NumPy-style broadcasting in the forward pass.
+Backward behavior follows these rules:
+
+**Gradient-shape invariant.** For every port in `gradient_outputs`, the produced gradient
+has the same shape as the forward tensor bound to that port.
+
+**Sum, not average.** Broadcast backward reduces by **sum** (chain rule over reused positions).
+
+**Reduction FLOPs.** When an operand was broadcast, count
+`numel(output) - numel(operand)` additions to sum the unreduced gradient back to the
+operand shape. `MatMul` applies the same formula over batch prefix axes only:
+`numel(unreduced_batch_grad) - numel(operand)`.
+
+**Default unfused memory.** Backward gradient storage is modeled as structural auxiliary
+ports (`grad_left`, `grad_right`, and optional `*_unreduced` temporaries). Unreduced VJP
+temps follow `ALLOCATE → … → RELEASE`; reduced gradients follow `ALLOCATE → PERSIST`.
+`Add` / `Subtract` pass the upstream gradient through directly and never materialize an
+unreduced temp.
+
+**MatMul batch broadcast.** Leading dimensions (`shape[:-2]`) broadcast independently of
+the contracting matrix block. A rank-2 weight `(K, N)` pairs with activations
+`(B, S, K)` as batch `(B,)` broadcast against `()`. Folded-GEMM lowering may omit the
+unreduced batch temp; the structural default charges the unfused cost.
+
 ## Multiply
 
 For $Y = A * B$
@@ -18,6 +44,9 @@ $$
 $$
 \frac{\partial L}{\partial B} = \frac{\partial L}{\partial Y} * A
 $$
+
+> When $B$ was broadcast, materialize an output-shaped VJP temporary, then sum-reduce to
+> $B$'s shape. When both operands share the output shape, persist reduced gradients only.
 
 ## Divide
 
@@ -44,6 +73,11 @@ $$
 $$
 \frac{\partial L}{\partial B} = A^T \cdot \frac{\partial L}{\partial Y}
 $$
+
+> Leading batch dimensions broadcast NumPy-style; they no longer must match between
+> operands. When a weight's batch prefix was broadcast (e.g. activations `(32, 128, 512)`
+> times weight `(512, 64)`), the unfused backward forms a `(32, 512, 64)` temporary and
+> sums to `(512, 64)`.
 
 > Note: order matters here — matrix multiplication doesn't commute. $A$ is $(m \times n)$, $B$ is $(n \times p)$, so $\partial L/\partial Y$ is $(m \times p)$. Only $\partial L/\partial Y \cdot B^T$ (shape $m \times n$) and $A^T \cdot \partial L/\partial Y$ (shape $n \times p$) are valid — the reverse orderings don't even have compatible shapes in general.
 
@@ -147,6 +181,8 @@ $$
 
 In practice, however the binary masks are not recomputed, but stored. This is much more efficient, are it allows the storageof a single binary mask (the other one is bitwise NOT), intead of 2 full matrices.
 
+> Broadcast operands follow the same unreduced-temp + sum-reduction pattern as Multiply.
+
 > Note: the gradient routes entirely to whichever input was larger at that position; the other input gets zero. Ties ($A = B$) are a convention choice (commonly split or routed to one side).
 
 ## Min
@@ -162,5 +198,7 @@ $$
 $$
 
 In practice, however the binary masks are not recomputed, but stored. This is much more efficient, are it allows the storageof a single binary mask (the other one is bitwise NOT), intead of 2 full matrices.
+
+> Broadcast operands follow the same unreduced-temp + sum-reduction pattern as Multiply.
 
 > Note: mirror of Max — gradient routes to whichever input was smaller.

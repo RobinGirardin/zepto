@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..metadata import TensorMetadata
-from ..ports import PortSpec
+from ..ports import PortSpec, ValueKind
 from .records import (
     BackwardSpec,
     Materialization,
@@ -32,9 +32,10 @@ class DeclarationValidator:
     def validate_ports(self, operation: Operation) -> None:
         inputs = operation.input_ports
         outputs = operation.output_ports
+        auxiliary = operation.auxiliary_ports()
         if not isinstance(inputs, tuple) or not isinstance(outputs, tuple):
             raise OperationError("Operation ports must be tuples")
-        ports = (*inputs, *outputs)
+        ports = (*inputs, *outputs, *auxiliary)
         if not all(isinstance(port, PortSpec) and port.name for port in ports):
             raise OperationError("Operations require named PortSpec declarations")
         names = [port.name for port in ports]
@@ -46,7 +47,12 @@ class DeclarationValidator:
         if not isinstance(backward, BackwardSpec):
             raise OperationError("backward must return BackwardSpec")
         known = {
-            port.name for port in (*operation.input_ports, *operation.output_ports)
+            port.name
+            for port in (
+                *operation.input_ports,
+                *operation.output_ports,
+                *operation.auxiliary_ports(),
+            )
         }
         for reference in (
             *backward.saved_for_backward,
@@ -88,6 +94,7 @@ class InvocationValidator:
         self.validate_metadata(operation, result)
         self.validate_aliases(operation, inputs, result)
         self.validate_saved_state(operation, inputs, result)
+        self.validate_auxiliary_state(operation, inputs, result)
 
     def validate_metadata(self, operation: Operation, result: OperationResult) -> None:
         if not isinstance(result, OperationResult):
@@ -167,6 +174,41 @@ class InvocationValidator:
             {port.name for port in (*operation.input_ports, *operation.output_ports)}
         ):
             raise OperationError("Result saves an unknown operation port")
+
+    def validate_auxiliary_state(
+        self,
+        operation: Operation,
+        inputs: tuple[TensorMetadata, ...],
+        result: OperationResult,
+    ) -> None:
+        aux_ports = operation.auxiliary_ports()
+        if len(result.auxiliary_outputs) != len(aux_ports):
+            raise OperationError(
+                f"{operation.family!r} inferred {len(result.auxiliary_outputs)} "
+                f"auxiliary outputs, declares {len(aux_ports)}"
+            )
+        allowed = {port.name for port in aux_ports}
+        if not set(result.active_auxiliary_ports).issubset(allowed):
+            raise OperationError("Result activates an undeclared auxiliary port")
+        gradient_outputs = set(operation.backward.gradient_outputs)
+        input_by_name = {
+            port.name: metadata
+            for port, metadata in zip(operation.input_ports, inputs, strict=True)
+        }
+        for port, metadata in zip(aux_ports, result.auxiliary_outputs, strict=True):
+            if port.value_kind is not ValueKind.GRADIENT:
+                continue
+            if port.name.endswith("_unreduced"):
+                continue
+            operand_name = port.name.removeprefix("grad_")
+            if operand_name not in gradient_outputs:
+                continue
+            operand = input_by_name.get(operand_name)
+            if operand is not None and metadata.shape != operand.shape:
+                raise OperationError(
+                    f"Gradient auxiliary port {port.name!r} shape "
+                    f"{metadata.shape} must match operand shape {operand.shape}"
+                )
 
 
 def _numel(metadata: TensorMetadata) -> int:

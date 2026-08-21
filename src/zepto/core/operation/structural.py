@@ -1,6 +1,7 @@
 """Graph-bound occurrences of reusable operation declarations."""
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from ..ids import OperationId, ParameterId, TensorId
 from ..ports import PortRef, PortSpec
@@ -24,6 +25,8 @@ class StructuralOperation:
     declaration: Operation | None = None
     result: OperationResult | None = None
     saved_for_backward: tuple[PortRef, ...] = ()
+    auxiliary_ports: tuple[PortSpec, ...] = ()
+    auxiliary_tensors: Mapping[str, TensorId] | None = None
 
     def __post_init__(self) -> None:
         """Validate the required graph-node operation family name."""

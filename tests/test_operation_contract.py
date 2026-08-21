@@ -34,6 +34,12 @@ from zepto.core import (
     matmul,
     maximum,
 )
+from zepto.core.operation.helpers import (
+    GRAD_LEFT,
+    GRAD_RIGHT,
+    GRAD_RIGHT_UNREDUCED,
+    broadcast_reduction_flops,
+)
 
 
 class _IdentityOperation(Operation):
@@ -109,6 +115,7 @@ def test_matmul_uses_two_flops_per_multiply_add():
                 port_metadata=(
                     ("left", TensorMetadata((2, 3))),
                     ("right", TensorMetadata((3, 5))),
+                    ("output", result.outputs[0]),
                 )
             ),
         )
@@ -481,3 +488,223 @@ def test_gradient_accumulation_without_gradient_event_kind() -> None:
         ResourceEventKind.PERSIST,
         ResourceEventKind.RELEASE,
     }
+
+
+class TestBroadcastReductionFlops:
+    def test_no_reduction_when_shapes_match(self) -> None:
+        operand = TensorMetadata((32, 128, 512))
+        output = TensorMetadata((32, 128, 512))
+        assert broadcast_reduction_flops(operand, output) == 0
+
+    def test_reduction_for_broadcast_bias(self) -> None:
+        operand = TensorMetadata((512,))
+        output = TensorMetadata((32, 128, 512))
+        assert broadcast_reduction_flops(operand, output) == 32 * 128 * 512 - 512
+
+
+class TestBroadcastBackwardFlops:
+    def test_add_reduction_only_for_broadcast_operand(self) -> None:
+        x = TensorMetadata((32, 128, 512), requires_grad=True)
+        bias = TensorMetadata((512,), requires_grad=True)
+        operation = Add()
+        result = operation.infer_result((x, bias))
+        context = EstimationContext(
+            port_metadata=(
+                ("left", x),
+                ("right", bias),
+                ("output", result.outputs[0]),
+            )
+        )
+        assert operation.backward_flops(context) == 32 * 128 * 512 - 512
+
+    def test_subtract_includes_negation(self) -> None:
+        x = TensorMetadata((32, 128, 512), requires_grad=True)
+        bias = TensorMetadata((512,), requires_grad=True)
+        operation = Subtract()
+        result = operation.infer_result((x, bias))
+        context = EstimationContext(
+            port_metadata=(
+                ("left", x),
+                ("right", bias),
+                ("output", result.outputs[0]),
+            )
+        )
+        assert operation.backward_flops(context) == (32 * 128 * 512 - 512) + 512
+
+    def test_multiply_vjp_and_reduction(self) -> None:
+        x = TensorMetadata((32, 128, 512), requires_grad=True)
+        bias = TensorMetadata((512,), requires_grad=True)
+        operation = Multiply()
+        result = operation.infer_result((x, bias))
+        context = EstimationContext(
+            port_metadata=(
+                ("left", x),
+                ("right", bias),
+                ("output", result.outputs[0]),
+            )
+        )
+        output_size = 32 * 128 * 512
+        reduction = output_size - 512
+        assert operation.backward_flops(context) == output_size + output_size + reduction
+
+
+class TestMatMulBatchBroadcast:
+    def test_linear_layer_shape(self) -> None:
+        left = TensorMetadata((32, 128, 512))
+        right = TensorMetadata((512, 64))
+        result = MatMul().infer_result((left, right))
+        assert result.outputs[0].shape == (32, 128, 64)
+
+    def test_singleton_batch_dims(self) -> None:
+        left = TensorMetadata((8, 1, 4, 4))
+        right = TensorMetadata((1, 5, 4, 4))
+        result = MatMul().infer_result((left, right))
+        assert result.outputs[0].shape == (8, 5, 4, 4)
+
+    def test_incompatible_batch_rejected(self) -> None:
+        with pytest.raises(ValueError, match="matmul shapes"):
+            MatMul().infer_result(
+                (TensorMetadata((2, 4, 4)), TensorMetadata((3, 4, 4)))
+            )
+
+    def test_incompatible_contraction_rejected(self) -> None:
+        with pytest.raises(ValueError, match="contracting"):
+            MatMul().infer_result(
+                (TensorMetadata((4, 3)), TensorMetadata((5, 4)))
+            )
+
+    def test_backward_flops_includes_batch_reduction(self) -> None:
+        left = TensorMetadata((32, 128, 512), requires_grad=True)
+        right = TensorMetadata((512, 64), requires_grad=True)
+        operation = MatMul()
+        result = operation.infer_result((left, right))
+        context = EstimationContext(
+            port_metadata=(
+                ("left", left),
+                ("right", right),
+                ("output", result.outputs[0]),
+            )
+        )
+        batch = 32
+        gemm = 2 * batch * 128 * 64 * 512
+        reduction = 32 * 512 * 64 - 512 * 64
+        assert operation.backward_flops(context) == gemm + reduction + gemm + 0
+
+
+class TestAuxiliaryPorts:
+    def test_multiply_declares_four_aux_ports(self) -> None:
+        operation = Multiply()
+        assert len(operation.auxiliary_ports()) == 4
+
+    def test_active_aux_ports_omit_unreduced_without_broadcast(self) -> None:
+        left = TensorMetadata((2, 3), requires_grad=True)
+        right = TensorMetadata((2, 3), requires_grad=True)
+        result = Multiply().infer_result((left, right))
+        assert GRAD_LEFT in result.active_auxiliary_ports
+        assert GRAD_RIGHT in result.active_auxiliary_ports
+        assert GRAD_RIGHT_UNREDUCED not in result.active_auxiliary_ports
+
+    def test_active_aux_includes_unreduced_for_multiply_bias(self) -> None:
+        x = TensorMetadata((32, 128, 512), requires_grad=True)
+        bias = TensorMetadata((512,), requires_grad=True)
+        result = Multiply().infer_result((x, bias))
+        assert GRAD_RIGHT in result.active_auxiliary_ports
+        assert GRAD_RIGHT_UNREDUCED in result.active_auxiliary_ports
+        assert GRAD_LEFT not in result.active_auxiliary_ports
+
+    def test_infer_result_validates_auxiliary_arity(self) -> None:
+        class BadAux(Operation):
+            @property
+            def family(self):
+                return "bad_aux"
+
+            @property
+            def input_ports(self):
+                return (PortSpec("left"), PortSpec("right"))
+
+            @property
+            def output_ports(self):
+                return (PortSpec("output"),)
+
+            def auxiliary_ports(self):
+                return (PortSpec("grad_left"),)
+
+            def infer_auxiliary_outputs(self, inputs, outputs):
+                return ()
+
+            def infer_outputs(self, inputs):
+                return (TensorMetadata((2,)),)
+
+            def saved_for_backward(self, inputs, outputs):
+                return ()
+
+            @property
+            def backward(self):
+                return BackwardSpec()
+
+            def forward_flops(self, context):
+                return 0
+
+            def resource_events(self, context, result):
+                return ()
+
+        with pytest.raises(OperationError, match="auxiliary outputs"):
+            BadAux().infer_result((TensorMetadata((2,)), TensorMetadata((2,))))
+
+    def test_identity_has_no_aux_ports(self) -> None:
+        assert Identity().auxiliary_ports() == ()
+
+
+def test_gradient_aux_metadata_matches_operand_shape() -> None:
+    x = TensorMetadata((32, 128, 512), requires_grad=True)
+    bias = TensorMetadata((512,), requires_grad=True)
+    result = Multiply().infer_result((x, bias))
+    grad_right_index = next(
+        i
+        for i, port in enumerate(Multiply().auxiliary_ports())
+        if port.name == GRAD_RIGHT
+    )
+    assert result.auxiliary_outputs[grad_right_index].shape == (512,)
+
+
+def test_active_aux_must_be_declared_port() -> None:
+    class BadActive(Operation):
+        @property
+        def family(self):
+            return "bad_active"
+
+        @property
+        def input_ports(self):
+            return (PortSpec("input"),)
+
+        @property
+        def output_ports(self):
+            return (PortSpec("output"),)
+
+        def auxiliary_ports(self):
+            return (PortSpec("grad_input"),)
+
+        def infer_auxiliary_outputs(self, inputs, outputs):
+            return (TensorMetadata((2,)),)
+
+        def active_auxiliary_ports(self, inputs, outputs):
+            return ("missing",)
+
+        def infer_outputs(self, inputs):
+            return inputs
+
+        def saved_for_backward(self, inputs, outputs):
+            return ()
+
+        @property
+        def backward(self):
+            return BackwardSpec()
+
+        def forward_flops(self, context):
+            return 0
+
+        def resource_events(self, context, result):
+            return ()
+
+    with pytest.raises(OperationError, match="undeclared auxiliary port"):
+        BadActive().infer_result((TensorMetadata((2,)),))

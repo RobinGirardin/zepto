@@ -275,6 +275,42 @@ class StructuralGraphBuilder:
             for offset in range(len(output_metadata))
         )
         self._next_tensor += len(output_tensors)
+        auxiliary_port_decls = operation.auxiliary_ports()
+        aux_by_name = {port.name: port for port in auxiliary_port_decls}
+        auxiliary_tensors: dict[str, TensorId] = {}
+        for port_name in result.active_auxiliary_ports:
+            port = aux_by_name[port_name]
+            index = next(
+                i for i, p in enumerate(auxiliary_port_decls) if p.name == port_name
+            )
+            aux_metadata = result.auxiliary_outputs[index]
+            aux_alias = (
+                result.auxiliary_aliases[index]
+                if result.auxiliary_aliases
+                else None
+            )
+            aux_id = TensorId(self._graph_id, self._next_tensor)
+            self._next_tensor += 1
+            storage_id = None
+            if aux_alias is not None and aux_alias.materialization is Materialization.VIEW:
+                source_index = next(
+                    position
+                    for position, input_port in enumerate(input_ports)
+                    if input_port.name == aux_alias.source_port
+                )
+                storage_id = self._tensors[input_tensors[source_index]].storage_id
+            if storage_id is None:
+                storage_id = StorageId(self._graph_id, self._next_storage)
+                self._next_storage += 1
+            auxiliary_tensors[port_name] = aux_id
+            self._tensors[aux_id] = Tensor(
+                aux_id,
+                aux_metadata,
+                provenance,
+                PortRef(operation_id, port.name, "auxiliary"),
+                (),
+                storage_id,
+            )
         self._operations[operation_id] = StructuralOperation(
             operation_id,
             operation_family,
@@ -287,6 +323,8 @@ class StructuralGraphBuilder:
             operation,
             result,
             saved_for_backward,
+            auxiliary_port_decls,
+            auxiliary_tensors,
         )
         self._operation_order.append(operation_id)
 

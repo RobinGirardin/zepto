@@ -53,6 +53,26 @@ class GraphValidator:
                 )
             for saved_ref in operation.saved_for_backward:
                 saved_ref.resolve(operation)
+            for port_name, tensor_id in (operation.auxiliary_tensors or {}).items():
+                if tensor_id not in graph.tensors:
+                    raise ValueError(
+                        f"Unknown auxiliary tensor {tensor_id} for {operation_id}"
+                    )
+                port_ref = graph.tensor(tensor_id).producer
+                if (
+                    port_ref is None
+                    or port_ref.operation_id != operation_id
+                    or port_ref.role != "auxiliary"
+                ):
+                    raise ValueError(
+                        f"Auxiliary tensor {tensor_id} has invalid provenance "
+                        f"for operation {operation_id}"
+                    )
+                if port_ref.port_name != port_name:
+                    raise ValueError(
+                        f"Auxiliary tensor {tensor_id} port name mismatch "
+                        f"for operation {operation_id}"
+                    )
             if len(operation.input_ports) != len(operation.input_tensors):
                 raise PortArityError(f"Input arity mismatch for {operation_id}")
             if len(operation.output_ports) != len(operation.output_tensors):
@@ -109,6 +129,31 @@ class GraphValidator:
                         f"Non-view output {tensor_id} illegally shares input "
                         f"storage for operation {operation_id}"
                     )
+            if operation.auxiliary_tensors and operation.result is not None:
+                aux_aliases = operation.result.auxiliary_aliases or (
+                    None,
+                ) * len(operation.result.auxiliary_outputs)
+                aux_ports = operation.auxiliary_ports
+                for port_name, tensor_id in operation.auxiliary_tensors.items():
+                    index = next(
+                        i for i, port in enumerate(aux_ports) if port.name == port_name
+                    )
+                    alias = aux_aliases[index] if aux_aliases else None
+                    if alias is not None and alias.materialization is Materialization.VIEW:
+                        aux_storage = graph.tensor(tensor_id).storage_id
+                        source_index = next(
+                            position
+                            for position, port in enumerate(operation.input_ports)
+                            if port.name == alias.source_port
+                        )
+                        source_storage = graph.tensor(
+                            operation.input_tensors[source_index]
+                        ).storage_id
+                        if aux_storage != source_storage:
+                            raise ValueError(
+                                f"View auxiliary {tensor_id} must share source "
+                                f"storage for operation {operation_id}"
+                            )
 
     def validate_graph_outputs(self, graph: StructuralGraph) -> None:
         for tensor_id in graph.outputs:

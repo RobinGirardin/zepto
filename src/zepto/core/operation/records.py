@@ -48,6 +48,11 @@ class BackwardSpec:
     ``saved_for_backward`` declares the port names an operation is *allowed*
     to save. The invocation-specific subset is selected by the operation's
     ``saved_for_backward(inputs, outputs)`` method, never declared here.
+
+    For every port name in ``gradient_outputs``, the produced gradient has the
+    same shape as the forward tensor bound to that port. Broadcast operands
+    imply sum-reduction FLOPs (``backward_flops``) and gradient auxiliary ports
+    (``auxiliary_ports``).
     """
 
     supported: bool = False
@@ -70,13 +75,24 @@ class OperationResult:
     """
 
     outputs: tuple[TensorMetadata, ...]
+    auxiliary_outputs: tuple[TensorMetadata, ...] = ()
     aliases: tuple[AliasSpec | None, ...] = ()
+    auxiliary_aliases: tuple[AliasSpec | None, ...] = ()
     saved_for_backward: tuple[str, ...] = ()
+    active_auxiliary_ports: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Reject alias declarations whose arity differs from the outputs."""
         if self.aliases and len(self.aliases) != len(self.outputs):
             raise OperationError("Alias declarations must match output arity")
+        if self.auxiliary_aliases and len(self.auxiliary_aliases) != len(
+            self.auxiliary_outputs
+        ):
+            raise OperationError(
+                "Auxiliary alias declarations must match auxiliary arity"
+            )
+        if len(self.active_auxiliary_ports) != len(set(self.active_auxiliary_ports)):
+            raise OperationError("active_auxiliary_ports must be unique")
 
 
 @dataclass(frozen=True, slots=True)

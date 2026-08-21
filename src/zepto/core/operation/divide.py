@@ -1,9 +1,22 @@
 """Elementwise division operation declaration."""
 
 from ..metadata import TensorMetadata
-from ..ports import PortSpec
+from ..ports import PortSpec, ValueKind
 from .base import Operation
-from .helpers import allocate, broadcast_metadata, numel
+from .helpers import (
+    GRAD_LEFT,
+    GRAD_LEFT_UNREDUCED,
+    GRAD_RIGHT,
+    GRAD_RIGHT_UNREDUCED,
+    active_binary_auxiliary_ports,
+    allocate,
+    broadcast_metadata,
+    broadcast_reduction_flops,
+    emit_binary_backward_resource_events,
+    numel,
+    reduced_gradient_metadata,
+    unreduced_gradient_metadata,
+)
 from .records import (
     BackwardSpec,
     EstimationContext,
@@ -29,6 +42,39 @@ class Divide(Operation):
     def output_ports(self) -> tuple[PortSpec, ...]:
         """Return the quotient output port."""
         return (PortSpec("output"),)
+
+    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
+        return (
+            PortSpec(GRAD_LEFT, ValueKind.GRADIENT),
+            PortSpec(GRAD_RIGHT, ValueKind.GRADIENT),
+            PortSpec(GRAD_LEFT_UNREDUCED, ValueKind.GRADIENT),
+            PortSpec(GRAD_RIGHT_UNREDUCED, ValueKind.GRADIENT),
+        )
+
+    def infer_auxiliary_outputs(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[TensorMetadata, ...]:
+        left, right = inputs
+        (output,) = outputs
+        return (
+            reduced_gradient_metadata(left),
+            reduced_gradient_metadata(right),
+            unreduced_gradient_metadata(output),
+            unreduced_gradient_metadata(output),
+        )
+
+    def active_auxiliary_ports(
+        self,
+        inputs: tuple[TensorMetadata, ...],
+        outputs: tuple[TensorMetadata, ...],
+    ) -> tuple[str, ...]:
+        left, right = inputs
+        (output,) = outputs
+        return active_binary_auxiliary_ports(
+            left, right, output, materializes_vjp=True
+        )
 
     @property
     def backward(self) -> BackwardSpec:
@@ -58,12 +104,7 @@ class Divide(Operation):
         inputs: tuple[TensorMetadata, ...],
         outputs: tuple[TensorMetadata, ...],
     ) -> tuple[str, ...]:
-        """Save the operands each requested quotient-rule VJP depends on.
-
-        The left gradient is ``grad / right`` and only needs the divisor.
-        The right gradient is ``-grad * left / right**2`` and needs both
-        operands.
-        """
+        """Save the operands each requested quotient-rule VJP depends on."""
         left, right = inputs
         names: list[str] = []
         if right.requires_grad:
@@ -80,8 +121,7 @@ class Divide(Operation):
         return numel(output)
 
     def backward_flops(self, context: EstimationContext) -> int:
-        """Return the elementwise cost of each requested operand gradient.
-        """
+        """Return quotient-rule VJP and broadcast reduction FLOPs."""
         left = context.metadata_for("left")
         right = context.metadata_for("right")
         output = context.metadata_for("output")
@@ -92,8 +132,12 @@ class Divide(Operation):
         flops = 0
         if left.requires_grad:
             flops += 2 * numel(output)
+            if left.shape != output.shape:
+                flops += broadcast_reduction_flops(left, output)
         if right.requires_grad:
             flops += 4 * numel(output)
+            if right.shape != output.shape:
+                flops += broadcast_reduction_flops(right, output)
         return flops
 
     def resource_events(
@@ -101,8 +145,14 @@ class Divide(Operation):
         context: EstimationContext,
         result: OperationResult,
     ) -> tuple[ResourceEvent, ...]:
-        """Report allocation events for the quotient output."""
-        return allocate(result)
+        """Report forward output allocation and backward gradient aux events."""
+        events = list(allocate(result))
+        if context.phase != "backward":
+            return tuple(events)
+        events.extend(
+            emit_binary_backward_resource_events(result, materializes_vjp=True)
+        )
+        return tuple(events)
 
 
 __all__ = ["Divide"]

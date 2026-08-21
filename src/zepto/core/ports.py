@@ -40,7 +40,7 @@ class PortRef:
 
     operation_id: OperationId
     port_name: str
-    role: Literal["input", "output"]
+    role: Literal["input", "output", "auxiliary"]
 
     def resolve(self, operation: "StructuralOperation") -> PortSpec:
         """Resolve this reference against its owning operation.
@@ -57,7 +57,12 @@ class PortRef:
         """
         if operation.id != self.operation_id:
             raise ValueError("PortRef belongs to a different operation")
-        ports = operation.input_ports if self.role == "input" else operation.output_ports
+        if self.role == "input":
+            ports = operation.input_ports
+        elif self.role == "output":
+            ports = operation.output_ports
+        else:
+            ports = operation.auxiliary_ports
         for port in ports:
             if port.name == self.port_name:
                 return port

@@ -61,6 +61,11 @@ class IdentityImplementation:
             ensure_lowered_tensor(
                 tensor_id, graph, context, lowered_tensors, tensor_map
             )
+        if structural.auxiliary_tensors is not None:
+            for tensor_id in structural.auxiliary_tensors.values():
+                ensure_lowered_tensor(
+                    tensor_id, graph, context, lowered_tensors, tensor_map
+                )
 
         events = op.resource_events(estimation, result)
         forward = op.forward_flops(estimation)
@@ -76,6 +81,11 @@ class IdentityImplementation:
 
         input_ids = tuple(tensor_map[tid] for tid in structural.input_tensors)
         output_ids = tuple(tensor_map[tid] for tid in structural.output_tensors)
+        auxiliary_ids = ()
+        if structural.auxiliary_tensors is not None:
+            auxiliary_ids = tuple(
+                tensor_map[tid] for tid in structural.auxiliary_tensors.values()
+            )
 
         return LoweredOperation(
             id=f"op{structural.id.index}",
@@ -83,7 +93,7 @@ class IdentityImplementation:
             implementation=self.descriptor.id,
             input_tensors=input_ids,
             output_tensors=output_ids,
-            auxiliary_tensors=(),
+            auxiliary_tensors=auxiliary_ids,
             resource_events=with_saves,
             forward_flops=forward,
             backward_flops=backward,

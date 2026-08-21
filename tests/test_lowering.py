@@ -11,7 +11,9 @@ from zepto.core import (
     DType,
     Identity,
     LoweringError,
+    MatMul,
     Maximum,
+    Multiply,
     Operation,
     PortSpec,
     Provenance,
@@ -21,6 +23,7 @@ from zepto.core import (
     lower,
     reference_context,
 )
+from zepto.core.operation.helpers import GRAD_RIGHT, GRAD_RIGHT_UNREDUCED
 from zepto.core.lowering import LoweringRegistry
 from zepto.core.lowering.implementations import register_defaults
 from zepto.core.lowering.implementations.identity import IdentityImplementation
@@ -334,3 +337,93 @@ def test_selection_records_rejected_candidates() -> None:
     assert selection.chosen.id == "maximum/relu-mask"
     assert selection.reason == "highest_priority"
     assert not selection.rejected
+
+
+def _multiply_broadcast_graph():
+    builder = StructuralGraphBuilder()
+    x = builder.add_input(TensorMetadata((32, 128, 512), requires_grad=True))
+    bias = builder.add_input(TensorMetadata((512,), requires_grad=True))
+    output = builder.add_operation(
+        operation_family="multiply",
+        input_ports=(PortSpec("left"), PortSpec("right")),
+        output_ports=(PortSpec("output"),),
+        input_tensors=(x, bias),
+        output_metadata=(TensorMetadata((32, 128, 512), requires_grad=True),),
+        provenance=Provenance((), "Fixture", "multiply", 0),
+        operation=Multiply(),
+    )[0]
+    builder.mark_output(output)
+    return builder.build(), output
+
+
+class TestBroadcastBackwardLowering:
+    def test_multiply_backward_remaps_aux_port_events(self) -> None:
+        graph, _output = _multiply_broadcast_graph()
+        lowered = lower(graph, reference_context(phase="backward"))
+        op = lowered.operations[0]
+        assert len(op.auxiliary_tensors) == 2
+        event_targets = {event.value for event in op.resource_events}
+        assert event_targets.issuperset(set(op.auxiliary_tensors))
+
+    def test_multiply_forward_has_no_backward_events(self) -> None:
+        graph, _output = _multiply_broadcast_graph()
+        lowered = lower(graph, reference_context(phase="forward"))
+        op = lowered.operations[0]
+        assert not any(
+            event.phase == "backward" for event in op.resource_events
+        )
+
+    def test_all_backward_event_targets_are_known_tensors(self) -> None:
+        graph, _output = _multiply_broadcast_graph()
+        lowered = lower(graph, reference_context(phase="backward"))
+        op = lowered.operations[0]
+        known = set(op.input_tensors + op.output_tensors + op.auxiliary_tensors)
+        for event in op.resource_events:
+            assert event.value in known
+
+    def test_unreduced_allocate_release_order(self) -> None:
+        graph, _output = _multiply_broadcast_graph()
+        lowered = lower(graph, reference_context(phase="backward"))
+        op = lowered.operations[0]
+        kinds = [
+            event.kind
+            for event in op.resource_events
+            if event.phase == "backward"
+        ]
+        assert ResourceEventKind.ALLOCATE in kinds
+        assert ResourceEventKind.RELEASE in kinds
+        assert ResourceEventKind.PERSIST in kinds
+        allocate_idx = next(
+            i
+            for i, event in enumerate(op.resource_events)
+            if event.kind is ResourceEventKind.ALLOCATE
+            and event.phase == "backward"
+        )
+        release_idx = next(
+            i
+            for i, event in enumerate(op.resource_events)
+            if event.kind is ResourceEventKind.RELEASE
+        )
+        assert allocate_idx < release_idx
+
+    def test_matmul_weight_backward_aux_shapes(self) -> None:
+        builder = StructuralGraphBuilder()
+        left = builder.add_input(TensorMetadata((32, 128, 512), requires_grad=True))
+        right = builder.add_input(TensorMetadata((512, 64), requires_grad=True))
+        output = builder.add_operation(
+            operation_family="matmul",
+            input_ports=(PortSpec("left"), PortSpec("right")),
+            output_ports=(PortSpec("output"),),
+            input_tensors=(left, right),
+            output_metadata=(TensorMetadata((32, 128, 64), requires_grad=True),),
+            provenance=Provenance((), "Fixture", "matmul", 0),
+            operation=MatMul(),
+        )[0]
+        builder.mark_output(output)
+        graph = builder.build()
+        operation = graph.operation(graph.operations[0])
+        assert operation.result is not None
+        unreduced_id = operation.auxiliary_tensors[GRAD_RIGHT_UNREDUCED]
+        assert graph.tensor(unreduced_id).metadata.shape == (32, 512, 64)
+        grad_id = operation.auxiliary_tensors[GRAD_RIGHT]
+        assert graph.tensor(grad_id).metadata.shape == (512, 64)
