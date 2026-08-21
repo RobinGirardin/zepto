@@ -1,13 +1,16 @@
 import pytest
+from dataclasses import replace
 
 from zepto.core import (
+    AliasSpec,
     BackwardSpec,
     CrossGraphReferenceError,
     GraphAlreadyFinalizedError,
     GraphCompositionContext,
     Identity,
-    Module,
+    Materialization,
     MetadataMismatchError,
+    Module,
     Operation,
     PortSpec,
     Provenance,
@@ -186,3 +189,108 @@ def test_output_inference_is_called_once() -> None:
         context.apply(CountingIdentity(), value)
 
     assert calls == 1
+
+
+class Contiguous(Operation):
+    @property
+    def family(self):
+        return "contiguous"
+
+    @property
+    def input_ports(self):
+        return (PortSpec("input"),)
+
+    @property
+    def output_ports(self):
+        return (PortSpec("output"),)
+
+    @property
+    def backward(self):
+        return BackwardSpec(
+            supported=True,
+            gradient_inputs=("output",),
+            gradient_outputs=("input",),
+        )
+
+    def infer_outputs(self, inputs):
+        return (inputs[0],)
+
+    def output_aliases(self):
+        return (AliasSpec("input", Materialization.CONTIGUOUS_COPY),)
+
+    def saved_for_backward(self, inputs, outputs):
+        return ()
+
+    def forward_flops(self, context):
+        return 0
+
+    def resource_events(self, context, result):
+        return ()
+
+
+def test_view_operations_share_input_storage() -> None:
+    builder = StructuralGraphBuilder()
+    value = builder.add_input(TensorMetadata((4,)))
+    provenance = Provenance((), "Fixture", "view", 0)
+    for operation in (Identity(),):
+        output = builder.add_operation(
+            operation_family=operation.family,
+            input_ports=operation.input_ports,
+            output_ports=operation.output_ports,
+            input_tensors=(value,),
+            output_metadata=(TensorMetadata((4,)),),
+            provenance=provenance,
+            operation=operation,
+        )[0]
+        assert builder._tensors[output].storage_id == builder._tensors[value].storage_id
+        value = output
+
+
+def test_contiguous_copy_allocates_distinct_storage() -> None:
+    builder = StructuralGraphBuilder()
+    value = builder.add_input(TensorMetadata((4,)))
+    provenance = Provenance((), "Fixture", "contiguous", 0)
+    output = builder.add_operation(
+        operation_family="contiguous",
+        input_ports=(PortSpec("input"),),
+        output_ports=(PortSpec("output"),),
+        input_tensors=(value,),
+        output_metadata=(TensorMetadata((4,)),),
+        provenance=provenance,
+        operation=Contiguous(),
+    )[0]
+    assert builder._tensors[output].storage_id != builder._tensors[value].storage_id
+
+
+def test_graph_validator_rejects_illegal_shared_copy_storage() -> None:
+    builder = StructuralGraphBuilder()
+    value = builder.add_input(TensorMetadata((4,)))
+    provenance = Provenance((), "Fixture", "contiguous", 0)
+    output = builder.add_operation(
+        operation_family="contiguous",
+        input_ports=(PortSpec("input"),),
+        output_ports=(PortSpec("output"),),
+        input_tensors=(value,),
+        output_metadata=(TensorMetadata((4,)),),
+        provenance=provenance,
+        operation=Contiguous(),
+    )[0]
+    input_storage = builder._tensors[value].storage_id
+    builder._tensors[output] = replace(
+        builder._tensors[output], storage_id=input_storage
+    )
+
+    with pytest.raises(ValueError, match="illegally shares input storage"):
+        builder.build()
+
+
+def test_add_parameter_trainable_round_trips() -> None:
+    builder = StructuralGraphBuilder()
+    parameter_id = builder.add_parameter(
+        TensorMetadata((8,), requires_grad=True),
+        trainable=False,
+    )
+    graph = builder.build()
+    parameter = graph.parameter(parameter_id)
+    assert parameter.trainable is False
+    assert parameter.metadata.requires_grad is True

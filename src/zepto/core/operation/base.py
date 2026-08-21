@@ -1,7 +1,6 @@
 """Base interfaces and validation for backend-neutral operations."""
 
 from abc import ABC, abstractmethod
-from dataclasses import replace
 
 from ..metadata import TensorMetadata
 from ..ports import PortSpec
@@ -13,6 +12,10 @@ from .records import (
     OperationResult,
     ResourceEvent,
 )
+from .validation import DeclarationValidator, InvocationValidator
+
+_DECLARATION_VALIDATOR = DeclarationValidator()
+_INVOCATION_VALIDATOR = InvocationValidator()
 
 
 class SemanticOperation(ABC):
@@ -115,35 +118,7 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
 
     def validate_declaration(self) -> None:
         """Validate family, ports, and backward declarations."""
-        if not isinstance(self.family, str) or not self.family:
-            raise OperationError("Operation family cannot be empty")
-        inputs = self.input_ports
-        outputs = self.output_ports
-        if not isinstance(inputs, tuple) or not isinstance(outputs, tuple):
-            raise OperationError("Operation ports must be tuples")
-        ports = (*inputs, *outputs)
-        if not all(isinstance(port, PortSpec) and port.name for port in ports):
-            raise OperationError("Operations require named PortSpec declarations")
-        names = [port.name for port in ports]
-        if len(names) != len(set(names)):
-            raise OperationError("Operation port names must be unique")
-        backward = self.backward
-        if not isinstance(backward, BackwardSpec):
-            raise OperationError("backward must return BackwardSpec")
-        known = set(names)
-        for reference in (
-            *backward.saved_for_backward,
-            *backward.gradient_inputs,
-            *backward.gradient_outputs,
-        ):
-            if reference not in known:
-                raise OperationError(f"Backward references unknown port {reference!r}")
-        if not backward.supported and (
-            backward.saved_for_backward
-            or backward.gradient_inputs
-            or backward.gradient_outputs
-        ):
-            raise OperationError("Unsupported backward operation declares requirements")
+        _DECLARATION_VALIDATOR.validate(self)
 
     def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
         """Validate inputs, compose one result, and validate that result.
@@ -154,12 +129,7 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
         selects the invocation-specific saved values.
         """
         self.validate_declaration()
-        if len(inputs) != len(self.input_ports):
-            raise OperationError(
-                f"{self.family!r} expects {len(self.input_ports)} inputs, got {len(inputs)}"
-            )
-        if not all(isinstance(value, TensorMetadata) for value in inputs):
-            raise OperationError("Operation inputs must be TensorMetadata")
+        _INVOCATION_VALIDATOR.validate_inputs(self, inputs)
         outputs = self.infer_outputs(inputs)
         if not isinstance(outputs, tuple):
             raise OperationError("infer_outputs must return a tuple")
@@ -174,85 +144,5 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
     def validate_result(
         self, inputs: tuple[TensorMetadata, ...], result: OperationResult
     ) -> None:
-        """Validate metadata, aliases, backward state, costs, and events."""
-        if not isinstance(result, OperationResult):
-            raise OperationError("Inference must return OperationResult")
-        if len(result.outputs) != len(self.output_ports):
-            raise OperationError(
-                f"{self.family!r} inferred {len(result.outputs)} outputs, "
-                f"declares {len(self.output_ports)}"
-            )
-        if not all(isinstance(value, TensorMetadata) for value in result.outputs):
-            raise OperationError("Operation outputs must be TensorMetadata")
-        aliases = result.aliases or (None,) * len(result.outputs)
-        if len(aliases) != len(result.outputs):
-            raise OperationError("Alias declarations must match output arity")
-        input_names = {port.name for port in self.input_ports}
-        for index, alias in enumerate(aliases):
-            if alias is None:
-                continue
-            if alias.source_port not in input_names:
-                raise OperationError(f"Unknown alias source port {alias.source_port!r}")
-            if alias.materialization.value == "view":
-                source = inputs[
-                    next(i for i, port in enumerate(self.input_ports)
-                         if port.name == alias.source_port)
-                ]
-                source_size = _numel(source)
-                output_size = _numel(result.outputs[index])
-                if source_size is not None and output_size is not None and source_size != output_size:
-                    raise OperationError("View aliases must preserve tensor shape")
-        selection = self.saved_for_backward(inputs, result.outputs)
-        if not isinstance(selection, tuple) or not all(
-            isinstance(name, str) and name for name in selection
-        ):
-            raise OperationError(
-                "saved_for_backward must return a tuple of port names"
-            )
-        if len(selection) != len(set(selection)):
-            raise OperationError("saved_for_backward selection must be unique")
-        if not self.backward.supported and selection:
-            raise OperationError(
-                "Unsupported backward operation selects saved values"
-            )
-        if result.saved_for_backward != selection:
-            raise OperationError(
-                "Result saved values do not match the operation's "
-                "saved_for_backward selection"
-            )
-        saved_names = set(result.saved_for_backward)
-        if not saved_names.issubset(set(self.backward.saved_for_backward)):
-            raise OperationError("Result saves an undeclared backward value")
-        if not saved_names.issubset({port.name for port in (*self.input_ports, *self.output_ports)}):
-            raise OperationError("Result saves an unknown operation port")
-        context = EstimationContext(
-            port_metadata=(
-                *(
-                    (port.name, metadata)
-                    for port, metadata in zip(self.input_ports, inputs, strict=True)
-                ),
-                *(
-                    (port.name, metadata)
-                    for port, metadata in zip(
-                        self.output_ports, result.outputs, strict=True
-                    )
-                ),
-            )
-        )
-        for flops in (
-            self.forward_flops(context),
-            self.backward_flops(replace(context, phase="backward")),
-        ):
-            if not isinstance(flops, int) or flops < 0:
-                raise OperationError("FLOP counts must be non-negative integers")
-        events = self.resource_events(context, result)
-        if not isinstance(events, tuple) or not all(isinstance(event, ResourceEvent) for event in events):
-            raise OperationError("Resource events must be an ordered tuple")
-
-
-def _numel(metadata: TensorMetadata) -> int:
-    """Return the element count for a concrete shape."""
-    result = 1
-    for dimension in metadata.shape:
-        result *= dimension
-    return result
+        """Validate metadata, aliases, and backward state."""
+        _INVOCATION_VALIDATOR.validate_result(self, inputs, result)

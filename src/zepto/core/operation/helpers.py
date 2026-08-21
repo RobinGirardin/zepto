@@ -48,7 +48,7 @@ def broadcast_metadata(
     return TensorMetadata(
         shape=tuple(shape),
         semantic_type=semantic_type,
-        require_grad=any(value.require_grad for value in inputs),
+        requires_grad=any(value.requires_grad for value in inputs),
     )
 
 

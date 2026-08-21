@@ -70,7 +70,7 @@ class Minimum(Operation):
         the pair.
         """
         left, right = inputs
-        if left.require_grad or right.require_grad:
+        if left.requires_grad or right.requires_grad:
             return ("left", "right")
         return ()
 
@@ -91,9 +91,9 @@ class Minimum(Operation):
                 "Estimation context must provide 'left', 'right', and 'output' ports"
             )
         flops = 0
-        if left.require_grad:
+        if left.requires_grad:
             flops += numel(output)
-        if right.require_grad:
+        if right.requires_grad:
             flops += numel(output)
         return flops
 

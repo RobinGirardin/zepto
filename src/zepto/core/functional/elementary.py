@@ -1,7 +1,7 @@
 """Functional wrappers for elementary tensor operations."""
 
 from ..composition import GraphTensor
-from ..operation import Add, Divide, Maximum, Minimum, Multiply, SquareRoot, Substract
+from ..operation import Add, Divide, Maximum, Minimum, Multiply, SquareRoot, Subtract
 from ._common import context
 
 
@@ -10,9 +10,9 @@ def add(left: GraphTensor, right: GraphTensor) -> GraphTensor:
     return context().apply(Add(), left, right)  # type: ignore[return-value]
 
 
-def substract(left: GraphTensor, right: GraphTensor) -> GraphTensor:
+def subtract(left: GraphTensor, right: GraphTensor) -> GraphTensor:
     """Record elementwise subtraction of two graph tensors."""
-    return context().apply(Substract(), left, right)  # type: ignore[return-value]
+    return context().apply(Subtract(), left, right)  # type: ignore[return-value]
 
 
 def multiply(left: GraphTensor, right: GraphTensor) -> GraphTensor:

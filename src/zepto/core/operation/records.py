@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from ..accounting import PrecisionPolicy
 from ..metadata import TensorMetadata
 
 
@@ -23,7 +24,6 @@ class ResourceEventKind(StrEnum):
     SAVE = "save"
     PERSIST = "persist"
     WORKSPACE = "workspace"
-    GRADIENT = "gradient"
 
 
 class Materialization(StrEnum):
@@ -85,8 +85,7 @@ class EstimationContext:
 
     phase: str = "forward"
     port_metadata: tuple[tuple[str, TensorMetadata], ...] = ()
-    dtype: str = "unknown"
-    layout: str = "unknown"
+    precision: PrecisionPolicy | None = None
     state: tuple[tuple[str, Any], ...] = ()
 
     def __post_init__(self) -> None:

@@ -12,3 +12,4 @@ class Parameter:
 
     id: ParameterId
     metadata: TensorMetadata
+    trainable: bool = True

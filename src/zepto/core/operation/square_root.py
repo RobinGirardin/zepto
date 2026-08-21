@@ -59,7 +59,7 @@ class SquareRoot(Operation):
         outputs: tuple[TensorMetadata, ...],
     ) -> tuple[str, ...]:
         """Save the output only when the input gradient is requested."""
-        if inputs[0].require_grad:
+        if inputs[0].requires_grad:
             return ("output",)
         return ()
 
@@ -79,7 +79,7 @@ class SquareRoot(Operation):
                 "Estimation context must provide 'input' and 'output' ports"
             )
         flop = 0
-        if metadata.require_grad:
+        if metadata.requires_grad:
             flop += 3 * numel(output)
         return flop
 

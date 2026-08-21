@@ -66,9 +66,9 @@ class Divide(Operation):
         """
         left, right = inputs
         names: list[str] = []
-        if right.require_grad:
+        if right.requires_grad:
             names.append("left")
-        if left.require_grad or right.require_grad:
+        if left.requires_grad or right.requires_grad:
             names.append("right")
         return tuple(names)
 
@@ -90,9 +90,9 @@ class Divide(Operation):
                 "Estimation context must provide 'left', 'right', and 'output' ports"
             )
         flops = 0
-        if left.require_grad:
+        if left.requires_grad:
             flops += 2 * numel(output)
-        if right.require_grad:
+        if right.requires_grad:
             flops += 4 * numel(output)
         return flops
 

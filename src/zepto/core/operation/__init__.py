@@ -11,7 +11,7 @@ from .multiply import Multiply
 from .reshape import Reshape
 from .split import Split
 from .square_root import SquareRoot
-from .substract import Substract
+from .subtract import Subtract
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -25,13 +25,14 @@ from .records import (
 )
 from .structural import StructuralOperation
 from .transpose import Transpose
+from .validation import DeclarationValidator, InvocationValidator
 
 __all__ = [
-    "Add", "AliasSpec", "BackwardSpec", "Divide", "EstimationContext",
-    "EstimationOperation", "Identity", "IncompleteOperationError",
-    "MatMul", "Materialization", "Maximum", "Minimum", "Multiply", "Operation",
-    "OperationError", "OperationResult",
-    "ResourceEvent", "ResourceEventKind", "Reshape",
-    "SemanticOperation", "Split", "SquareRoot", "StructuralOperation",
-    "Substract", "Transpose",
+    "Add", "AliasSpec", "BackwardSpec", "DeclarationValidator", "Divide",
+    "EstimationContext", "EstimationOperation", "Identity",
+    "IncompleteOperationError", "InvocationValidator", "MatMul",
+    "Materialization", "Maximum", "Minimum", "Multiply", "Operation",
+    "OperationError", "OperationResult", "ResourceEvent", "ResourceEventKind",
+    "Reshape", "SemanticOperation", "Split", "SquareRoot", "StructuralOperation",
+    "Subtract", "Transpose",
 ]

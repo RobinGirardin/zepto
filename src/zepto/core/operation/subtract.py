@@ -7,13 +7,13 @@ from .helpers import allocate, broadcast_metadata, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-class Substract(Operation):
+class Subtract(Operation):
     """Subtract the right tensor from the left with broadcast semantics."""
 
     @property
     def family(self) -> str:
         """Return the stable subtraction family name."""
-        return "substract"
+        return "subtract"
 
     @property
     def input_ports(self) -> tuple[PortSpec, ...]:
@@ -79,9 +79,9 @@ class Substract(Operation):
                 "Estimation context must provide 'left', 'right', and 'output' ports"
             )
         flop = 0
-        if left.require_grad:
+        if left.requires_grad:
             flop += 0
-        if right.require_grad:
+        if right.requires_grad:
             flop += 0
         return flop
 
@@ -92,4 +92,4 @@ class Substract(Operation):
         return allocate(result)
 
 
-__all__ = ["Substract"]
+__all__ = ["Subtract"]

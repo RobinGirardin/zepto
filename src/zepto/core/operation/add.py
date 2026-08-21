@@ -79,9 +79,9 @@ class Add(Operation):
                 "Estimation context must provide 'left', 'right', and 'output' ports"
             )
         flop = 0
-        if left.require_grad:
+        if left.requires_grad:
             flop += 0
-        if right.require_grad:
+        if right.requires_grad:
             flop += 0
         return flop
 

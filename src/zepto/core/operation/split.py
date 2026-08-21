@@ -65,7 +65,7 @@ class Split(Operation):
             TensorMetadata(
                 (size, *inputs[0].shape[1:]),
                 inputs[0].semantic_type,
-                require_grad=inputs[0].require_grad,
+                requires_grad=inputs[0].requires_grad,
             )
             for size in self.sizes
         )

@@ -68,7 +68,7 @@ class Transpose(Operation):
             TensorMetadata(
                 shape,
                 inputs[0].semantic_type,
-                require_grad=inputs[0].require_grad,
+                requires_grad=inputs[0].requires_grad,
             ),
         )
 

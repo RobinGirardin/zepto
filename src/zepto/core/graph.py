@@ -8,9 +8,6 @@ from .errors import (
     CrossGraphReferenceError,
     DuplicatePortError,
     GraphAlreadyFinalizedError,
-    InvalidGraphOutputError,
-    InvalidOperationOrderError,
-    InvalidPortReferenceError,
     PortArityError,
     UnknownParameterError,
     UnknownOperationError,
@@ -24,7 +21,9 @@ from .ids import (
     TensorId,
 )
 from .metadata import TensorMetadata
+from .graph_validation import GraphValidator
 from .operation import Operation, OperationError, OperationResult, StructuralOperation
+from .operation.records import Materialization
 from .parameter import Parameter
 from .ports import PortRef, PortSpec
 from .provenance import Provenance
@@ -110,48 +109,7 @@ class StructuralGraph:
         Raises:
             GraphError: If the graph violates a structural invariant.
         """
-        operation_positions = {
-            operation_id: position
-            for position, operation_id in enumerate(self.operations)
-        }
-        for tensor_id in (*self.inputs, *self.outputs, *self.tensors):
-            if tensor_id.graph_id != self.id:
-                raise CrossGraphReferenceError(
-                    f"Tensor {tensor_id} does not belong to graph {self.id}"
-                )
-        for operation_id, operation in self.operation_nodes.items():
-            if operation_id != operation.id or operation.id.graph_id != self.id:
-                raise CrossGraphReferenceError(
-                    f"Operation {operation_id} does not belong to graph {self.id}"
-                )
-            if operation.declaration is None:
-                raise ValueError(f"Operation {operation_id} has no complete contract")
-            operation.declaration.validate_declaration()
-            if operation.result is not None:
-                operation.declaration.validate_result(
-                    tuple(
-                        self.tensor(tensor_id).metadata
-                        for tensor_id in operation.input_tensors
-                    ),
-                    operation.result,
-                )
-            for saved_ref in operation.saved_for_backward:
-                saved_ref.resolve(operation)
-            if len(operation.input_ports) != len(operation.input_tensors):
-                raise PortArityError(f"Input arity mismatch for {operation_id}")
-            if len(operation.output_ports) != len(operation.output_tensors):
-                raise PortArityError(f"Output arity mismatch for {operation_id}")
-            for tensor_id in operation.input_tensors:
-                tensor = self.tensor(tensor_id)
-                if tensor.producer is not None:
-                    producer_position = operation_positions[tensor.producer.operation_id]
-                    if producer_position >= operation_positions[operation_id]:
-                        raise InvalidOperationOrderError(
-                            f"{operation_id} consumes a later operation's tensor"
-                        )
-        for tensor_id in self.outputs:
-            if tensor_id not in self.tensors:
-                raise InvalidGraphOutputError(f"Unknown graph output {tensor_id}")
+        GraphValidator().validate(self)
 
 
 class StructuralGraphBuilder:
@@ -218,13 +176,13 @@ class StructuralGraphBuilder:
         self,
         metadata: TensorMetadata,
         *,
-        requires_grad: bool = True,
+        trainable: bool = True,
     ) -> ParameterId:
         """Register a parameter that operations may reference.
 
         Args:
             metadata: Backend-neutral parameter shape and semantic metadata.
-            requires_grad: Whether the parameter participates in gradients.
+            trainable: Whether an optimizer should update this parameter.
 
         Returns:
             The newly allocated graph-local parameter identity.
@@ -234,7 +192,7 @@ class StructuralGraphBuilder:
         parameter_id = ParameterId(self._graph_id, self._next_parameter)
         self._next_parameter += 1
         self._parameters[parameter_id] = Parameter(
-            parameter_id, metadata, requires_grad
+            parameter_id, metadata, trainable
         )
         return parameter_id
 
@@ -345,10 +303,10 @@ class StructuralGraphBuilder:
         ):
             alias = result.aliases[index] if result.aliases else None
             storage_id = None
-            if alias is not None:
+            if alias is not None and alias.materialization is Materialization.VIEW:
                 source_index = next(
-                    index
-                    for index, input_port in enumerate(input_ports)
+                    position
+                    for position, input_port in enumerate(input_ports)
                     if input_port.name == alias.source_port
                 )
                 storage_id = self._tensors[input_tensors[source_index]].storage_id

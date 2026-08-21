@@ -1,5 +1,6 @@
 """Core graph, operation, metadata, and composition APIs."""
 
+from .accounting import AccountingPolicy, PrecisionPolicy
 from .composition import (
     GraphCompositionContext,
     GraphTensor,
@@ -18,23 +19,28 @@ from .functional import (
     reshape,
     split,
     sqrt,
-    substract,
+    subtract,
     transpose,
 )
 from .graph import StructuralGraph, StructuralGraphBuilder
+from .graph_validation import GraphValidator
 from .ids import *
 from .metadata import (
+    DType,
     Dim,
     Shape,
     TensorMetadata,
+    TensorRole,
     metadata_compatible,
 )
 from .operation import (
     AliasSpec,
     BackwardSpec,
+    DeclarationValidator,
     EstimationContext,
     EstimationOperation,
     IncompleteOperationError,
+    InvocationValidator,
     Materialization,
     OperationError,
     OperationResult,
@@ -53,7 +59,7 @@ from .operation import (
     Reshape,
     Split,
     SquareRoot,
-    Substract,
+    Subtract,
     Transpose,
 )
 from .parameter import Parameter
@@ -62,22 +68,29 @@ from .provenance import Provenance
 from .tensor import Tensor
 
 __all__ = [
+    "AccountingPolicy",
+    "DType",
     "Dim",
     "AliasSpec",
     "BackwardSpec",
+    "DeclarationValidator",
     "EstimationContext",
     "EstimationOperation",
+    "GraphValidator",
     "IncompleteOperationError",
     "GraphCompositionContext",
     "GraphTensor",
+    "InvocationValidator",
     "MetadataMismatchError",
     "Materialization",
     "Module",
     "OperationError",
     "Operation",
     "OperationResult",
+    "Parameter",
     "PortRef",
     "PortSpec",
+    "PrecisionPolicy",
     "Provenance",
     "ResourceEvent",
     "ResourceEventKind",
@@ -88,6 +101,7 @@ __all__ = [
     "StructuralOperation",
     "Tensor",
     "TensorMetadata",
+    "TensorRole",
     "ValueKind",
     "build_graph",
     "identity",
@@ -95,7 +109,7 @@ __all__ = [
     "add",
     "divide",
     "multiply",
-    "substract",
+    "subtract",
     "Add",
     "Divide",
     "Identity",
@@ -106,7 +120,7 @@ __all__ = [
     "Reshape",
     "Split",
     "SquareRoot",
-    "Substract",
+    "Subtract",
     "Transpose",
     "maximum",
     "minimum",

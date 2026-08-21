@@ -72,12 +72,12 @@ class MatMul(Operation):
             raise ValueError(
                 f"incompatible MatMul contracting dimensions: {left.shape} @ {right.shape}"
             )
-        require_grad = any(value.require_grad for value in inputs)
+        requires_grad = any(value.requires_grad for value in inputs)
         return (
             TensorMetadata(
                 shape=(*left_batch, m, n),
                 semantic_type=left.semantic_type,
-                require_grad=require_grad,
+                requires_grad=requires_grad,
             ),
         )
 
@@ -93,9 +93,9 @@ class MatMul(Operation):
         """
         left, right = inputs
         names: list[str] = []
-        if right.require_grad:
+        if right.requires_grad:
             names.append("left")
-        if left.require_grad:
+        if left.requires_grad:
             names.append("right")
         return tuple(names)
 
@@ -121,7 +121,7 @@ class MatMul(Operation):
             )
         flop = 0
         batch = numel(TensorMetadata(left.shape[:-2]))
-        if left.require_grad:
+        if left.requires_grad:
             b_transpose_flop = 0 # View
             flop += (
                 2
@@ -131,7 +131,7 @@ class MatMul(Operation):
                 * right.shape[-2]  # -2, instead of -1 due to B^T
                 + b_transpose_flop
             )
-        if right.require_grad:
+        if right.requires_grad:
             a_transpose_flop = 0 # View
             flop += (
                 2

@@ -61,9 +61,9 @@ class Multiply(Operation):
         """Save the opposite operand for each requested product-rule VJP."""
         left, right = inputs
         names: list[str] = []
-        if right.require_grad:
+        if right.requires_grad:
             names.append("left")
-        if left.require_grad:
+        if left.requires_grad:
             names.append("right")
         return tuple(names)
 
@@ -84,9 +84,9 @@ class Multiply(Operation):
                 "Estimation context must provide 'left', 'right', and 'output' ports"
             )
         flop = 0
-        if left.require_grad:
+        if left.requires_grad:
             flop += numel(output)
-        if right.require_grad:
+        if right.requires_grad:
             flop += numel(output)
         return flop
 
