@@ -65,3 +65,18 @@ def allocate(result: OperationResult) -> tuple[ResourceEvent, ...]:
         ResourceEvent(ResourceEventKind.ALLOCATE, f"output:{index}")
         for index in range(len(result.outputs))
     )
+
+
+def alias(target: str, *, phase: str = "forward") -> ResourceEvent:
+    """Describe a view alias of existing storage."""
+    return ResourceEvent(ResourceEventKind.ALIAS, target, phase=phase)
+
+
+def save(target: str, *, phase: str = "forward") -> ResourceEvent:
+    """Describe retention of a tensor for a later backward pass."""
+    return ResourceEvent(ResourceEventKind.SAVE, target, phase=phase)
+
+
+def release(target: str, *, phase: str = "backward") -> ResourceEvent:
+    """Describe release of a previously retained tensor."""
+    return ResourceEvent(ResourceEventKind.RELEASE, target, phase=phase)

@@ -22,9 +22,20 @@ from .functional import (
     subtract,
     transpose,
 )
+from .estimation import estimate
 from .graph import StructuralGraph, StructuralGraphBuilder
 from .graph_validation import GraphValidator
 from .ids import *
+from .lowered import LoweredGraph, LoweredOperation, LoweredTensor
+from .lowering import (
+    ImplementationDescriptor,
+    ImplementationSelection,
+    InvocationContext,
+    LoweringError,
+    LoweringRegistry,
+    lower,
+    reference_context,
+)
 from .metadata import (
     DType,
     Dim,
@@ -77,6 +88,14 @@ __all__ = [
     "EstimationContext",
     "EstimationOperation",
     "GraphValidator",
+    "ImplementationDescriptor",
+    "ImplementationSelection",
+    "InvocationContext",
+    "LoweringError",
+    "LoweringRegistry",
+    "LoweredGraph",
+    "LoweredOperation",
+    "LoweredTensor",
     "IncompleteOperationError",
     "GraphCompositionContext",
     "GraphTensor",
@@ -104,7 +123,10 @@ __all__ = [
     "TensorRole",
     "ValueKind",
     "build_graph",
+    "estimate",
     "identity",
+    "lower",
+    "reference_context",
     "matmul",
     "add",
     "divide",
