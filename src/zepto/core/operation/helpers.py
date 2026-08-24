@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from ..metadata import TensorMetadata, TensorRole
+from ..metadata import ValueMetadata, TensorRole
 from .records import OperationResult, ResourceEvent, ResourceEventKind
 
 GRAD_LEFT = "grad_left"
@@ -14,7 +14,7 @@ GRAD_LEFT_UNREDUCED = "grad_left_unreduced"
 GRAD_RIGHT_UNREDUCED = "grad_right_unreduced"
 
 
-def numel(metadata: TensorMetadata) -> int:
+def numel(metadata: ValueMetadata) -> int:
     """Return the concrete element count."""
     result = 1
     for dim in metadata.shape:
@@ -23,11 +23,11 @@ def numel(metadata: TensorMetadata) -> int:
 
 
 def broadcast_metadata(
-    inputs: tuple[TensorMetadata, TensorMetadata],
+    inputs: tuple[ValueMetadata, ValueMetadata],
     *,
     family: str,
     semantic_type: str = "tensor",
-) -> TensorMetadata:
+) -> ValueMetadata:
     """Infer metadata for a binary elementwise broadcast."""
     left, right = inputs
     rank = max(len(left.shape), len(right.shape))
@@ -48,7 +48,7 @@ def broadcast_metadata(
                 f"{left.shape} and {right.shape}"
             )
 
-    return TensorMetadata(
+    return ValueMetadata(
         shape=tuple(shape),
         semantic_type=semantic_type,
         requires_grad=any(value.requires_grad for value in inputs),
@@ -56,28 +56,28 @@ def broadcast_metadata(
 
 
 def broadcast_reduction_flops(
-    operand: TensorMetadata, output: TensorMetadata
+    operand: ValueMetadata, output: ValueMetadata
 ) -> int:
     """Return FLOPs to sum-reduce a broadcast operand gradient."""
     return numel(output) - numel(operand)
 
 
-def reduced_gradient_metadata(operand: TensorMetadata) -> TensorMetadata:
+def reduced_gradient_metadata(operand: ValueMetadata) -> ValueMetadata:
     """Return metadata for a reduced operand gradient."""
     return replace(operand, role=TensorRole.GRADIENT)
 
 
-def unreduced_gradient_metadata(output: TensorMetadata) -> TensorMetadata:
+def unreduced_gradient_metadata(output: ValueMetadata) -> ValueMetadata:
     """Return metadata for an output-shaped unreduced VJP temporary."""
     return replace(output, role=TensorRole.WORKSPACE)
 
 
 def unreduced_gradient_metadata_matmul(
-    output: TensorMetadata, operand: TensorMetadata
-) -> TensorMetadata:
+    output: ValueMetadata, operand: ValueMetadata
+) -> ValueMetadata:
     """Return metadata for a batched unreduced MatMul VJP temporary."""
     shape = (*output.shape[:-2], *operand.shape[-2:])
-    return TensorMetadata(
+    return ValueMetadata(
         shape=shape,
         semantic_type=operand.semantic_type,
         requires_grad=True,
@@ -86,15 +86,15 @@ def unreduced_gradient_metadata_matmul(
 
 
 def _operand_was_broadcast(
-    operand: TensorMetadata, output: TensorMetadata
+    operand: ValueMetadata, output: ValueMetadata
 ) -> bool:
     return operand.shape != output.shape
 
 
 def _needs_reduced_grad_port(
-    operand: TensorMetadata,
-    other: TensorMetadata,
-    output: TensorMetadata,
+    operand: ValueMetadata,
+    other: ValueMetadata,
+    output: ValueMetadata,
 ) -> bool:
     """Return whether a reduced gradient port is live for one operand."""
     if not operand.requires_grad:
@@ -105,9 +105,9 @@ def _needs_reduced_grad_port(
 
 
 def active_binary_auxiliary_ports(
-    left: TensorMetadata,
-    right: TensorMetadata,
-    output: TensorMetadata,
+    left: ValueMetadata,
+    right: ValueMetadata,
+    output: ValueMetadata,
     *,
     materializes_vjp: bool,
 ) -> tuple[str, ...]:
@@ -131,9 +131,9 @@ def active_binary_auxiliary_ports(
 
 
 def active_matmul_auxiliary_ports(
-    left: TensorMetadata,
-    right: TensorMetadata,
-    output: TensorMetadata,
+    left: ValueMetadata,
+    right: ValueMetadata,
+    output: ValueMetadata,
 ) -> tuple[str, ...]:
     """Select live MatMul auxiliary ports for one invocation."""
     active: list[str] = []

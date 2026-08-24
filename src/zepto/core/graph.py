@@ -20,11 +20,11 @@ from .ids import (
     StorageId,
     TensorId,
 )
-from .metadata import TensorMetadata
+from .metadata import ValueMetadata
 from .graph_validation import GraphValidator
 from .operation import Operation, OperationError, OperationResult, StructuralOperation
 from .operation.records import Materialization
-from .parameter import Parameter
+from .parameter import Parameter, bound_parameter_metadata
 from .ports import PortRef, PortSpec
 from .provenance import Provenance
 from .tensor import Tensor
@@ -147,7 +147,7 @@ class StructuralGraphBuilder:
 
     def add_input(
         self,
-        metadata: TensorMetadata,
+        metadata: ValueMetadata,
         *,
         provenance: Provenance | None = None,
     ) -> TensorId:
@@ -174,7 +174,7 @@ class StructuralGraphBuilder:
 
     def add_parameter(
         self,
-        metadata: TensorMetadata,
+        metadata: ValueMetadata,
         *,
         trainable: bool = True,
     ) -> ParameterId:
@@ -201,10 +201,11 @@ class StructuralGraphBuilder:
         *,
         operation_family: str,
         input_ports: tuple[PortSpec, ...],
+        parameter_ports: tuple[PortSpec, ...] = (),
         output_ports: tuple[PortSpec, ...],
         input_tensors: tuple[TensorId, ...],
-        output_metadata: tuple[TensorMetadata, ...],
         parameter_ids: tuple[ParameterId, ...] = (),
+        output_metadata: tuple[ValueMetadata, ...],
         provenance: Provenance,
         operation: Operation,
         result: OperationResult | None = None,
@@ -232,9 +233,11 @@ class StructuralGraphBuilder:
         self._ensure_open()
         if len(input_ports) != len(input_tensors):
             raise PortArityError("Input port and tensor counts differ")
+        if len(parameter_ports) != len(parameter_ids):
+            raise PortArityError("Parameter port and id counts differ")
         if len(output_ports) != len(output_metadata):
             raise PortArityError("Output port and metadata counts differ")
-        self._validate_ports(input_ports, output_ports)
+        self._validate_ports(input_ports, parameter_ports, output_ports)
         for tensor_id in input_tensors:
             self._require_tensor(tensor_id)
         for parameter_id in parameter_ids:
@@ -247,6 +250,8 @@ class StructuralGraphBuilder:
         if (
             tuple((p.name, p.value_kind) for p in operation.input_ports)
             != tuple((p.name, p.value_kind) for p in input_ports)
+            or tuple((p.name, p.value_kind) for p in operation.parameter_ports)
+            != tuple((p.name, p.value_kind) for p in parameter_ports)
             or tuple((p.name, p.value_kind) for p in operation.output_ports)
             != tuple((p.name, p.value_kind) for p in output_ports)
         ):
@@ -254,19 +259,30 @@ class StructuralGraphBuilder:
         input_metadata = tuple(
             self._tensors[tensor_id].metadata for tensor_id in input_tensors
         )
+        parameter_metadata = tuple(
+            bound_parameter_metadata(self._parameters[parameter_id])
+            for parameter_id in parameter_ids
+        )
 
         if result is None:
-            result = operation.infer_result(input_metadata)
-        operation.validate_result(input_metadata, result)
+            result = operation.infer_result(input_metadata, parameter_metadata)
+        operation.validate_result(input_metadata, parameter_metadata, result)
 
         operation_id = OperationId(self._graph_id, self._next_operation)
         self._next_operation += 1
         input_port_names = {port.name for port in input_ports}
+        parameter_port_names = {port.name for port in parameter_ports}
         saved_for_backward = tuple(
             PortRef(
                 operation_id,
                 saved_name,
-                "input" if saved_name in input_port_names else "output",
+                (
+                    "input"
+                    if saved_name in input_port_names
+                    else "parameter"
+                    if saved_name in parameter_port_names
+                    else "output"
+                ),
             )
             for saved_name in result.saved_for_backward
         )
@@ -315,10 +331,11 @@ class StructuralGraphBuilder:
             operation_id,
             operation_family,
             input_ports,
+            parameter_ports,
             output_ports,
             input_tensors,
-            output_tensors,
             parameter_ids,
+            output_tensors,
             provenance,
             operation,
             result,
@@ -403,26 +420,31 @@ class StructuralGraphBuilder:
                 "Structural graph builder has already been finalized"
             )
 
-    def _validate_metadata(self, metadata: TensorMetadata) -> None:
+    def _validate_metadata(self, metadata: ValueMetadata) -> None:
         """Validate concrete metadata before adding it to this graph."""
-        if not isinstance(metadata, TensorMetadata):
-            raise TypeError("Graph metadata must be TensorMetadata")
+        if not isinstance(metadata, ValueMetadata):
+            raise TypeError("Graph metadata must be ValueMetadata")
 
     def _validate_ports(
         self,
         input_ports: tuple[PortSpec, ...],
+        parameter_ports: tuple[PortSpec, ...],
         output_ports: tuple[PortSpec, ...],
     ) -> None:
         """Validate port uniqueness and concrete metadata ownership."""
         input_names = [port.name for port in input_ports]
+        parameter_names = [port.name for port in parameter_ports]
         output_names = [port.name for port in output_ports]
         if len(input_names) != len(set(input_names)):
             raise DuplicatePortError("Duplicate input port name")
+        if len(parameter_names) != len(set(parameter_names)):
+            raise DuplicatePortError("Duplicate parameter port name")
         if len(output_names) != len(set(output_names)):
             raise DuplicatePortError("Duplicate output port name")
-        if set(input_names) & set(output_names):
-            raise DuplicatePortError("Input and output port names must be distinct")
-        for port in (*input_ports, *output_ports):
+        all_names = input_names + parameter_names + output_names
+        if len(all_names) != len(set(all_names)):
+            raise DuplicatePortError("Port names must be unique across directions")
+        for port in (*input_ports, *parameter_ports, *output_ports):
             if port.metadata is not None:
                 self._validate_metadata(port.metadata)
 

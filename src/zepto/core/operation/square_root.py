@@ -1,6 +1,6 @@
 """Elementwise square-root operation declaration."""
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec
 from .base import Operation
 from .helpers import allocate, numel
@@ -48,15 +48,18 @@ class SquareRoot(Operation):
         )
 
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Preserve the input metadata for the square-root output."""
         return inputs
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save the output only when the input gradient is requested."""
         if inputs[0].requires_grad:

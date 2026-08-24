@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec
 from .base import Operation
 from .helpers import allocate
@@ -50,8 +50,10 @@ class Split(Operation):
         )
 
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the ordered metadata for each split output."""
         if not self.sizes or any(size < 0 for size in self.sizes):
             raise ValueError("split sizes must be non-negative and non-empty")
@@ -62,7 +64,7 @@ class Split(Operation):
         ):
             raise ValueError("split sizes must sum to the leading dimension")
         return tuple(
-            TensorMetadata(
+            ValueMetadata(
                 (size, *inputs[0].shape[1:]),
                 inputs[0].semantic_type,
                 requires_grad=inputs[0].requires_grad,
@@ -72,8 +74,9 @@ class Split(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save nothing because split gradients only concatenate."""
         return ()

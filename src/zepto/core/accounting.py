@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .metadata import DType, Shape, TensorMetadata, TensorRole
+from .metadata import DType, Shape, ValueMetadata, TensorRole
 
 
 def numel(shape: Shape) -> int:
@@ -33,7 +33,7 @@ class PrecisionPolicy:
                 "Precision policy by_semantic_type keys must be unique"
             )
 
-    def resolve(self, metadata: TensorMetadata) -> DType:
+    def resolve(self, metadata: ValueMetadata) -> DType:
         """Resolve precedence: explicit dtype > semantic-type > role > default."""
         if metadata.dtype is not None:
             return metadata.dtype
@@ -53,10 +53,10 @@ class AccountingPolicy:
 
     precision: PrecisionPolicy
 
-    def resolve_dtype(self, metadata: TensorMetadata) -> DType:
+    def resolve_dtype(self, metadata: ValueMetadata) -> DType:
         return self.precision.resolve(metadata)
 
-    def bytes_for(self, metadata: TensorMetadata) -> int:
+    def bytes_for(self, metadata: ValueMetadata) -> int:
         dtype = self.resolve_dtype(metadata)
         itemsize = dtype.itemsize
         if itemsize is None:

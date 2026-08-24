@@ -1,4 +1,4 @@
-"""Backend-neutral tensor shape and semantic metadata."""
+"""Backend-neutral value shape and semantic metadata."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -50,7 +50,7 @@ class TensorRole(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class TensorMetadata:
+class ValueMetadata:
     """Backend-neutral shape and semantic metadata for a graph value."""
 
     shape: Shape
@@ -77,8 +77,8 @@ class TensorMetadata:
 
 
 def metadata_compatible(
-    expected: TensorMetadata,
-    actual: TensorMetadata,
+    expected: ValueMetadata,
+    actual: ValueMetadata,
 ) -> bool:
     """Return whether actual metadata satisfies an expected contract.
 
@@ -94,7 +94,7 @@ def metadata_compatible(
     """
     if expected.semantic_type != actual.semantic_type:
         return False
-    if expected.shape != actual.shape:
+    if expected.shape and expected.shape != actual.shape:
         return False
     if expected.dtype is not None and expected.dtype != actual.dtype:
         return False

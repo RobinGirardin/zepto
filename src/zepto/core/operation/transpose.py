@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec
 from .base import Operation
 from .records import (
@@ -54,8 +54,10 @@ class Transpose(Operation):
         )
 
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the permuted shape from the input metadata."""
         rank = len(inputs[0].shape)
         normalized = tuple(
@@ -65,7 +67,7 @@ class Transpose(Operation):
             raise ValueError("transpose permutation must cover every dimension once")
         shape = tuple(inputs[0].shape[index] for index in normalized)
         return (
-            TensorMetadata(
+            ValueMetadata(
                 shape,
                 inputs[0].semantic_type,
                 requires_grad=inputs[0].requires_grad,
@@ -78,8 +80,9 @@ class Transpose(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save nothing because the inverse permutation is declarative."""
         return ()

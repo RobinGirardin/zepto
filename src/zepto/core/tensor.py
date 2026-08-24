@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from .ids import StorageId, TensorId
-from .metadata import TensorMetadata
+from .metadata import ValueMetadata
 from .ports import PortRef
 from .provenance import Provenance
 
@@ -13,7 +13,7 @@ class Tensor:
     """Immutable graph value with connectivity and storage identity metadata."""
 
     id: TensorId
-    metadata: TensorMetadata
+    metadata: ValueMetadata
     provenance: Provenance | None
     producer: PortRef | None
     consumers: tuple[PortRef, ...]

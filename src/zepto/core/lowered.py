@@ -9,7 +9,7 @@ from typing import Mapping
 from .ids import OperationId, TensorId
 from .lowering.context import InvocationContext
 from .lowering.registry import ImplementationSelection
-from .metadata import TensorMetadata
+from .metadata import ValueMetadata
 from .operation.records import ResourceEvent
 
 
@@ -19,7 +19,7 @@ class LoweredTensor:
 
     id: str
     structural_tensor_id: TensorId | None
-    metadata: TensorMetadata
+    metadata: ValueMetadata
     storage_id: str
     workspace: bool = False
 
@@ -37,7 +37,7 @@ class LoweredOperation:
     resource_events: tuple[ResourceEvent, ...]
     forward_flops: int
     backward_flops: int
-    auxiliary_metadata: Mapping[str, TensorMetadata] = MappingProxyType({})
+    auxiliary_metadata: Mapping[str, ValueMetadata] = MappingProxyType({})
 
 
 @dataclass(frozen=True, slots=True)

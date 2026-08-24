@@ -16,7 +16,7 @@ from zepto.core import (
     PortSpec,
     Provenance,
     StructuralGraphBuilder,
-    TensorMetadata,
+    ValueMetadata,
     UnknownOperationError,
     build_graph,
     identity,
@@ -25,29 +25,34 @@ from zepto.core.operation.helpers import GRAD_RIGHT, GRAD_RIGHT_UNREDUCED
 
 
 def test_builder_preserves_order_and_shared_parameters() -> None:
+    from zepto.core import LinearMatMul, ValueKind
+
     builder = StructuralGraphBuilder()
-    value = builder.add_input(TensorMetadata((8,)))
-    parameter = builder.add_parameter(TensorMetadata((8,)))
-    provenance = Provenance((), "Fixture", "identity", 0)
+    activation = builder.add_input(ValueMetadata((2, 8)))
+    parameter = builder.add_parameter(ValueMetadata((8, 4), semantic_type="weight"))
+    provenance = Provenance((), "Fixture", "linear_matmul", 0)
+    weight_port = PortSpec("weight", value_kind=ValueKind.PARAMETER)
     first = builder.add_operation(
-        operation_family="identity",
+        operation_family="linear_matmul",
         input_ports=(PortSpec("input"),),
+        parameter_ports=(weight_port,),
         output_ports=(PortSpec("output"),),
-        input_tensors=(value,),
-        output_metadata=(TensorMetadata((8,)),),
+        input_tensors=(activation,),
         parameter_ids=(parameter,),
+        output_metadata=(ValueMetadata((2, 4)),),
         provenance=provenance,
-        operation=Identity(),
+        operation=LinearMatMul(),
     )[0]
     second = builder.add_operation(
-        operation_family="identity",
+        operation_family="linear_matmul",
         input_ports=(PortSpec("input"),),
+        parameter_ports=(weight_port,),
         output_ports=(PortSpec("output"),),
-        input_tensors=(first,),
-        output_metadata=(TensorMetadata((8,)),),
+        input_tensors=(activation,),
         parameter_ids=(parameter,),
-        provenance=Provenance((), "Fixture", "identity", 1),
-        operation=Identity(),
+        output_metadata=(ValueMetadata((2, 4)),),
+        provenance=Provenance((), "Fixture", "linear_matmul", 1),
+        operation=LinearMatMul(),
     )[0]
     builder.mark_output(second)
 
@@ -55,13 +60,14 @@ def test_builder_preserves_order_and_shared_parameters() -> None:
 
     assert len(graph.operations) == 2
     assert graph.operation(graph.operations[0]).parameter_ids == (parameter,)
-    assert graph.tensor(first).producer is not None
-    assert graph.tensor(first).consumers[0].port_name == "input"
+    assert graph.operation(graph.operations[1]).parameter_ids == (parameter,)
+    assert len(graph.tensor(activation).consumers) == 2
+    assert graph.tensor(activation).consumers[0].port_name == "input"
 
 
 def test_cross_graph_reference_is_rejected() -> None:
     first = StructuralGraphBuilder()
-    foreign = first.add_input(TensorMetadata((1,)))
+    foreign = first.add_input(ValueMetadata((1,)))
     first.build()
     second = StructuralGraphBuilder()
 
@@ -71,7 +77,7 @@ def test_cross_graph_reference_is_rejected() -> None:
             input_ports=(PortSpec("input"),),
             output_ports=(PortSpec("output"),),
             input_tensors=(foreign,),
-            output_metadata=(TensorMetadata((1,)),),
+            output_metadata=(ValueMetadata((1,)),),
             provenance=Provenance((), None, "identity", 0),
             operation=Identity(),
         )
@@ -81,7 +87,7 @@ def test_builder_is_explicitly_finalized() -> None:
     builder = StructuralGraphBuilder()
     builder.build()
     with pytest.raises(GraphAlreadyFinalizedError):
-        builder.add_input(TensorMetadata((1,)))
+        builder.add_input(ValueMetadata((1,)))
 
 
 def test_missing_operation_uses_domain_error() -> None:
@@ -98,12 +104,12 @@ class IdentityModule(Module):
 
 
 def test_module_composition_records_provenance() -> None:
-    graph = build_graph(IdentityModule(), (TensorMetadata((2,)),))
+    graph = build_graph(IdentityModule(), (ValueMetadata((2,)),))
     operation = graph.operation(graph.operations[0])
     assert operation.operation_family == "identity"
     assert operation.provenance.module_path == ("IdentityModule",)
-    assert operation.input_ports[0].metadata == TensorMetadata((2,))
-    assert operation.output_ports[0].metadata == TensorMetadata((2,))
+    assert operation.input_ports[0].metadata == ValueMetadata((2,))
+    assert operation.output_ports[0].metadata == ValueMetadata((2,))
 
 
 class MetadataIdentity(Operation):
@@ -123,10 +129,10 @@ class MetadataIdentity(Operation):
     def output_ports(self):
         return (PortSpec("output", metadata=self._output_metadata),)
 
-    def infer_outputs(self, inputs):
+    def infer_outputs(self, inputs, parameters=()):
         return inputs
 
-    def saved_for_backward(self, inputs, outputs):
+    def saved_for_backward(self, inputs, parameters=(), outputs=()):
         return ()
 
     @property
@@ -148,7 +154,7 @@ def test_operation_declaration_is_not_mutated_by_metadata_binding() -> None:
     operation = MetadataIdentity()
 
     with GraphCompositionContext() as context:
-        value = context.input(TensorMetadata((3,)))
+        value = context.input(ValueMetadata((3,)))
         context.apply(operation, value)
 
     assert operation.input_ports[0].metadata is None
@@ -156,19 +162,19 @@ def test_operation_declaration_is_not_mutated_by_metadata_binding() -> None:
 
 
 def test_declared_port_metadata_mismatch_is_rejected() -> None:
-    operation = MetadataIdentity(input_metadata=TensorMetadata((4,)))
+    operation = MetadataIdentity(input_metadata=ValueMetadata((4,)))
 
     with GraphCompositionContext() as context:
-        value = context.input(TensorMetadata((3,)))
+        value = context.input(ValueMetadata((3,)))
         with pytest.raises(MetadataMismatchError):
             context.apply(operation, value)
 
 
 def test_declared_output_metadata_mismatch_is_rejected() -> None:
-    operation = MetadataIdentity(output_metadata=TensorMetadata((4,)))
+    operation = MetadataIdentity(output_metadata=ValueMetadata((4,)))
 
     with GraphCompositionContext() as context:
-        value = context.input(TensorMetadata((3,)))
+        value = context.input(ValueMetadata((3,)))
         with pytest.raises(MetadataMismatchError):
             context.apply(operation, value)
 
@@ -182,12 +188,12 @@ def test_output_inference_is_called_once() -> None:
         return inputs
 
     class CountingIdentity(MetadataIdentity):
-        def infer_outputs(self, inputs):
+        def infer_outputs(self, inputs, parameters=()):
             infer(inputs)
             return super().infer_outputs(inputs)
 
     with GraphCompositionContext() as context:
-        value = context.input(TensorMetadata((3,)))
+        value = context.input(ValueMetadata((3,)))
         context.apply(CountingIdentity(), value)
 
     assert calls == 1
@@ -214,13 +220,13 @@ class Contiguous(Operation):
             gradient_outputs=("input",),
         )
 
-    def infer_outputs(self, inputs):
+    def infer_outputs(self, inputs, parameters=()):
         return (inputs[0],)
 
     def output_aliases(self):
         return (AliasSpec("input", Materialization.CONTIGUOUS_COPY),)
 
-    def saved_for_backward(self, inputs, outputs):
+    def saved_for_backward(self, inputs, parameters=(), outputs=()):
         return ()
 
     def forward_flops(self, context):
@@ -232,7 +238,7 @@ class Contiguous(Operation):
 
 def test_view_operations_share_input_storage() -> None:
     builder = StructuralGraphBuilder()
-    value = builder.add_input(TensorMetadata((4,)))
+    value = builder.add_input(ValueMetadata((4,)))
     provenance = Provenance((), "Fixture", "view", 0)
     for operation in (Identity(),):
         output = builder.add_operation(
@@ -240,7 +246,7 @@ def test_view_operations_share_input_storage() -> None:
             input_ports=operation.input_ports,
             output_ports=operation.output_ports,
             input_tensors=(value,),
-            output_metadata=(TensorMetadata((4,)),),
+            output_metadata=(ValueMetadata((4,)),),
             provenance=provenance,
             operation=operation,
         )[0]
@@ -250,14 +256,14 @@ def test_view_operations_share_input_storage() -> None:
 
 def test_contiguous_copy_allocates_distinct_storage() -> None:
     builder = StructuralGraphBuilder()
-    value = builder.add_input(TensorMetadata((4,)))
+    value = builder.add_input(ValueMetadata((4,)))
     provenance = Provenance((), "Fixture", "contiguous", 0)
     output = builder.add_operation(
         operation_family="contiguous",
         input_ports=(PortSpec("input"),),
         output_ports=(PortSpec("output"),),
         input_tensors=(value,),
-        output_metadata=(TensorMetadata((4,)),),
+        output_metadata=(ValueMetadata((4,)),),
         provenance=provenance,
         operation=Contiguous(),
     )[0]
@@ -266,14 +272,14 @@ def test_contiguous_copy_allocates_distinct_storage() -> None:
 
 def test_graph_validator_rejects_illegal_shared_copy_storage() -> None:
     builder = StructuralGraphBuilder()
-    value = builder.add_input(TensorMetadata((4,)))
+    value = builder.add_input(ValueMetadata((4,)))
     provenance = Provenance((), "Fixture", "contiguous", 0)
     output = builder.add_operation(
         operation_family="contiguous",
         input_ports=(PortSpec("input"),),
         output_ports=(PortSpec("output"),),
         input_tensors=(value,),
-        output_metadata=(TensorMetadata((4,)),),
+        output_metadata=(ValueMetadata((4,)),),
         provenance=provenance,
         operation=Contiguous(),
     )[0]
@@ -289,7 +295,7 @@ def test_graph_validator_rejects_illegal_shared_copy_storage() -> None:
 def test_add_parameter_trainable_round_trips() -> None:
     builder = StructuralGraphBuilder()
     parameter_id = builder.add_parameter(
-        TensorMetadata((8,), requires_grad=True),
+        ValueMetadata((8,), requires_grad=True),
         trainable=False,
     )
     graph = builder.build()
@@ -300,15 +306,15 @@ def test_add_parameter_trainable_round_trips() -> None:
 
 def test_multiply_allocates_active_aux_tensors_only() -> None:
     builder = StructuralGraphBuilder()
-    x = builder.add_input(TensorMetadata((32, 128, 512), requires_grad=True))
-    bias = builder.add_input(TensorMetadata((512,), requires_grad=True))
+    x = builder.add_input(ValueMetadata((32, 128, 512), requires_grad=True))
+    bias = builder.add_input(ValueMetadata((512,), requires_grad=True))
     provenance = Provenance((), "Fixture", "multiply", 0)
     output = builder.add_operation(
         operation_family="multiply",
         input_ports=(PortSpec("left"), PortSpec("right")),
         output_ports=(PortSpec("output"),),
         input_tensors=(x, bias),
-        output_metadata=(TensorMetadata((32, 128, 512)),),
+        output_metadata=(ValueMetadata((32, 128, 512)),),
         provenance=provenance,
         operation=Multiply(),
     )[0]
@@ -326,14 +332,14 @@ def test_multiply_allocates_active_aux_tensors_only() -> None:
 
 def test_inactive_aux_ports_have_no_tensor_id() -> None:
     builder = StructuralGraphBuilder()
-    left = builder.add_input(TensorMetadata((2, 3), requires_grad=True))
-    right = builder.add_input(TensorMetadata((2, 3), requires_grad=True))
+    left = builder.add_input(ValueMetadata((2, 3), requires_grad=True))
+    right = builder.add_input(ValueMetadata((2, 3), requires_grad=True))
     builder.add_operation(
         operation_family="multiply",
         input_ports=(PortSpec("left"), PortSpec("right")),
         output_ports=(PortSpec("output"),),
         input_tensors=(left, right),
-        output_metadata=(TensorMetadata((2, 3)),),
+        output_metadata=(ValueMetadata((2, 3)),),
         provenance=Provenance((), "Fixture", "multiply", 0),
         operation=Multiply(),
     )

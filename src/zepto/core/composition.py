@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Iterable
 
 from .errors import GraphCompositionError, MetadataMismatchError, PortArityError
 from .graph import StructuralGraph, StructuralGraphBuilder
-from .metadata import TensorMetadata, metadata_compatible
+from .metadata import ValueMetadata, metadata_compatible
+from .parameter import bound_parameter_metadata
 from .ports import PortSpec
 from .provenance import Provenance
 from .ids import ParameterId, TensorId
@@ -19,7 +21,16 @@ class GraphTensor:
     """Symbolic tensor handle passed through user-defined module methods."""
 
     id: TensorId
-    metadata: TensorMetadata
+    metadata: ValueMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class GraphParameter:
+    """Symbolic parameter handle registered during module construction."""
+
+    id: ParameterId
+    metadata: ValueMetadata
+    trainable: bool = True
 
 
 class Module:
@@ -27,15 +38,15 @@ class Module:
 
     def __init__(self) -> None:
         """Create an empty module composition boundary."""
-        self._parameters: dict[str, ParameterId] = {}
+        self._parameters: dict[str, GraphParameter] = {}
         self._modules: dict[str, Module] = {}
 
-    def register_parameter(self, name: str, parameter: ParameterId) -> None:
+    def register_parameter(self, name: str, parameter: GraphParameter) -> None:
         """Register a graph parameter under a module-local name.
 
         Args:
             name: Unique name used in module parameter paths.
-            parameter: Graph-owned parameter identity.
+            parameter: Graph-owned parameter handle.
         """
         if not name or name in self._parameters or name in self._modules:
             raise ValueError(f"Invalid or duplicate module member {name!r}")
@@ -81,14 +92,16 @@ class Module:
         """
         raise NotImplementedError
 
-    def named_parameters(self, prefix: str = "") -> Iterable[tuple[str, ParameterId]]:
+    def named_parameters(
+        self, prefix: str = ""
+    ) -> Iterable[tuple[str, GraphParameter]]:
         """Iterate over registered parameters using dotted paths.
 
         Args:
             prefix: Path prefix applied to emitted names.
 
         Yields:
-            ``(name, parameter_id)`` pairs in registration order.
+            ``(name, parameter)`` pairs in registration order.
         """
         for name, parameter in self._parameters.items():
             yield f"{prefix}{name}", parameter
@@ -129,22 +142,26 @@ class GraphCompositionContext:
         """Return the currently active composition context, if any."""
         return cls._active
 
-    def input(self, metadata: TensorMetadata) -> GraphTensor:
+    def input(self, metadata: ValueMetadata) -> GraphTensor:
         """Declare and return a graph input handle."""
         tensor_id = self.builder.add_input(metadata)
         return GraphTensor(tensor_id, metadata)
 
     def parameter(
-        self, metadata: TensorMetadata, *, requires_grad: bool = True
-    ) -> ParameterId:
-        """Declare a parameter in the owned graph."""
-        return self.builder.add_parameter(metadata, requires_grad=requires_grad)
+        self,
+        metadata: ValueMetadata,
+        *,
+        trainable: bool = True,
+    ) -> GraphParameter:
+        """Declare a model parameter in the owned graph."""
+        parameter_id = self.builder.add_parameter(metadata, trainable=trainable)
+        return GraphParameter(parameter_id, metadata, trainable=trainable)
 
     def apply(
         self,
         operation: Operation,
         *inputs: GraphTensor,
-        parameters: tuple[ParameterId, ...] = (),
+        parameters: tuple[GraphParameter, ...] = (),
         module_path: tuple[str, ...] | None = None,
         component_type: str | None = None,
         source_label: str | None = None,
@@ -154,7 +171,7 @@ class GraphCompositionContext:
         Args:
             operation: Structural operation declaration.
             *inputs: Symbolic input values.
-            parameters: Parameter identities referenced by the operation.
+            parameters: Parameter handles referenced by the operation.
             module_path: Optional provenance path override.
             component_type: Optional reportable component type.
             source_label: Optional source-level label.
@@ -167,11 +184,16 @@ class GraphCompositionContext:
             PortArityError: If port, input, or inferred output counts differ.
         """
         input_metadata = tuple(value.metadata for value in inputs)
-        result = operation.infer_result(input_metadata)
+        parameter_metadata = tuple(
+            bound_parameter_metadata(self.builder._parameters[param.id])
+            for param in parameters
+        )
+        result = operation.infer_result(input_metadata, parameter_metadata)
         output_metadata = result.outputs
-        input_ports, output_ports = self._bind_ports(
+        input_ports, parameter_ports, output_ports = self._bind_ports(
             operation,
             input_metadata,
+            parameter_metadata,
             output_metadata,
         )
         key = (operation.family, ".".join(module_path or self._module_path))
@@ -187,10 +209,11 @@ class GraphCompositionContext:
         output_ids = self.builder.add_operation(
             operation_family=operation.family,
             input_ports=input_ports,
+            parameter_ports=parameter_ports,
             output_ports=output_ports,
             input_tensors=tuple(value.id for value in inputs),
+            parameter_ids=tuple(param.id for param in parameters),
             output_metadata=output_metadata,
-            parameter_ids=parameters,
             provenance=provenance,
             operation=operation,
             result=result,
@@ -204,9 +227,10 @@ class GraphCompositionContext:
     def _bind_ports(
         self,
         operation: Operation,
-        input_metadata: tuple[TensorMetadata, ...],
-        output_metadata: tuple[TensorMetadata, ...],
-    ) -> tuple[tuple[PortSpec, ...], tuple[PortSpec, ...]]:
+        input_metadata: tuple[ValueMetadata, ...],
+        parameter_metadata: tuple[ValueMetadata, ...],
+        output_metadata: tuple[ValueMetadata, ...],
+    ) -> tuple[tuple[PortSpec, ...], tuple[PortSpec, ...], tuple[PortSpec, ...]]:
         """Validate and bind actual metadata onto an operation's ports.
 
         The operation declaration remains reusable and unchanged. The returned
@@ -216,10 +240,11 @@ class GraphCompositionContext:
         Args:
             operation: Unbound operation declaration.
             input_metadata: Metadata from the supplied graph inputs.
+            parameter_metadata: Metadata from the supplied graph parameters.
             output_metadata: Metadata produced by the inference rule.
 
         Returns:
-            Bound input and output ports in declaration order.
+            Bound input, parameter, and output ports in declaration order.
 
         Raises:
             MetadataMismatchError: If a declared contract is incompatible.
@@ -229,6 +254,12 @@ class GraphCompositionContext:
             raise PortArityError(
                 f"{operation.family!r} expects "
                 f"{len(operation.input_ports)} inputs, got {len(input_metadata)}"
+            )
+        if len(operation.parameter_ports) != len(parameter_metadata):
+            raise PortArityError(
+                f"{operation.family!r} expects "
+                f"{len(operation.parameter_ports)} parameters, "
+                f"got {len(parameter_metadata)}"
             )
         if len(operation.output_ports) != len(output_metadata):
             raise PortArityError(
@@ -250,6 +281,19 @@ class GraphCompositionContext:
                 strict=True,
             )
         )
+        bound_parameters = tuple(
+            self._bind_port(
+                operation,
+                port,
+                metadata,
+                direction="parameter",
+            )
+            for port, metadata in zip(
+                operation.parameter_ports,
+                parameter_metadata,
+                strict=True,
+            )
+        )
         bound_outputs = tuple(
             self._bind_port(
                 operation,
@@ -263,13 +307,13 @@ class GraphCompositionContext:
                 strict=True,
             )
         )
-        return bound_inputs, bound_outputs
+        return bound_inputs, bound_parameters, bound_outputs
 
     @staticmethod
     def _bind_port(
         operation: Operation,
         port: PortSpec,
-        actual: TensorMetadata,
+        actual: ValueMetadata,
         *,
         direction: str,
     ) -> PortSpec:
@@ -306,19 +350,25 @@ class GraphCompositionContext:
 
 
 def build_graph(
-    module: Module,
-    input_metadata: tuple[TensorMetadata, ...],
+    module_or_factory: Module | Callable[[GraphCompositionContext], Module],
+    input_metadata: tuple[ValueMetadata, ...],
 ) -> StructuralGraph:
     """Build a structural graph by eagerly composing one module.
 
     Args:
-        module: Root module whose ``forward`` method is composed.
+        module_or_factory: Root module or a factory that receives the active
+            composition context and returns a module. Factories are required
+            when module construction declares parameters.
         input_metadata: Metadata for root module inputs in positional order.
 
     Returns:
         The finalized immutable structural graph.
     """
     with GraphCompositionContext() as context:
+        if isinstance(module_or_factory, Module):
+            module = module_or_factory
+        else:
+            module = module_or_factory(context)
         inputs = tuple(context.input(metadata) for metadata in input_metadata)
         outputs = module(*inputs)
         values = outputs if isinstance(outputs, tuple) else (outputs,)

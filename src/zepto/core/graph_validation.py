@@ -11,6 +11,7 @@ from .errors import (
     PortArityError,
 )
 from .operation.records import Materialization
+from .parameter import bound_parameter_metadata
 
 if TYPE_CHECKING:
     from .graph import StructuralGraph
@@ -44,11 +45,16 @@ class GraphValidator:
                 raise ValueError(f"Operation {operation_id} has no complete contract")
             operation.declaration.validate_declaration()
             if operation.result is not None:
+                parameter_metadata = tuple(
+                    bound_parameter_metadata(graph.parameter(parameter_id))
+                    for parameter_id in operation.parameter_ids
+                )
                 operation.declaration.validate_result(
                     tuple(
                         graph.tensor(tensor_id).metadata
                         for tensor_id in operation.input_tensors
                     ),
+                    parameter_metadata,
                     operation.result,
                 )
             for saved_ref in operation.saved_for_backward:
@@ -75,6 +81,8 @@ class GraphValidator:
                     )
             if len(operation.input_ports) != len(operation.input_tensors):
                 raise PortArityError(f"Input arity mismatch for {operation_id}")
+            if len(operation.parameter_ports) != len(operation.parameter_ids):
+                raise PortArityError(f"Parameter arity mismatch for {operation_id}")
             if len(operation.output_ports) != len(operation.output_tensors):
                 raise PortArityError(f"Output arity mismatch for {operation_id}")
 

@@ -1,6 +1,6 @@
 """Elementwise minimum operation declaration."""
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec, ValueKind
 from .base import Operation
 from .helpers import (
@@ -53,9 +53,10 @@ class Minimum(Operation):
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
-    ) -> tuple[TensorMetadata, ...]:
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         left, right = inputs
         (output,) = outputs
         return (
@@ -67,8 +68,9 @@ class Minimum(Operation):
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         left, right = inputs
         (output,) = outputs
@@ -88,8 +90,9 @@ class Minimum(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[TensorMetadata, ...],
-    ) -> tuple[TensorMetadata, ...]:
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the broadcast elementwise minimum metadata."""
         left, right = inputs
         output = broadcast_metadata(
@@ -101,8 +104,9 @@ class Minimum(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save both operands whenever any gradient is requested."""
         left, right = inputs

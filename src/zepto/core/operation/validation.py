@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec, ValueKind
 from .records import (
     BackwardSpec,
@@ -31,16 +31,22 @@ class DeclarationValidator:
 
     def validate_ports(self, operation: Operation) -> None:
         inputs = operation.input_ports
+        parameters = operation.parameter_ports
         outputs = operation.output_ports
         auxiliary = operation.auxiliary_ports()
         if not isinstance(inputs, tuple) or not isinstance(outputs, tuple):
             raise OperationError("Operation ports must be tuples")
-        ports = (*inputs, *outputs, *auxiliary)
+        ports = (*inputs, *parameters, *outputs, *auxiliary)
         if not all(isinstance(port, PortSpec) and port.name for port in ports):
             raise OperationError("Operations require named PortSpec declarations")
         names = [port.name for port in ports]
         if len(names) != len(set(names)):
             raise OperationError("Operation port names must be unique")
+        for port in parameters:
+            if port.value_kind is not ValueKind.PARAMETER:
+                raise OperationError(
+                    f"Parameter port {port.name!r} must use ValueKind.PARAMETER"
+                )
 
     def validate_backward(self, operation: Operation) -> None:
         backward = operation.backward
@@ -50,6 +56,7 @@ class DeclarationValidator:
             port.name
             for port in (
                 *operation.input_ports,
+                *operation.parameter_ports,
                 *operation.output_ports,
                 *operation.auxiliary_ports(),
             )
@@ -75,25 +82,39 @@ class InvocationValidator:
     def validate_inputs(
         self,
         operation: Operation,
-        inputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
     ) -> None:
         if len(inputs) != len(operation.input_ports):
             raise OperationError(
                 f"{operation.family!r} expects {len(operation.input_ports)} inputs, "
                 f"got {len(inputs)}"
             )
-        if not all(isinstance(value, TensorMetadata) for value in inputs):
-            raise OperationError("Operation inputs must be TensorMetadata")
+        if not all(isinstance(value, ValueMetadata) for value in inputs):
+            raise OperationError("Operation inputs must be ValueMetadata")
+
+    def validate_parameters(
+        self,
+        operation: Operation,
+        parameters: tuple[ValueMetadata, ...],
+    ) -> None:
+        if len(parameters) != len(operation.parameter_ports):
+            raise OperationError(
+                f"{operation.family!r} expects "
+                f"{len(operation.parameter_ports)} parameters, got {len(parameters)}"
+            )
+        if not all(isinstance(value, ValueMetadata) for value in parameters):
+            raise OperationError("Operation parameters must be ValueMetadata")
 
     def validate_result(
         self,
         operation: Operation,
-        inputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...],
         result: OperationResult,
     ) -> None:
         self.validate_metadata(operation, result)
         self.validate_aliases(operation, inputs, result)
-        self.validate_saved_state(operation, inputs, result)
+        self.validate_saved_state(operation, inputs, parameters, result)
         self.validate_auxiliary_state(operation, inputs, result)
 
     def validate_metadata(self, operation: Operation, result: OperationResult) -> None:
@@ -104,13 +125,13 @@ class InvocationValidator:
                 f"{operation.family!r} inferred {len(result.outputs)} outputs, "
                 f"declares {len(operation.output_ports)}"
             )
-        if not all(isinstance(value, TensorMetadata) for value in result.outputs):
-            raise OperationError("Operation outputs must be TensorMetadata")
+        if not all(isinstance(value, ValueMetadata) for value in result.outputs):
+            raise OperationError("Operation outputs must be ValueMetadata")
 
     def validate_aliases(
         self,
         operation: Operation,
-        inputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
         result: OperationResult,
     ) -> None:
         aliases = result.aliases or (None,) * len(result.outputs)
@@ -146,10 +167,11 @@ class InvocationValidator:
     def validate_saved_state(
         self,
         operation: Operation,
-        inputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...],
         result: OperationResult,
     ) -> None:
-        selection = operation.saved_for_backward(inputs, result.outputs)
+        selection = operation.saved_for_backward(inputs, parameters, result.outputs)
         if not isinstance(selection, tuple) or not all(
             isinstance(name, str) and name for name in selection
         ):
@@ -170,15 +192,21 @@ class InvocationValidator:
         saved_names = set(result.saved_for_backward)
         if not saved_names.issubset(set(operation.backward.saved_for_backward)):
             raise OperationError("Result saves an undeclared backward value")
-        if not saved_names.issubset(
-            {port.name for port in (*operation.input_ports, *operation.output_ports)}
-        ):
+        known_ports = {
+            port.name
+            for port in (
+                *operation.input_ports,
+                *operation.parameter_ports,
+                *operation.output_ports,
+            )
+        }
+        if not saved_names.issubset(known_ports):
             raise OperationError("Result saves an unknown operation port")
 
     def validate_auxiliary_state(
         self,
         operation: Operation,
-        inputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
         result: OperationResult,
     ) -> None:
         aux_ports = operation.auxiliary_ports()
@@ -211,7 +239,7 @@ class InvocationValidator:
                 )
 
 
-def _numel(metadata: TensorMetadata) -> int:
+def _numel(metadata: ValueMetadata) -> int:
     """Return the element count for a concrete shape."""
     result = 1
     for dimension in metadata.shape:

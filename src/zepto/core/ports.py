@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal, TYPE_CHECKING
 
 from .ids import OperationId
-from .metadata import TensorMetadata
+from .metadata import ValueMetadata
 
 if TYPE_CHECKING:
     from .operation import StructuralOperation
@@ -26,7 +26,7 @@ class PortSpec:
 
     name: str
     value_kind: ValueKind = ValueKind.TENSOR
-    metadata: TensorMetadata | None = None
+    metadata: ValueMetadata | None = None
 
     def __post_init__(self) -> None:
         """Reject port declarations without a name."""
@@ -40,7 +40,7 @@ class PortRef:
 
     operation_id: OperationId
     port_name: str
-    role: Literal["input", "output", "auxiliary"]
+    role: Literal["input", "output", "auxiliary", "parameter"]
 
     def resolve(self, operation: "StructuralOperation") -> PortSpec:
         """Resolve this reference against its owning operation.
@@ -59,6 +59,8 @@ class PortRef:
             raise ValueError("PortRef belongs to a different operation")
         if self.role == "input":
             ports = operation.input_ports
+        elif self.role == "parameter":
+            ports = operation.parameter_ports
         elif self.role == "output":
             ports = operation.output_ports
         else:

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from ..accounting import PrecisionPolicy
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 
 
 class OperationError(ValueError):
@@ -47,7 +47,7 @@ class BackwardSpec:
 
     ``saved_for_backward`` declares the port names an operation is *allowed*
     to save. The invocation-specific subset is selected by the operation's
-    ``saved_for_backward(inputs, outputs)`` method, never declared here.
+    ``saved_for_backward(inputs, parameters, outputs)`` method, never declared here.
 
     For every port name in ``gradient_outputs``, the produced gradient has the
     same shape as the forward tensor bound to that port. Broadcast operands
@@ -74,8 +74,8 @@ class OperationResult:
     enclosing structural operation is created.
     """
 
-    outputs: tuple[TensorMetadata, ...]
-    auxiliary_outputs: tuple[TensorMetadata, ...] = ()
+    outputs: tuple[ValueMetadata, ...]
+    auxiliary_outputs: tuple[ValueMetadata, ...] = ()
     aliases: tuple[AliasSpec | None, ...] = ()
     auxiliary_aliases: tuple[AliasSpec | None, ...] = ()
     saved_for_backward: tuple[str, ...] = ()
@@ -100,7 +100,7 @@ class EstimationContext:
     """Immutable context supplied to operation cost estimators."""
 
     phase: str = "forward"
-    port_metadata: tuple[tuple[str, TensorMetadata], ...] = ()
+    port_metadata: tuple[tuple[str, ValueMetadata], ...] = ()
     precision: PrecisionPolicy | None = None
     state: tuple[tuple[str, Any], ...] = ()
 
@@ -110,14 +110,14 @@ class EstimationContext:
         if len(names) != len(set(names)):
             raise OperationError("Estimation metadata port names must be unique")
         if not all(
-            isinstance(name, str) and name and isinstance(metadata, TensorMetadata)
+            isinstance(name, str) and name and isinstance(metadata, ValueMetadata)
             for name, metadata in self.port_metadata
         ):
             raise OperationError(
-                "Estimation metadata requires named TensorMetadata entries"
+                "Estimation metadata requires named ValueMetadata entries"
             )
 
-    def metadata_for(self, port_name: str) -> TensorMetadata | None:
+    def metadata_for(self, port_name: str) -> ValueMetadata | None:
         """Return resolved metadata for a named operation port."""
         for name, metadata in self.port_metadata:
             if name == port_name:

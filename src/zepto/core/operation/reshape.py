@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec
 from .base import Operation
 from .records import (
@@ -54,8 +54,10 @@ class Reshape(Operation):
         )
 
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the requested shape from the input metadata."""
         if not self.shape or any(dim <= 0 for dim in self.shape):
             raise ValueError("reshape dimensions must be positive and non-empty")
@@ -70,7 +72,7 @@ class Reshape(Operation):
                 f"reshape element count mismatch: {inputs[0].shape} -> {self.shape}"
             )
         return (
-            TensorMetadata(
+            ValueMetadata(
                 self.shape,
                 inputs[0].semantic_type,
                 requires_grad=inputs[0].requires_grad,
@@ -83,8 +85,9 @@ class Reshape(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save nothing because the backward reshape needs only shapes."""
         return ()

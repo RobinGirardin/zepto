@@ -17,10 +17,11 @@ class StructuralOperation:
     id: OperationId
     operation_family: str
     input_ports: tuple[PortSpec, ...]
+    parameter_ports: tuple[PortSpec, ...]
     output_ports: tuple[PortSpec, ...]
     input_tensors: tuple[TensorId, ...]
-    output_tensors: tuple[TensorId, ...]
     parameter_ids: tuple[ParameterId, ...]
+    output_tensors: tuple[TensorId, ...]
     provenance: Provenance
     declaration: Operation | None = None
     result: OperationResult | None = None

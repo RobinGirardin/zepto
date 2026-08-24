@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from ..metadata import TensorMetadata
+from ..metadata import ValueMetadata
 from ..ports import PortSpec
 from .records import (
     AliasSpec,
@@ -28,6 +28,11 @@ class SemanticOperation(ABC):
         ...
 
     @property
+    def parameter_ports(self) -> tuple[PortSpec, ...]:
+        """Return ordered parameter port declarations."""
+        return ()
+
+    @property
     @abstractmethod
     def input_ports(self) -> tuple[PortSpec, ...]:
         """Return ordered input port declarations.
@@ -51,8 +56,10 @@ class SemanticOperation(ABC):
 
     @abstractmethod
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the output tensor metadata for one operation invocation."""
         ...
 
@@ -71,16 +78,18 @@ class SemanticOperation(ABC):
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
-    ) -> tuple[TensorMetadata, ...]:
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Return auxiliary metadata in ``auxiliary_ports`` order."""
         return ()
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Return the subset of auxiliary ports live for this invocation."""
         return ()
@@ -98,8 +107,9 @@ class SemanticOperation(ABC):
     @abstractmethod
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Select the port names saved for this concrete invocation.
 
@@ -144,7 +154,11 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
         """Validate family, ports, and backward declarations."""
         _DECLARATION_VALIDATOR.validate(self)
 
-    def infer_result(self, inputs: tuple[TensorMetadata, ...]) -> OperationResult:
+    def infer_result(
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> OperationResult:
         """Validate inputs, compose one result, and validate that result.
 
         The result is constructed exactly once from the operation's hooks:
@@ -154,23 +168,29 @@ class Operation(SemanticOperation, EstimationOperation, ABC):
         """
         self.validate_declaration()
         _INVOCATION_VALIDATOR.validate_inputs(self, inputs)
-        outputs = self.infer_outputs(inputs)
+        _INVOCATION_VALIDATOR.validate_parameters(self, parameters)
+        outputs = self.infer_outputs(inputs, parameters)
         if not isinstance(outputs, tuple):
             raise OperationError("infer_outputs must return a tuple")
-        auxiliary_outputs = self.infer_auxiliary_outputs(inputs, outputs)
+        auxiliary_outputs = self.infer_auxiliary_outputs(inputs, parameters, outputs)
         result = OperationResult(
             outputs=outputs,
             auxiliary_outputs=auxiliary_outputs,
             aliases=self.output_aliases(),
             auxiliary_aliases=self.auxiliary_aliases(),
-            saved_for_backward=self.saved_for_backward(inputs, outputs),
-            active_auxiliary_ports=self.active_auxiliary_ports(inputs, outputs),
+            saved_for_backward=self.saved_for_backward(inputs, parameters, outputs),
+            active_auxiliary_ports=self.active_auxiliary_ports(
+                inputs, parameters, outputs
+            ),
         )
-        self.validate_result(inputs, result)
+        self.validate_result(inputs, parameters, result)
         return result
 
     def validate_result(
-        self, inputs: tuple[TensorMetadata, ...], result: OperationResult
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...],
+        result: OperationResult,
     ) -> None:
         """Validate metadata, aliases, and backward state."""
-        _INVOCATION_VALIDATOR.validate_result(self, inputs, result)
+        _INVOCATION_VALIDATOR.validate_result(self, inputs, parameters, result)

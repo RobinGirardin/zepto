@@ -4,6 +4,7 @@ from .base import EstimationOperation, Operation, SemanticOperation
 from .add import Add
 from .divide import Divide
 from .identity import Identity
+from .linear_matmul import LinearMatMul
 from .matmul import MatMul
 from .maximum import Maximum
 from .minimum import Minimum
@@ -30,7 +31,7 @@ from .validation import DeclarationValidator, InvocationValidator
 __all__ = [
     "Add", "AliasSpec", "BackwardSpec", "DeclarationValidator", "Divide",
     "EstimationContext", "EstimationOperation", "Identity",
-    "IncompleteOperationError", "InvocationValidator", "MatMul",
+    "IncompleteOperationError", "InvocationValidator", "LinearMatMul", "MatMul",
     "Materialization", "Maximum", "Minimum", "Multiply", "Operation",
     "OperationError", "OperationResult", "ResourceEvent", "ResourceEventKind",
     "Reshape", "SemanticOperation", "Split", "SquareRoot", "StructuralOperation",

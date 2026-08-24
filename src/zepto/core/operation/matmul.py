@@ -1,6 +1,9 @@
-"""Batched matrix multiplication operation declaration."""
+"""Batched matrix multiplication of two data-flow tensors.
 
-from ..metadata import TensorMetadata
+For activation × registered weight, use ``LinearMatMul`` instead.
+"""
+
+from ..metadata import ValueMetadata
 from ..ports import PortSpec, ValueKind
 from .base import Operation
 from .helpers import (
@@ -19,13 +22,13 @@ from .helpers import (
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-def _batch_metadata(value: TensorMetadata) -> TensorMetadata:
+def _batch_metadata(value: ValueMetadata) -> ValueMetadata:
     """Return metadata for the leading batch prefix only."""
-    return TensorMetadata(value.shape[:-2])
+    return ValueMetadata(value.shape[:-2])
 
 
 def _broadcast_batch(
-    left: TensorMetadata, right: TensorMetadata, *, family: str
+    left: ValueMetadata, right: ValueMetadata, *, family: str
 ) -> tuple[int, ...]:
     """Broadcast the leading batch dimensions of two matmul operands."""
     return broadcast_metadata(
@@ -35,7 +38,7 @@ def _broadcast_batch(
 
 
 def _batch_reduction_flops(
-    operand: TensorMetadata, output: TensorMetadata
+    operand: ValueMetadata, output: ValueMetadata
 ) -> int:
     """Return FLOPs to sum a batched operand gradient over broadcast batch axes."""
     output_batch = numel(_batch_metadata(output))
@@ -44,7 +47,10 @@ def _batch_reduction_flops(
 
 
 class MatMul(Operation):
-    """Multiply tensors along their final two dimensions.
+    """Multiply two graph tensors along their final two dimensions.
+
+    Both operands are data-flow tensors (``input_ports`` only). Model weights
+    bound through parameter ports use the separate ``linear_matmul`` family.
 
     Leading dimensions broadcast NumPy-style between operands.
     """
@@ -74,9 +80,10 @@ class MatMul(Operation):
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
-    ) -> tuple[TensorMetadata, ...]:
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         left, right = inputs
         (output,) = outputs
         return (
@@ -88,8 +95,9 @@ class MatMul(Operation):
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         left, right = inputs
         (output,) = outputs
@@ -106,8 +114,10 @@ class MatMul(Operation):
         )
 
     def infer_outputs(
-        self, inputs: tuple[TensorMetadata, ...]
-    ) -> tuple[TensorMetadata, ...]:
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
         """Infer the batched matrix-product metadata."""
         left, right = inputs
         if len(left.shape) < 2 or len(right.shape) < 2:
@@ -124,7 +134,7 @@ class MatMul(Operation):
             )
         requires_grad = any(value.requires_grad for value in inputs)
         return (
-            TensorMetadata(
+            ValueMetadata(
                 shape=(*batch, m, n),
                 semantic_type=left.semantic_type,
                 requires_grad=requires_grad,
@@ -133,8 +143,9 @@ class MatMul(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[TensorMetadata, ...],
-        outputs: tuple[TensorMetadata, ...],
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
     ) -> tuple[str, ...]:
         """Save only the operands required by the requested gradients."""
         left, right = inputs

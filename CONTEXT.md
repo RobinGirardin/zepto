@@ -13,11 +13,41 @@ A user-level composition and provenance boundary whose called operations become 
 _Avoid_: Layer node, component node
 
 **Operation**:
-A reusable semantic operation declaration that maps input tensors to output
-tensors according to a mathematical operation and complete semantic and
-estimation behavior. A functional call creates a structural graph occurrence
-of that operation.
+A reusable semantic operation declaration that maps input tensors and
+parameters to output tensors according to a mathematical operation and
+complete semantic and estimation behavior. A functional call creates a
+structural graph occurrence of that operation.
 _Avoid_: Kernel, implementation
+
+**ValueMetadata**:
+Backend-neutral shape and semantic metadata shared by flow tensors and
+parameters. Describes dtype, role, persistence, and gradient requirements
+without encoding whether a value lives in the flow or asset plane.
+_Avoid_: TensorMetadata
+
+**GraphTensor**:
+A composition handle for per-invocation data-flow values passed through
+module ``forward()`` methods. Wraps a tensor identity and its metadata.
+_Avoid_: FlowTensor handle, bare TensorId
+
+**GraphParameter**:
+A composition handle for model-persistent weights declared during module
+construction. Carries metadata and a ``trainable`` flag for optimizer
+attachment.
+_Avoid_: Bare ParameterId in user code
+
+**Parameter**:
+A static weight asset stored in ``graph.parameters`` and referenced by
+operations through parameter ports. Not produced by the DAG; referenced
+directly at bind time.
+_Avoid_: Parameter tensor node
+
+**Two-plane model**:
+Every structural graph stores two parallel planes. The description layer
+(``ValueMetadata``) is shared. Composition handles split into
+``GraphTensor`` (flow) and ``GraphParameter`` (asset). Storage splits into
+``Tensor`` (producer/consumers in ``graph.tensors``) and ``Parameter``
+(referenced in ``graph.parameters``).
 
 **Structural operation**:
 One graph occurrence of an operation, including its bound tensor ports,

@@ -6,9 +6,10 @@ from dataclasses import replace
 
 from ..graph import StructuralGraph
 from ..ids import TensorId
-from ..metadata import DType, TensorMetadata, TensorRole
+from ..metadata import DType, ValueMetadata, TensorRole
 from ..operation.records import EstimationContext, ResourceEvent, ResourceEventKind
 from ..operation.structural import StructuralOperation
+from ..parameter import bound_parameter_metadata
 from ..tensor import Tensor
 from .context import InvocationContext
 
@@ -21,11 +22,11 @@ def structural_storage_id(tensor: Tensor) -> str:
 
 
 def resolve_tensor_metadata(
-    metadata: TensorMetadata,
+    metadata: ValueMetadata,
     context: InvocationContext,
     *,
     role: TensorRole | None = None,
-) -> TensorMetadata:
+) -> ValueMetadata:
     """Resolve dtype and optional role using the invocation policy."""
     resolved_dtype = context.accounting.resolve_dtype(metadata)
     resolved_role = role if role is not None else metadata.role
@@ -84,12 +85,21 @@ def build_estimation_context(
     context: InvocationContext,
 ) -> EstimationContext:
     """Build per-operation estimation metadata from bound port values."""
-    port_metadata: list[tuple[str, TensorMetadata]] = []
+    port_metadata: list[tuple[str, ValueMetadata]] = []
     for port, tensor_id in zip(
         structural.input_ports, structural.input_tensors, strict=True
     ):
         metadata = resolve_tensor_metadata(
             graph.tensor(tensor_id).metadata,
+            context,
+        )
+        port_metadata.append((port.name, metadata))
+    for port, parameter_id in zip(
+        structural.parameter_ports, structural.parameter_ids, strict=True
+    ):
+        param = graph.parameter(parameter_id)
+        metadata = resolve_tensor_metadata(
+            bound_parameter_metadata(param),
             context,
         )
         port_metadata.append((port.name, metadata))
@@ -172,6 +182,8 @@ def append_save_events(
     """Append SAVE events for structural saved-for-backward port refs."""
     save_events: list[ResourceEvent] = []
     for port_ref in structural.saved_for_backward:
+        if port_ref.role == "parameter":
+            continue
         tensor_id = port_tensor_id(structural, port_ref.port_name, port_ref.role)
         save_events.append(
             ResourceEvent(ResourceEventKind.SAVE, tensor_map[tensor_id])
@@ -181,7 +193,7 @@ def append_save_events(
 
 def register_auxiliary_tensor(
     aux_id: str,
-    metadata: TensorMetadata,
+    metadata: ValueMetadata,
     *,
     storage_id: str | None = None,
     lowered_tensors: dict[str, LoweredTensor],

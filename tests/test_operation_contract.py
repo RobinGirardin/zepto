@@ -26,7 +26,7 @@ from zepto.core import (
     ResourceEventKind,
     Split,
     Subtract,
-    TensorMetadata,
+    ValueMetadata,
     TensorRole,
     Transpose,
     build_graph,
@@ -55,13 +55,13 @@ class _IdentityOperation(Operation):
     def output_ports(self):
         return (PortSpec("output"),)
 
-    def infer_outputs(self, inputs):
+    def infer_outputs(self, inputs, parameters=()):
         return inputs
 
     def output_aliases(self):
         return (AliasSpec("input"),)
 
-    def saved_for_backward(self, inputs, outputs):
+    def saved_for_backward(self, inputs, parameters=(), outputs=()):
         return ()
 
     @property
@@ -83,7 +83,7 @@ def test_complete_operation_is_validated_and_reused_by_graph_nodes():
             context = GraphCompositionContext.current()
             return context.apply(operation, value)
 
-    graph = build_graph(Custom(), (TensorMetadata((4,)),))
+    graph = build_graph(Custom(), (ValueMetadata((4,)),))
     node = graph.operation(graph.operations[0])
     assert node.declaration is operation
     assert node.result.aliases == (AliasSpec("input"),)
@@ -103,7 +103,7 @@ def test_matmul_uses_two_flops_per_multiply_add():
             return matmul(left, right)
 
     graph = build_graph(
-        MatmulModule(), (TensorMetadata((2, 3)), TensorMetadata((3, 5)))
+        MatmulModule(), (ValueMetadata((2, 3)), ValueMetadata((3, 5)))
     )
     operation = graph.operation(graph.operations[0])
     result = operation.result
@@ -113,8 +113,8 @@ def test_matmul_uses_two_flops_per_multiply_add():
         operation.declaration.forward_flops(
             EstimationContext(
                 port_metadata=(
-                    ("left", TensorMetadata((2, 3))),
-                    ("right", TensorMetadata((3, 5))),
+                    ("left", ValueMetadata((2, 3))),
+                    ("right", ValueMetadata((3, 5))),
                     ("output", result.outputs[0]),
                 )
             ),
@@ -128,7 +128,7 @@ def test_identity_is_an_alias_and_not_a_composite_module():
         def forward(self, value):
             return identity(value)
 
-    graph = build_graph(Identity(), (TensorMetadata((2,)),))
+    graph = build_graph(Identity(), (ValueMetadata((2,)),))
     operation = graph.operation(graph.operations[0])
     assert operation.result.aliases == (AliasSpec("input"),)
     assert graph.tensor(operation.input_tensors[0]).storage_id == graph.tensor(
@@ -144,8 +144,8 @@ def test_saved_backward_names_are_resolved_to_graph_port_references():
     graph = build_graph(
         MaximumModule(),
         (
-            TensorMetadata((2,), requires_grad=True),
-            TensorMetadata((2,), requires_grad=True),
+            ValueMetadata((2,), requires_grad=True),
+            ValueMetadata((2,), requires_grad=True),
         ),
     )
     operation = graph.operation(graph.operations[0])
@@ -162,10 +162,10 @@ def test_saved_backward_names_are_resolved_to_graph_port_references():
 
 def test_tensor_metadata_requires_concrete_non_negative_dimensions():
     with pytest.raises(ValueError, match="non-negative integers"):
-        TensorMetadata((2.5,))
+        ValueMetadata((2.5,))
 
     with pytest.raises(ValueError, match="non-negative integers"):
-        TensorMetadata((-1,))
+        ValueMetadata((-1,))
 
 
 def test_shape_scenarios_are_represented_by_rebuilt_graphs():
@@ -173,8 +173,8 @@ def test_shape_scenarios_are_represented_by_rebuilt_graphs():
         def forward(self, value):
             return identity(value)
 
-    first = build_graph(IdentityModule(), (TensorMetadata((8, 128)),))
-    second = build_graph(IdentityModule(), (TensorMetadata((32, 128)),))
+    first = build_graph(IdentityModule(), (ValueMetadata((8, 128)),))
+    second = build_graph(IdentityModule(), (ValueMetadata((32, 128)),))
 
     assert first.tensor(first.inputs[0]).metadata.shape == (8, 128)
     assert second.tensor(second.inputs[0]).metadata.shape == (32, 128)
@@ -196,8 +196,8 @@ def test_multiply_declares_product_rule_backward_state(
     saved,
     factor,
 ):
-    left = TensorMetadata((2, 3), requires_grad=left_requires_grad)
-    right = TensorMetadata((2, 3), requires_grad=right_requires_grad)
+    left = ValueMetadata((2, 3), requires_grad=left_requires_grad)
+    right = ValueMetadata((2, 3), requires_grad=right_requires_grad)
     operation = Multiply()
     result = operation.infer_result((left, right))
     context = EstimationContext(
@@ -231,8 +231,8 @@ def test_matmul_gradient_contract_follows_inputs(
     saved,
     expected_backward,
 ):
-    left = TensorMetadata((2, 3), requires_grad=left_requires_grad)
-    right = TensorMetadata((3, 5), requires_grad=right_requires_grad)
+    left = ValueMetadata((2, 3), requires_grad=left_requires_grad)
+    right = ValueMetadata((3, 5), requires_grad=right_requires_grad)
     operation = MatMul()
     result = operation.infer_result((left, right))
     context = EstimationContext(
@@ -253,12 +253,12 @@ def test_matmul_gradient_contract_follows_inputs(
 @pytest.mark.parametrize("operation", (Add(), Multiply()))
 def test_elementwise_operations_reject_incompatible_broadcast_shapes(operation):
     with pytest.raises(ValueError, match=f"{operation.family} shapes"):
-        operation.infer_result((TensorMetadata((2, 3)), TensorMetadata((4, 3))))
+        operation.infer_result((ValueMetadata((2, 3)), ValueMetadata((4, 3))))
 
 
 def test_multiply_broadcast_metadata_matches_add():
-    left = TensorMetadata((2, 1, 3), requires_grad=True)
-    right = TensorMetadata((3,), requires_grad=False)
+    left = ValueMetadata((2, 1, 3), requires_grad=True)
+    right = ValueMetadata((3,), requires_grad=False)
 
     add_result = Add().infer_result((left, right))
     multiply_result = Multiply().infer_result((left, right))
@@ -269,17 +269,17 @@ def test_multiply_broadcast_metadata_matches_add():
 @pytest.mark.parametrize(
     ("operation", "inputs"),
     (
-        (Add(), (TensorMetadata((2,), requires_grad=True),) * 2),
-        (Identity(), (TensorMetadata((2,), requires_grad=True),)),
-        (Reshape((4,)), (TensorMetadata((2, 2), requires_grad=True),)),
-        (Transpose((1, 0)), (TensorMetadata((2, 3), requires_grad=True),)),
-        (Split((1, 1)), (TensorMetadata((2,), requires_grad=True),)),
+        (Add(), (ValueMetadata((2,), requires_grad=True),) * 2),
+        (Identity(), (ValueMetadata((2,), requires_grad=True),)),
+        (Reshape((4,)), (ValueMetadata((2, 2), requires_grad=True),)),
+        (Transpose((1, 0)), (ValueMetadata((2, 3), requires_grad=True),)),
+        (Split((1, 1)), (ValueMetadata((2,), requires_grad=True),)),
     ),
 )
 def test_operations_without_backward_state_save_nothing(operation, inputs):
     result = operation.infer_result(inputs)
 
-    assert operation.saved_for_backward(inputs, result.outputs) == ()
+    assert operation.saved_for_backward(inputs, (), result.outputs) == ()
     assert result.saved_for_backward == ()
 
 
@@ -300,33 +300,33 @@ def test_extremum_saves_both_operands_for_the_backward_mask(
     saved,
 ):
     inputs = (
-        TensorMetadata((3,), requires_grad=left_requires_grad),
-        TensorMetadata((3,), requires_grad=right_requires_grad),
+        ValueMetadata((3,), requires_grad=left_requires_grad),
+        ValueMetadata((3,), requires_grad=right_requires_grad),
     )
     result = operation.infer_result(inputs)
 
-    assert operation.saved_for_backward(inputs, result.outputs) == saved
+    assert operation.saved_for_backward(inputs, (), result.outputs) == saved
     assert result.saved_for_backward == saved
 
 
 @pytest.mark.parametrize("operation", (Multiply(), MatMul()))
 def test_saved_selection_uses_only_the_opposite_operand(operation):
-    left = TensorMetadata((2, 2), requires_grad=True)
-    right = TensorMetadata((2, 2), requires_grad=False)
+    left = ValueMetadata((2, 2), requires_grad=True)
+    right = ValueMetadata((2, 2), requires_grad=False)
     result = operation.infer_result((left, right))
 
-    assert operation.saved_for_backward((left, right), result.outputs) == ("right",)
+    assert operation.saved_for_backward((left, right), (), result.outputs) == ("right",)
 
 
 def test_hand_built_result_cannot_bypass_the_saved_selection():
-    left = TensorMetadata((2, 2), requires_grad=True)
-    right = TensorMetadata((2, 2), requires_grad=False)
+    left = ValueMetadata((2, 2), requires_grad=True)
+    right = ValueMetadata((2, 2), requires_grad=False)
     operation = MatMul()
     result = operation.infer_result((left, right))
     tampered = replace(result, saved_for_backward=("left", "right"))
 
     with pytest.raises(OperationError, match="saved_for_backward selection"):
-        operation.validate_result((left, right), tampered)
+        operation.validate_result((left, right), (), tampered)
 
 
 def test_declaration_validator_reports_bad_family() -> None:
@@ -343,10 +343,10 @@ def test_declaration_validator_reports_bad_family() -> None:
         def output_ports(self):
             return (PortSpec("output"),)
 
-        def infer_outputs(self, inputs):
+        def infer_outputs(self, inputs, parameters=()):
             return inputs
 
-        def saved_for_backward(self, inputs, outputs):
+        def saved_for_backward(self, inputs, parameters=(), outputs=()):
             return ()
 
         @property
@@ -369,20 +369,21 @@ def test_invocation_validator_reports_unknown_saved_port() -> None:
     operation = SimpleNamespace(
         family="bad_saved",
         input_ports=(PortSpec("input"),),
+        parameter_ports=(),
         output_ports=(PortSpec("output"),),
         backward=BackwardSpec(
             supported=True,
             saved_for_backward=("missing",),
         ),
-        saved_for_backward=lambda inputs, outputs: ("missing",),
+        saved_for_backward=lambda inputs, parameters=(), outputs=(): ("missing",),
     )
-    inputs = (TensorMetadata((2,)),)
+    inputs = (ValueMetadata((2,)),)
     result = OperationResult(
         outputs=inputs,
         saved_for_backward=("missing",),
     )
     with pytest.raises(OperationError, match="unknown operation port"):
-        InvocationValidator().validate_saved_state(operation, inputs, result)
+        InvocationValidator().validate_saved_state(operation, inputs, (), result)
 
 
 def test_invocation_validator_reports_bad_view_alias() -> None:
@@ -399,13 +400,13 @@ def test_invocation_validator_reports_bad_view_alias() -> None:
         def output_ports(self):
             return (PortSpec("output"),)
 
-        def infer_outputs(self, inputs):
-            return (TensorMetadata((4,)),)
+        def infer_outputs(self, inputs, parameters=()):
+            return (ValueMetadata((4,)),)
 
         def output_aliases(self):
             return (AliasSpec("input"),)
 
-        def saved_for_backward(self, inputs, outputs):
+        def saved_for_backward(self, inputs, parameters=(), outputs=()):
             return ()
 
         @property
@@ -419,9 +420,9 @@ def test_invocation_validator_reports_bad_view_alias() -> None:
             return ()
 
     operation = ViewMismatch()
-    inputs = (TensorMetadata((2, 3)),)
+    inputs = (ValueMetadata((2, 3)),)
     result = OperationResult(
-        outputs=(TensorMetadata((2, 4)),),
+        outputs=(ValueMetadata((2, 4)),),
         aliases=(AliasSpec("input"),),
     )
     with pytest.raises(OperationError, match="View aliases must preserve"):
@@ -442,10 +443,10 @@ def test_validate_result_does_not_invoke_resource_events() -> None:
         def output_ports(self):
             return (PortSpec("output"),)
 
-        def infer_outputs(self, inputs):
+        def infer_outputs(self, inputs, parameters=()):
             return inputs
 
-        def saved_for_backward(self, inputs, outputs):
+        def saved_for_backward(self, inputs, parameters=(), outputs=()):
             return ()
 
         @property
@@ -459,9 +460,9 @@ def test_validate_result_does_not_invoke_resource_events() -> None:
             raise RuntimeError("resource_events must not run during validation")
 
     operation = RaisingEvents()
-    inputs = (TensorMetadata((2,)),)
+    inputs = (ValueMetadata((2,)),)
     result = OperationResult(outputs=inputs)
-    operation.validate_result(inputs, result)
+    operation.validate_result(inputs, (), result)
 
 
 def test_subtract_family_and_backward_contract() -> None:
@@ -469,13 +470,13 @@ def test_subtract_family_and_backward_contract() -> None:
     assert operation.family == "subtract"
     assert operation.backward.gradient_outputs == ("left", "right")
     result = operation.infer_result(
-        (TensorMetadata((2,)), TensorMetadata((2,)))
+        (ValueMetadata((2,)), ValueMetadata((2,)))
     )
     assert result.saved_for_backward == ()
 
 
 def test_gradient_accumulation_without_gradient_event_kind() -> None:
-    metadata = TensorMetadata((4,), role=TensorRole.GRADIENT, requires_grad=False)
+    metadata = ValueMetadata((4,), role=TensorRole.GRADIENT, requires_grad=False)
     events = (
         ResourceEvent(ResourceEventKind.ALLOCATE, "grad:0"),
         ResourceEvent(ResourceEventKind.PERSIST, "grad:0"),
@@ -492,20 +493,20 @@ def test_gradient_accumulation_without_gradient_event_kind() -> None:
 
 class TestBroadcastReductionFlops:
     def test_no_reduction_when_shapes_match(self) -> None:
-        operand = TensorMetadata((32, 128, 512))
-        output = TensorMetadata((32, 128, 512))
+        operand = ValueMetadata((32, 128, 512))
+        output = ValueMetadata((32, 128, 512))
         assert broadcast_reduction_flops(operand, output) == 0
 
     def test_reduction_for_broadcast_bias(self) -> None:
-        operand = TensorMetadata((512,))
-        output = TensorMetadata((32, 128, 512))
+        operand = ValueMetadata((512,))
+        output = ValueMetadata((32, 128, 512))
         assert broadcast_reduction_flops(operand, output) == 32 * 128 * 512 - 512
 
 
 class TestBroadcastBackwardFlops:
     def test_add_reduction_only_for_broadcast_operand(self) -> None:
-        x = TensorMetadata((32, 128, 512), requires_grad=True)
-        bias = TensorMetadata((512,), requires_grad=True)
+        x = ValueMetadata((32, 128, 512), requires_grad=True)
+        bias = ValueMetadata((512,), requires_grad=True)
         operation = Add()
         result = operation.infer_result((x, bias))
         context = EstimationContext(
@@ -518,8 +519,8 @@ class TestBroadcastBackwardFlops:
         assert operation.backward_flops(context) == 32 * 128 * 512 - 512
 
     def test_subtract_includes_negation(self) -> None:
-        x = TensorMetadata((32, 128, 512), requires_grad=True)
-        bias = TensorMetadata((512,), requires_grad=True)
+        x = ValueMetadata((32, 128, 512), requires_grad=True)
+        bias = ValueMetadata((512,), requires_grad=True)
         operation = Subtract()
         result = operation.infer_result((x, bias))
         context = EstimationContext(
@@ -532,8 +533,8 @@ class TestBroadcastBackwardFlops:
         assert operation.backward_flops(context) == (32 * 128 * 512 - 512) + 512
 
     def test_multiply_vjp_and_reduction(self) -> None:
-        x = TensorMetadata((32, 128, 512), requires_grad=True)
-        bias = TensorMetadata((512,), requires_grad=True)
+        x = ValueMetadata((32, 128, 512), requires_grad=True)
+        bias = ValueMetadata((512,), requires_grad=True)
         operation = Multiply()
         result = operation.infer_result((x, bias))
         context = EstimationContext(
@@ -550,32 +551,32 @@ class TestBroadcastBackwardFlops:
 
 class TestMatMulBatchBroadcast:
     def test_linear_layer_shape(self) -> None:
-        left = TensorMetadata((32, 128, 512))
-        right = TensorMetadata((512, 64))
+        left = ValueMetadata((32, 128, 512))
+        right = ValueMetadata((512, 64))
         result = MatMul().infer_result((left, right))
         assert result.outputs[0].shape == (32, 128, 64)
 
     def test_singleton_batch_dims(self) -> None:
-        left = TensorMetadata((8, 1, 4, 4))
-        right = TensorMetadata((1, 5, 4, 4))
+        left = ValueMetadata((8, 1, 4, 4))
+        right = ValueMetadata((1, 5, 4, 4))
         result = MatMul().infer_result((left, right))
         assert result.outputs[0].shape == (8, 5, 4, 4)
 
     def test_incompatible_batch_rejected(self) -> None:
         with pytest.raises(ValueError, match="matmul shapes"):
             MatMul().infer_result(
-                (TensorMetadata((2, 4, 4)), TensorMetadata((3, 4, 4)))
+                (ValueMetadata((2, 4, 4)), ValueMetadata((3, 4, 4)))
             )
 
     def test_incompatible_contraction_rejected(self) -> None:
         with pytest.raises(ValueError, match="contracting"):
             MatMul().infer_result(
-                (TensorMetadata((4, 3)), TensorMetadata((5, 4)))
+                (ValueMetadata((4, 3)), ValueMetadata((5, 4)))
             )
 
     def test_backward_flops_includes_batch_reduction(self) -> None:
-        left = TensorMetadata((32, 128, 512), requires_grad=True)
-        right = TensorMetadata((512, 64), requires_grad=True)
+        left = ValueMetadata((32, 128, 512), requires_grad=True)
+        right = ValueMetadata((512, 64), requires_grad=True)
         operation = MatMul()
         result = operation.infer_result((left, right))
         context = EstimationContext(
@@ -597,16 +598,16 @@ class TestAuxiliaryPorts:
         assert len(operation.auxiliary_ports()) == 4
 
     def test_active_aux_ports_omit_unreduced_without_broadcast(self) -> None:
-        left = TensorMetadata((2, 3), requires_grad=True)
-        right = TensorMetadata((2, 3), requires_grad=True)
+        left = ValueMetadata((2, 3), requires_grad=True)
+        right = ValueMetadata((2, 3), requires_grad=True)
         result = Multiply().infer_result((left, right))
         assert GRAD_LEFT in result.active_auxiliary_ports
         assert GRAD_RIGHT in result.active_auxiliary_ports
         assert GRAD_RIGHT_UNREDUCED not in result.active_auxiliary_ports
 
     def test_active_aux_includes_unreduced_for_multiply_bias(self) -> None:
-        x = TensorMetadata((32, 128, 512), requires_grad=True)
-        bias = TensorMetadata((512,), requires_grad=True)
+        x = ValueMetadata((32, 128, 512), requires_grad=True)
+        bias = ValueMetadata((512,), requires_grad=True)
         result = Multiply().infer_result((x, bias))
         assert GRAD_RIGHT in result.active_auxiliary_ports
         assert GRAD_RIGHT_UNREDUCED in result.active_auxiliary_ports
@@ -629,13 +630,13 @@ class TestAuxiliaryPorts:
             def auxiliary_ports(self):
                 return (PortSpec("grad_left"),)
 
-            def infer_auxiliary_outputs(self, inputs, outputs):
+            def infer_auxiliary_outputs(self, inputs, parameters=(), outputs=()):
                 return ()
 
-            def infer_outputs(self, inputs):
-                return (TensorMetadata((2,)),)
+            def infer_outputs(self, inputs, parameters=()):
+                return (ValueMetadata((2,)),)
 
-            def saved_for_backward(self, inputs, outputs):
+            def saved_for_backward(self, inputs, parameters=(), outputs=()):
                 return ()
 
             @property
@@ -649,15 +650,15 @@ class TestAuxiliaryPorts:
                 return ()
 
         with pytest.raises(OperationError, match="auxiliary outputs"):
-            BadAux().infer_result((TensorMetadata((2,)), TensorMetadata((2,))))
+            BadAux().infer_result((ValueMetadata((2,)), ValueMetadata((2,))))
 
     def test_identity_has_no_aux_ports(self) -> None:
         assert Identity().auxiliary_ports() == ()
 
 
 def test_gradient_aux_metadata_matches_operand_shape() -> None:
-    x = TensorMetadata((32, 128, 512), requires_grad=True)
-    bias = TensorMetadata((512,), requires_grad=True)
+    x = ValueMetadata((32, 128, 512), requires_grad=True)
+    bias = ValueMetadata((512,), requires_grad=True)
     result = Multiply().infer_result((x, bias))
     grad_right_index = next(
         i
@@ -684,16 +685,16 @@ def test_active_aux_must_be_declared_port() -> None:
         def auxiliary_ports(self):
             return (PortSpec("grad_input"),)
 
-        def infer_auxiliary_outputs(self, inputs, outputs):
-            return (TensorMetadata((2,)),)
+        def infer_auxiliary_outputs(self, inputs, parameters=(), outputs=()):
+            return (ValueMetadata((2,)),)
 
-        def active_auxiliary_ports(self, inputs, outputs):
+        def active_auxiliary_ports(self, inputs, parameters=(), outputs=()):
             return ("missing",)
 
-        def infer_outputs(self, inputs):
+        def infer_outputs(self, inputs, parameters=()):
             return inputs
 
-        def saved_for_backward(self, inputs, outputs):
+        def saved_for_backward(self, inputs, parameters=(), outputs=()):
             return ()
 
         @property
@@ -707,4 +708,4 @@ def test_active_aux_must_be_declared_port() -> None:
             return ()
 
     with pytest.raises(OperationError, match="undeclared auxiliary port"):
-        BadActive().infer_result((TensorMetadata((2,)),))
+        BadActive().infer_result((ValueMetadata((2,)),))
