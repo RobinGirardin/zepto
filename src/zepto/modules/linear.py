@@ -1,13 +1,7 @@
 """Linear layer module."""
 
-from ..core.composition import (
-    GraphCompositionContext,
-    GraphParameter,
-    GraphTensor,
-    Module,
-)
-from ..core.functional import linear_matmul
-from ..core.metadata import ValueMetadata
+from zepto.compose import Compose, Module, Parameter, Tensor
+from zepto.semantic import LinearMatMul
 
 
 class Linear(Module):
@@ -15,17 +9,17 @@ class Linear(Module):
 
     def __init__(self, in_features: int, out_features: int) -> None:
         super().__init__()
-        ctx = GraphCompositionContext.current()
+        ctx = Compose.current()
         if ctx is None:
-            raise RuntimeError("Linear requires an active GraphCompositionContext")
+            raise RuntimeError("Linear requires an active Compose context")
 
         weight = ctx.parameter(
-            ValueMetadata(
-                (in_features, out_features),
+            Parameter(
+                shape=(in_features, out_features),
                 semantic_type="weight",
             )
         )
         self.register_parameter("weight", weight)
 
-    def forward(self, x: GraphTensor) -> GraphTensor:
-        return linear_matmul(x, self._parameters["weight"])
+    def forward(self, x: Tensor) -> Tensor:
+        return LinearMatMul()(x, parameters=(self._parameters["weight"],))  # type: ignore[return-value]

@@ -1,7 +1,7 @@
 """Root-mean-square normalization module boundary."""
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import identity
+from zepto.compose import Module, Tensor
+from zepto.semantic import Identity
 
 
 class RMSNorm(Module):
@@ -18,6 +18,6 @@ class RMSNorm(Module):
         self.normalized_shape = normalized_shape
         self.epsilon = epsilon
 
-    def forward(self, value: GraphTensor) -> GraphTensor:
+    def forward(self, value: Tensor) -> Tensor:
         """Compose the current placeholder RMS-normalization behavior."""
-        return identity(value)
+        return Identity()(value)  # type: ignore[return-value]
