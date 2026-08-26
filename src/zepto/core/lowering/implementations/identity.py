@@ -89,7 +89,7 @@ class IdentityImplementation:
 
         return LoweredOperation(
             id=f"op{structural.id.index}",
-            structural_operation_id=structural.id,
+            structural_operation_ids=(structural.id,),
             implementation=self.descriptor.id,
             input_tensors=input_ids,
             output_tensors=output_ids,

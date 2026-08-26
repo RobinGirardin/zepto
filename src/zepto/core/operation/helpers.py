@@ -22,6 +22,30 @@ def numel(metadata: ValueMetadata) -> int:
     return result
 
 
+def broadcast_shape(
+    shapes: tuple[tuple[int, ...], ...], *, family: str
+) -> tuple[int, ...]:
+    """NumPy right-aligned broadcast of one or more shapes."""
+    rank = max(len(shape) for shape in shapes)
+    padded = tuple((1,) * (rank - len(shape)) + shape for shape in shapes)
+    result: list[int] = []
+    for dims in zip(*padded, strict=True):
+        leading = dims[0]
+        for dim in dims[1:]:
+            if dim == leading:
+                continue
+            if dim == 1:
+                continue
+            if leading == 1:
+                leading = dim
+                continue
+            raise ValueError(
+                f"{family} shapes are not broadcast-compatible: {shapes}"
+            )
+        result.append(leading)
+    return tuple(result)
+
+
 def broadcast_metadata(
     inputs: tuple[ValueMetadata, ValueMetadata],
     *,
@@ -30,26 +54,24 @@ def broadcast_metadata(
 ) -> ValueMetadata:
     """Infer metadata for a binary elementwise broadcast."""
     left, right = inputs
-    rank = max(len(left.shape), len(right.shape))
-    left_shape = (1,) * (rank - len(left.shape)) + left.shape
-    right_shape = (1,) * (rank - len(right.shape)) + right.shape
-
-    shape: list[int] = []
-    for left_dim, right_dim in zip(left_shape, right_shape, strict=True):
-        if left_dim == right_dim:
-            shape.append(left_dim)
-        elif left_dim == 1:
-            shape.append(right_dim)
-        elif right_dim == 1:
-            shape.append(left_dim)
-        else:
-            raise ValueError(
-                f"{family} shapes are not broadcast-compatible: "
-                f"{left.shape} and {right.shape}"
-            )
-
+    shape = broadcast_shape((left.shape, right.shape), family=family)
     return ValueMetadata(
-        shape=tuple(shape),
+        shape=shape,
+        semantic_type=semantic_type,
+        requires_grad=any(value.requires_grad for value in inputs),
+    )
+
+
+def broadcast_metadata_n(
+    inputs: tuple[ValueMetadata, ...],
+    *,
+    family: str,
+    semantic_type: str = "tensor",
+) -> ValueMetadata:
+    """Infer metadata for an n-ary elementwise broadcast."""
+    shape = broadcast_shape(tuple(value.shape for value in inputs), family=family)
+    return ValueMetadata(
+        shape=shape,
         semantic_type=semantic_type,
         requires_grad=any(value.requires_grad for value in inputs),
     )

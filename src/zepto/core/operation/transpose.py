@@ -44,6 +44,25 @@ class Transpose(Operation):
         """
         return (PortSpec("output"),)
 
+    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
+        return ()
+
+    def infer_auxiliary_outputs(
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[ValueMetadata, ...]:
+        return ()
+
+    def active_auxiliary_ports(
+        self,
+        inputs: tuple[ValueMetadata, ...],
+        parameters: tuple[ValueMetadata, ...] = (),
+        outputs: tuple[ValueMetadata, ...] = (),
+    ) -> tuple[str, ...]:
+        return ()
+
     @property
     def backward(self) -> BackwardSpec:
         """Declare the inverse view gradient without saved forward state."""

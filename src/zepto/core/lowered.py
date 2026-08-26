@@ -8,7 +8,10 @@ from typing import Mapping
 
 from .ids import OperationId, TensorId
 from .lowering.context import InvocationContext
-from .lowering.registry import ImplementationSelection
+from .lowering.registry import (
+    ImplementationSelection,
+    RegionImplementationSelection,
+)
 from .metadata import ValueMetadata
 from .operation.records import ResourceEvent
 
@@ -29,7 +32,7 @@ class LoweredOperation:
     """One lowered operation with frozen resource events and FLOP counts."""
 
     id: str
-    structural_operation_id: OperationId
+    structural_operation_ids: tuple[OperationId, ...]
     implementation: str
     input_tensors: tuple[str, ...]
     output_tensors: tuple[str, ...]
@@ -37,7 +40,15 @@ class LoweredOperation:
     resource_events: tuple[ResourceEvent, ...]
     forward_flops: int
     backward_flops: int
+    module_path: tuple[str, ...] = ()
+    component_type: str | None = None
+    region_id: str | None = None
     auxiliary_metadata: Mapping[str, ValueMetadata] = MappingProxyType({})
+
+    @property
+    def structural_operation_id(self) -> OperationId:
+        """Backward-compatible single-op accessor."""
+        return self.structural_operation_ids[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,3 +61,6 @@ class LoweredGraph:
     tensor_map: Mapping[TensorId, str]
     operation_map: Mapping[OperationId, str]
     selections: tuple[ImplementationSelection, ...]
+    fusion_map: Mapping[OperationId, str] = MappingProxyType({})
+    region_map: Mapping[str, tuple[OperationId, ...]] = MappingProxyType({})
+    region_selections: tuple[RegionImplementationSelection, ...] = ()

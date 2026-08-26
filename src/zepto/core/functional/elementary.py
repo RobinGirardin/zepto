@@ -1,7 +1,21 @@
 """Functional wrappers for elementary tensor operations."""
 
 from ..composition import GraphTensor
-from ..operation import Add, Divide, Maximum, Minimum, Multiply, SquareRoot, Subtract
+from ..operation import (
+    Add,
+    Cos,
+    Divide,
+    Exp,
+    Log,
+    Maximum,
+    Minimum,
+    Multiply,
+    Pow,
+    Sin,
+    SquareRoot,
+    Subtract,
+    Where,
+)
 from ._common import context
 
 
@@ -38,3 +52,37 @@ def minimum(left: GraphTensor, right: GraphTensor) -> GraphTensor:
 def sqrt(value: GraphTensor) -> GraphTensor:
     """Record an elementwise square-root operation."""
     return context().apply(SquareRoot(), value)  # type: ignore[return-value]
+
+
+def pow(base: GraphTensor, exponent: GraphTensor) -> GraphTensor:
+    """Record an elementwise power operation."""
+    return context().apply(Pow(), base, exponent)  # type: ignore[return-value]
+
+
+def exp(value: GraphTensor) -> GraphTensor:
+    """Record an elementwise natural exponential."""
+    return context().apply(Exp(), value)  # type: ignore[return-value]
+
+
+def log(value: GraphTensor) -> GraphTensor:
+    """Record an elementwise natural logarithm."""
+    return context().apply(Log(), value)  # type: ignore[return-value]
+
+
+def sin(value: GraphTensor) -> GraphTensor:
+    """Record an elementwise sine."""
+    return context().apply(Sin(), value)  # type: ignore[return-value]
+
+
+def cos(value: GraphTensor) -> GraphTensor:
+    """Record an elementwise cosine."""
+    return context().apply(Cos(), value)  # type: ignore[return-value]
+
+
+def where(
+    condition: GraphTensor,
+    on_true: GraphTensor,
+    on_false: GraphTensor,
+) -> GraphTensor:
+    """Record elementwise conditional selection."""
+    return context().apply(Where(), condition, on_true, on_false)  # type: ignore[return-value]

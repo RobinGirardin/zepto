@@ -2,7 +2,6 @@
 
 from ..core.composition import (
     GraphCompositionContext,
-    GraphParameter,
     GraphTensor,
     Module,
 )
@@ -19,13 +18,12 @@ class Linear(Module):
         if ctx is None:
             raise RuntimeError("Linear requires an active GraphCompositionContext")
 
-        weight = ctx.parameter(
+        self.weight = ctx.parameter(
             ValueMetadata(
                 (in_features, out_features),
                 semantic_type="weight",
             )
         )
-        self.register_parameter("weight", weight)
 
     def forward(self, x: GraphTensor) -> GraphTensor:
-        return linear_matmul(x, self._parameters["weight"])
+        return linear_matmul(x, self.weight)

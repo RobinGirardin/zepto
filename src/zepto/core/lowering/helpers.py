@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Mapping
 
+from ..accounting import PrecisionPolicy
 from ..graph import StructuralGraph
 from ..ids import TensorId
 from ..metadata import DType, ValueMetadata, TensorRole
@@ -12,6 +14,7 @@ from ..operation.structural import StructuralOperation
 from ..parameter import bound_parameter_metadata
 from ..tensor import Tensor
 from .context import InvocationContext
+from .region import StructuralRegion
 
 
 def structural_storage_id(tensor: Tensor) -> str:
@@ -216,3 +219,59 @@ def is_zero_operand(tensor: Tensor, graph: StructuralGraph) -> bool:
     """Return whether a tensor is provably a constant-zero operand."""
     del graph
     return tensor.metadata.semantic_type == "constant_zero"
+
+
+@dataclass(frozen=True, slots=True)
+class RegionEstimationContext:
+    """Aggregated port metadata for one structural region."""
+
+    region: StructuralRegion
+    phase: str
+    input_metadata: Mapping[str, ValueMetadata]
+    output_metadata: Mapping[str, ValueMetadata]
+    parameter_metadata: Mapping[str, ValueMetadata]
+    precision: PrecisionPolicy | None
+    state: tuple[tuple[str, object], ...]
+
+
+def build_region_estimation_context(
+    region: StructuralRegion,
+    graph: StructuralGraph,
+    context: InvocationContext,
+) -> RegionEstimationContext:
+    """Resolve boundary tensor and parameter metadata for a region."""
+    input_metadata: dict[str, ValueMetadata] = {}
+    for index, tensor_id in enumerate(region.boundary_inputs):
+        metadata = resolve_tensor_metadata(
+            graph.tensor(tensor_id).metadata,
+            context,
+        )
+        input_metadata["input" if index == 0 else f"input{index}"] = metadata
+
+    output_metadata: dict[str, ValueMetadata] = {}
+    for index, tensor_id in enumerate(region.boundary_outputs):
+        metadata = resolve_tensor_metadata(
+            graph.tensor(tensor_id).metadata,
+            context,
+        )
+        output_metadata["output" if index == 0 else f"output{index}"] = metadata
+
+    parameter_metadata: dict[str, ValueMetadata] = {}
+    for index, parameter_id in enumerate(region.parameter_ids):
+        param = graph.parameter(parameter_id)
+        metadata = resolve_tensor_metadata(
+            bound_parameter_metadata(param),
+            context,
+            role=TensorRole.PARAMETER,
+        )
+        parameter_metadata[f"param{index}"] = metadata
+
+    return RegionEstimationContext(
+        region=region,
+        phase=context.phase,
+        input_metadata=input_metadata,
+        output_metadata=output_metadata,
+        parameter_metadata=parameter_metadata,
+        precision=context.precision,
+        state=context.state,
+    )

@@ -30,7 +30,9 @@ from zepto.core.lowering.implementations.identity import IdentityImplementation
 from zepto.core.lowering.registry import (
     ImplementationDescriptor,
     select_implementation,
+    select_region_implementation,
 )
+from zepto.core.lowering.discovery import discover_regions
 
 
 def _identity_graph() -> tuple:
@@ -247,8 +249,8 @@ def test_relu_pattern_selects_relu_mask_implementation() -> None:
     lowered = lower(graph, reference_context())
     op = lowered.operations[0]
 
-    assert op.implementation == "maximum/relu-mask"
-    assert lowered.selections[0].chosen.id == "maximum/relu-mask"
+    assert op.implementation == "region/relu"
+    assert lowered.region_selections[0].chosen.id == "region/relu"
     assert len(op.auxiliary_tensors) == 1
     save_events = [
         event for event in op.resource_events if event.kind is ResourceEventKind.SAVE
@@ -329,13 +331,15 @@ def test_selection_records_rejected_candidates() -> None:
 
     registry = LoweringRegistry()
     register_defaults(registry)
-    structural = graph.operation(graph.operations[0])
-    _impl, selection = select_implementation(
-        structural, graph, reference_context(), registry
+    ctx = reference_context()
+    regions = discover_regions(graph, ctx, registry)
+    assert len(regions) == 1
+    _impl, selection = select_region_implementation(
+        regions[0], graph, ctx, registry
     )
 
-    assert selection.chosen.id == "maximum/relu-mask"
-    assert selection.reason == "highest_priority"
+    assert selection.chosen.id == "region/relu"
+    assert selection.reason == "only_candidate"
     assert not selection.rejected
 
 
