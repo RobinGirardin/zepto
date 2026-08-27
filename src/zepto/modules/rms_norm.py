@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import add, divide, multiply, reduce_sum, scalar_input, sqrt
-from ..core.metadata import ValueMetadata
-from ._helpers import (
-    add_bias_parameter,
-    feature_size,
-    norm_axis,
-    require_context,
-    scale_by_parameter,
-)
+from zepto.compose import Module, Tensor
+from zepto.semantic import Identity
 
 
 class RMSNorm(Module):
@@ -55,27 +47,6 @@ class RMSNorm(Module):
             )
         self._initialized = True
 
-    def forward(self, value: GraphTensor) -> GraphTensor:
-        self._ensure_initialized()
-        assert self._eps is not None and self._inv_norm_size is not None
-
-        axis = norm_axis(value)
-        feature_dim = feature_size(value, axis=axis)
-        if feature_dim != self.normalized_shape:
-            raise ValueError(
-                f"RMSNorm expected last dim {self.normalized_shape}, "
-                f"got {feature_dim} from shape {value.metadata.shape}"
-            )
-
-        squared = multiply(value, value)
-        variance = divide(
-            reduce_sum(squared, axis=axis, keepdim=True),
-            self._inv_norm_size,
-        )
-        denom = sqrt(add(variance, self._eps))
-        normalized = divide(value, denom)
-
-        if not self.elementwise_affine:
-            return normalized
-
-        return scale_by_parameter(normalized, self.weight)
+    def forward(self, value: Tensor) -> Tensor:
+        """Compose the current placeholder RMS-normalization behavior."""
+        return Identity()(value)  # type: ignore[return-value]

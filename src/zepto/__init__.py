@@ -1,3 +1,145 @@
 """Public Zepto package namespace."""
 
-from .core import *
+from zepto.analysis import *
+from zepto.analysis.accounting import AccountingPolicy, PrecisionPolicy
+from zepto.analysis.estimation import estimate
+from zepto.analysis.lowered import LoweredEdge, LoweredGraph, LoweredNode
+from zepto.analysis.resolved import ResolvedValue
+from zepto.analysis.lowering.role import RoleContext, infer_accounting_role
+from zepto.analysis.lowering import (
+    ImplementationDescriptor,
+    ImplementationSelection,
+    InvocationContext,
+    LoweringError,
+    LoweringRegistry,
+    lower,
+    reference_invocation,
+)
+from zepto.compose import *
+from zepto.compose.values import Parameter, Tensor
+from zepto.compose.context import Compose, Module, compose_graph
+from zepto.graph import *
+from zepto.graph.edge import Edge
+from zepto.graph.node import Node
+from zepto.graph.graph import Graph, GraphBuilder
+from zepto.graph.validation import GraphValidator
+from zepto.graph.ids import *
+from zepto.graph.errors import *
+from zepto.graph.provenance import Provenance
+from zepto.semantic import *
+from zepto.semantic.metadata import (
+    DType,
+    Dim,
+    Shape,
+    PortContract,
+    TensorRole,
+    contract_satisfied,
+)
+from zepto.semantic.operations import (
+    AliasSpec,
+    BackwardSpec,
+    DeclarationValidator,
+    EstimationContext,
+    EstimationOperation,
+    IncompleteOperationError,
+    InferenceBundle,
+    InvocationValidator,
+    Materialization,
+    Operation,
+    OperationError,
+    OperationResult,
+    ResourceEvent,
+    ResourceEventKind,
+    SemanticOperation,
+    Add,
+    Divide,
+    Identity,
+    LinearMatMul,
+    MatMul,
+    Maximum,
+    Minimum,
+    Multiply,
+    Reshape,
+    Split,
+    SquareRoot,
+    Subtract,
+    Transpose,
+)
+from zepto.semantic.ports import Port, PortLink, ValueKind
+
+from . import analysis, compose, graph, semantic
+
+__all__ = [
+    "AccountingPolicy",
+    "Compose",
+    "ComposeError",
+    "DType",
+    "Dim",
+    "AliasSpec",
+    "BackwardSpec",
+    "DeclarationValidator",
+    "Edge",
+    "EstimationContext",
+    "EstimationOperation",
+    "Graph",
+    "GraphBuilder",
+    "GraphValidator",
+    "ImplementationDescriptor",
+    "ImplementationSelection",
+    "InferenceBundle",
+    "InvocationContext",
+    "LoweringError",
+    "LoweringRegistry",
+    "LoweredEdge",
+    "LoweredGraph",
+    "LoweredNode",
+    "IncompleteOperationError",
+    "InvocationValidator",
+    "MetadataMismatchError",
+    "Materialization",
+    "Module",
+    "Node",
+    "OperationError",
+    "Operation",
+    "OperationResult",
+    "Parameter",
+    "Port",
+    "PortContract",
+    "PortLink",
+    "PrecisionPolicy",
+    "Provenance",
+    "ResolvedValue",
+    "ResourceEvent",
+    "ResourceEventKind",
+    "RoleContext",
+    "SemanticOperation",
+    "Shape",
+    "Tensor",
+    "TensorRole",
+    "ValueKind",
+    "EdgeId",
+    "NodeId",
+    "compose_graph",
+    "contract_satisfied",
+    "estimate",
+    "infer_accounting_role",
+    "lower",
+    "reference_invocation",
+    "Add",
+    "Divide",
+    "Identity",
+    "LinearMatMul",
+    "MatMul",
+    "Maximum",
+    "Minimum",
+    "Multiply",
+    "Reshape",
+    "Split",
+    "SquareRoot",
+    "Subtract",
+    "Transpose",
+    "analysis",
+    "compose",
+    "graph",
+    "semantic",
+]

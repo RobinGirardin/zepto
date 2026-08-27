@@ -2,49 +2,52 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from types import MappingProxyType
 
 import pytest
 
-from zepto.core import (
+from zepto.analysis import (
+    AccountingPolicy,
+    LoweringError,
+    PrecisionPolicy,
+    lower,
+    reference_invocation,
+)
+from zepto.analysis.lowering import InvocationContext, LoweringRegistry
+from zepto.analysis.lowering.helpers import build_estimation_context
+from zepto.analysis.lowering.implementations import register_defaults
+from zepto.analysis.lowering.implementations.identity import IdentityImplementation
+from zepto.analysis.lowering.registry import (
+    ImplementationDescriptor,
+    select_implementation,
+)
+from zepto.compose.values import Tensor
+from zepto.graph import Provenance, GraphBuilder
+from zepto.semantic import (
+    BackwardSpec,
     DType,
     Identity,
-    LoweringError,
     MatMul,
     Maximum,
     Multiply,
     Operation,
-    PortSpec,
-    Provenance,
+    Port,
     ResourceEventKind,
-    StructuralGraphBuilder,
-    ValueMetadata,
-    lower,
-    reference_context,
+    TensorRole,
 )
-from zepto.core.operation.helpers import GRAD_RIGHT, GRAD_RIGHT_UNREDUCED
-from zepto.core.lowering import LoweringRegistry
-from zepto.core.lowering.implementations import register_defaults
-from zepto.core.lowering.implementations.identity import IdentityImplementation
-from zepto.core.lowering.registry import (
-    ImplementationDescriptor,
-    select_implementation,
-    select_region_implementation,
-)
-from zepto.core.lowering.discovery import discover_regions
+from zepto.semantic.operations.helpers import GRAD_RIGHT, GRAD_RIGHT_UNREDUCED, allocate
 
 
 def _identity_graph() -> tuple:
-    builder = StructuralGraphBuilder()
-    value = builder.add_input(ValueMetadata((4,)))
+    builder = GraphBuilder()
+    value = builder.add_input(Tensor(shape=(4,)))
     provenance = Provenance((), "Fixture", "identity", 0)
     output = builder.add_operation(
         operation_family="identity",
-        input_ports=(PortSpec("input"),),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(value,),
-        output_metadata=(ValueMetadata((4,)),),
+        input_ports=(Port("input"),),
+        output_ports=(Port("output"),),
+        input_edges=(value,),
+        output_tensors=(Tensor(shape=(4,)),),
         provenance=provenance,
         operation=Identity(),
     )[0]
@@ -54,62 +57,62 @@ def _identity_graph() -> tuple:
 
 def test_identity_lowering_preserves_port_wiring() -> None:
     graph, value, output = _identity_graph()
-    ctx = reference_context()
+    ctx = reference_invocation()
     lowered = lower(graph, ctx)
 
-    assert len(lowered.operations) == 1
-    op = lowered.operations[0]
+    assert len(lowered.nodes) == 1
+    op = lowered.nodes[0]
     assert op.implementation == "identity/identity"
-    assert op.input_tensors == (lowered.tensor_map[value],)
-    assert op.output_tensors == (lowered.tensor_map[output],)
+    assert op.input_edges == (lowered.edge_map[value],)
+    assert op.output_edges == (lowered.edge_map[output],)
 
 
 def test_structural_to_lowered_maps_are_bijective_for_identity_pass() -> None:
     graph, value, output = _identity_graph()
-    lowered = lower(graph, reference_context())
+    lowered = lower(graph, reference_invocation())
 
-    assert set(lowered.tensor_map.keys()) == {value, output}
-    assert len(lowered.tensor_map) == len(set(lowered.tensor_map.values()))
-    assert len(lowered.operation_map) == 1
-    assert graph.operations[0] in lowered.operation_map
+    assert set(lowered.edge_map.keys()) == {value, output}
+    assert len(lowered.edge_map) == len(set(lowered.edge_map.values()))
+    assert len(lowered.node_map) == 1
+    assert graph.node_order[0] in lowered.node_map
 
 
 def test_resolved_dtype_matches_precision_policy() -> None:
     graph, value, _output = _identity_graph()
-    ctx = reference_context(default_dtype=DType.FP16)
+    ctx = reference_invocation(default_dtype=DType.FP16)
     lowered = lower(graph, ctx)
 
-    tensor = lowered.tensors[lowered.tensor_map[value]]
-    assert tensor.metadata.dtype is DType.FP16
+    edge = lowered.edges[lowered.edge_map[value]]
+    assert edge.tensor.dtype is DType.FP16
 
 
 def test_identity_view_emits_alias_event() -> None:
     graph, _value, _output = _identity_graph()
-    lowered = lower(graph, reference_context())
-    events = lowered.operations[0].resource_events
+    lowered = lower(graph, reference_invocation())
+    events = lowered.nodes[0].resource_events
 
     assert any(event.kind is ResourceEventKind.ALIAS for event in events)
     assert not any(event.kind is ResourceEventKind.ALLOCATE for event in events)
 
 
 def test_maximum_identity_produces_allocate_and_flops() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((3, 4), requires_grad=True))
-    right = builder.add_input(ValueMetadata((3, 4)))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(3, 4), requires_grad=True))
+    right = builder.add_input(Tensor(shape=(3, 4)))
     output = builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, right),
-        output_metadata=(ValueMetadata((3, 4)),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, right),
+        output_tensors=(Tensor(shape=(3, 4)),),
         provenance=Provenance((), "Fixture", "maximum", 0),
         operation=Maximum(),
     )[0]
     builder.mark_output(output)
     graph = builder.build()
 
-    lowered = lower(graph, reference_context())
-    op = lowered.operations[0]
+    lowered = lower(graph, reference_invocation())
+    op = lowered.nodes[0]
 
     assert op.implementation == "maximum/identity"
     assert op.forward_flops == 12
@@ -118,23 +121,23 @@ def test_maximum_identity_produces_allocate_and_flops() -> None:
 
 
 def test_saved_for_backward_emits_save_events() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((2,), requires_grad=True))
-    right = builder.add_input(ValueMetadata((2,), requires_grad=True))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(2,), requires_grad=True))
+    right = builder.add_input(Tensor(shape=(2,), requires_grad=True))
     output = builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, right),
-        output_metadata=(ValueMetadata((2,), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, right),
+        output_tensors=(Tensor(shape=(2,), requires_grad=True),),
         provenance=Provenance((), "Fixture", "maximum", 0),
         operation=Maximum(),
     )[0]
     builder.mark_output(output)
     graph = builder.build()
 
-    lowered = lower(graph, reference_context())
-    events = lowered.operations[0].resource_events
+    lowered = lower(graph, reference_invocation())
+    events = lowered.nodes[0].resource_events
     save_kinds = [event for event in events if event.kind is ResourceEventKind.SAVE]
 
     assert len(save_kinds) == 2
@@ -148,16 +151,14 @@ def test_negative_flops_fail_at_lowering() -> None:
 
         @property
         def input_ports(self):
-            return (PortSpec("input"),)
+            return (Port("input"),)
 
         @property
         def output_ports(self):
-            return (PortSpec("output"),)
+            return (Port("output"),)
 
         @property
         def backward(self):
-            from zepto.core import BackwardSpec
-
             return BackwardSpec()
 
         def infer_outputs(self, inputs, parameters=()):
@@ -173,9 +174,7 @@ def test_negative_flops_fail_at_lowering() -> None:
             return 0
 
         def resource_events(self, context, result):
-            from zepto.core.operation.helpers import allocate
-
-            return allocate(result)
+            return allocate(len(self.output_ports))
 
     registry = LoweringRegistry()
     register_defaults(registry)
@@ -189,14 +188,14 @@ def test_negative_flops_fail_at_lowering() -> None:
         )
     )
 
-    builder = StructuralGraphBuilder()
-    value = builder.add_input(ValueMetadata((2,)))
+    builder = GraphBuilder()
+    value = builder.add_input(Tensor(shape=(2,)))
     builder.add_operation(
         operation_family="bad_flops",
-        input_ports=(PortSpec("input"),),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(value,),
-        output_metadata=(ValueMetadata((2,)),),
+        input_ports=(Port("input"),),
+        output_ports=(Port("output"),),
+        input_edges=(value,),
+        output_tensors=(Tensor(shape=(2,)),),
         provenance=Provenance((), "Fixture", "bad_flops", 0),
         operation=BadFlops(),
     )
@@ -204,23 +203,23 @@ def test_negative_flops_fail_at_lowering() -> None:
     graph = builder.build()
 
     with pytest.raises(ValueError, match="forward_flops"):
-        lower(graph, reference_context(), registry=registry)
+        lower(graph, reference_invocation(), registry=registry)
 
 
 def test_implementation_pin_selects_descriptor() -> None:
     graph, _value, _output = _identity_graph()
-    ctx = reference_context(
+    ctx = reference_invocation(
         implementation_pins=MappingProxyType({"identity": "identity/identity"})
     )
     lowered = lower(graph, ctx)
 
-    assert lowered.operations[0].implementation == "identity/identity"
+    assert lowered.nodes[0].implementation == "identity/identity"
     assert lowered.selections[0].reason == "pinned"
 
 
 def test_implementation_pin_incompatible_raises() -> None:
     graph, _value, _output = _identity_graph()
-    ctx = reference_context(
+    ctx = reference_invocation(
         implementation_pins=MappingProxyType({"identity": "maximum/identity"})
     )
 
@@ -229,101 +228,103 @@ def test_implementation_pin_incompatible_raises() -> None:
 
 
 def test_relu_pattern_selects_relu_mask_implementation() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((4,), requires_grad=True))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(4,), requires_grad=True))
     zero = builder.add_input(
-        ValueMetadata((4,), semantic_type="constant_zero", requires_grad=False)
+        Tensor(shape=(4,), semantic_type="constant_zero", requires_grad=False)
     )
     output = builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, zero),
-        output_metadata=(ValueMetadata((4,), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, zero),
+        output_tensors=(Tensor(shape=(4,), requires_grad=True),),
         provenance=Provenance((), "Fixture", "relu", 0),
         operation=Maximum(),
     )[0]
     builder.mark_output(output)
     graph = builder.build()
 
-    lowered = lower(graph, reference_context())
-    op = lowered.operations[0]
+    lowered = lower(graph, reference_invocation())
+    op = lowered.nodes[0]
 
-    assert op.implementation == "region/relu"
-    assert lowered.region_selections[0].chosen.id == "region/relu"
-    assert len(op.auxiliary_tensors) == 1
+    assert op.implementation == "maximum/relu-mask"
+    assert lowered.selections[0].chosen.id == "maximum/relu-mask"
+    assert len(op.auxiliary_edges) == 1
     save_events = [
         event for event in op.resource_events if event.kind is ResourceEventKind.SAVE
     ]
     assert len(save_events) == 1
-    assert save_events[0].value == op.auxiliary_tensors[0]
+    assert save_events[0].value == op.auxiliary_edges[0]
     assert op.backward_flops == 4
+    mask_edge = lowered.edges[op.auxiliary_edges[0]]
+    assert mask_edge.role is TensorRole.AUXILIARY
 
 
 def test_relu_mask_does_not_save_operands() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((2,), requires_grad=True))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(2,), requires_grad=True))
     zero = builder.add_input(
-        ValueMetadata((2,), semantic_type="constant_zero")
+        Tensor(shape=(2,), semantic_type="constant_zero")
     )
     output = builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, zero),
-        output_metadata=(ValueMetadata((2,), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, zero),
+        output_tensors=(Tensor(shape=(2,), requires_grad=True),),
         provenance=Provenance((), "Fixture", "relu", 0),
         operation=Maximum(),
     )[0]
     builder.mark_output(output)
     graph = builder.build()
 
-    lowered = lower(graph, reference_context())
-    op = lowered.operations[0]
+    lowered = lower(graph, reference_invocation())
+    op = lowered.nodes[0]
     saved_targets = {
         event.value
         for event in op.resource_events
         if event.kind is ResourceEventKind.SAVE
     }
 
-    assert lowered.tensor_map[left] not in saved_targets
-    assert lowered.tensor_map[zero] not in saved_targets
+    assert lowered.edge_map[left] not in saved_targets
+    assert lowered.edge_map[zero] not in saved_targets
 
 
 def test_generic_maximum_selects_identity() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((2,), requires_grad=True))
-    right = builder.add_input(ValueMetadata((2,), requires_grad=True))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(2,), requires_grad=True))
+    right = builder.add_input(Tensor(shape=(2,), requires_grad=True))
     output = builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, right),
-        output_metadata=(ValueMetadata((2,), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, right),
+        output_tensors=(Tensor(shape=(2,), requires_grad=True),),
         provenance=Provenance((), "Fixture", "maximum", 0),
         operation=Maximum(),
     )[0]
     builder.mark_output(output)
     graph = builder.build()
 
-    lowered = lower(graph, reference_context())
+    lowered = lower(graph, reference_invocation())
 
-    assert lowered.operations[0].implementation == "maximum/identity"
+    assert lowered.nodes[0].implementation == "maximum/identity"
     assert lowered.selections[0].reason == "only_candidate"
 
 
 def test_selection_records_rejected_candidates() -> None:
-    builder = StructuralGraphBuilder()
-    left = builder.add_input(ValueMetadata((2,), requires_grad=True))
+    builder = GraphBuilder()
+    left = builder.add_input(Tensor(shape=(2,), requires_grad=True))
     zero = builder.add_input(
-        ValueMetadata((2,), semantic_type="constant_zero")
+        Tensor(shape=(2,), semantic_type="constant_zero")
     )
     builder.add_operation(
         operation_family="maximum",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(left, zero),
-        output_metadata=(ValueMetadata((2,), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(left, zero),
+        output_tensors=(Tensor(shape=(2,), requires_grad=True),),
         provenance=Provenance((), "Fixture", "relu", 0),
         operation=Maximum(),
     )
@@ -331,11 +332,9 @@ def test_selection_records_rejected_candidates() -> None:
 
     registry = LoweringRegistry()
     register_defaults(registry)
-    ctx = reference_context()
-    regions = discover_regions(graph, ctx, registry)
-    assert len(regions) == 1
-    _impl, selection = select_region_implementation(
-        regions[0], graph, ctx, registry
+    structural = graph.node(graph.node_order[0])
+    _impl, selection = select_implementation(
+        structural, graph, reference_invocation(), registry
     )
 
     assert selection.chosen.id == "region/relu"
@@ -344,15 +343,15 @@ def test_selection_records_rejected_candidates() -> None:
 
 
 def _multiply_broadcast_graph():
-    builder = StructuralGraphBuilder()
-    x = builder.add_input(ValueMetadata((32, 128, 512), requires_grad=True))
-    bias = builder.add_input(ValueMetadata((512,), requires_grad=True))
+    builder = GraphBuilder()
+    x = builder.add_input(Tensor(shape=(32, 128, 512), requires_grad=True))
+    bias = builder.add_input(Tensor(shape=(512,), requires_grad=True))
     output = builder.add_operation(
         operation_family="multiply",
-        input_ports=(PortSpec("left"), PortSpec("right")),
-        output_ports=(PortSpec("output"),),
-        input_tensors=(x, bias),
-        output_metadata=(ValueMetadata((32, 128, 512), requires_grad=True),),
+        input_ports=(Port("left"), Port("right")),
+        output_ports=(Port("output"),),
+        input_edges=(x, bias),
+        output_tensors=(Tensor(shape=(32, 128, 512), requires_grad=True),),
         provenance=Provenance((), "Fixture", "multiply", 0),
         operation=Multiply(),
     )[0]
@@ -363,32 +362,32 @@ def _multiply_broadcast_graph():
 class TestBroadcastBackwardLowering:
     def test_multiply_backward_remaps_aux_port_events(self) -> None:
         graph, _output = _multiply_broadcast_graph()
-        lowered = lower(graph, reference_context(phase="backward"))
-        op = lowered.operations[0]
-        assert len(op.auxiliary_tensors) == 2
+        lowered = lower(graph, reference_invocation(phase="backward"))
+        op = lowered.nodes[0]
+        assert len(op.auxiliary_edges) == 2
         event_targets = {event.value for event in op.resource_events}
-        assert event_targets.issuperset(set(op.auxiliary_tensors))
+        assert event_targets.issuperset(set(op.auxiliary_edges))
 
     def test_multiply_forward_has_no_backward_events(self) -> None:
         graph, _output = _multiply_broadcast_graph()
-        lowered = lower(graph, reference_context(phase="forward"))
-        op = lowered.operations[0]
+        lowered = lower(graph, reference_invocation(phase="forward"))
+        op = lowered.nodes[0]
         assert not any(
             event.phase == "backward" for event in op.resource_events
         )
 
     def test_all_backward_event_targets_are_known_tensors(self) -> None:
         graph, _output = _multiply_broadcast_graph()
-        lowered = lower(graph, reference_context(phase="backward"))
-        op = lowered.operations[0]
-        known = set(op.input_tensors + op.output_tensors + op.auxiliary_tensors)
+        lowered = lower(graph, reference_invocation(phase="backward"))
+        op = lowered.nodes[0]
+        known = set(op.input_edges + op.output_edges + op.auxiliary_edges)
         for event in op.resource_events:
             assert event.value in known
 
     def test_unreduced_allocate_release_order(self) -> None:
         graph, _output = _multiply_broadcast_graph()
-        lowered = lower(graph, reference_context(phase="backward"))
-        op = lowered.operations[0]
+        lowered = lower(graph, reference_invocation(phase="backward"))
+        op = lowered.nodes[0]
         kinds = [
             event.kind
             for event in op.resource_events
@@ -411,23 +410,74 @@ class TestBroadcastBackwardLowering:
         assert allocate_idx < release_idx
 
     def test_matmul_weight_backward_aux_shapes(self) -> None:
-        builder = StructuralGraphBuilder()
-        left = builder.add_input(ValueMetadata((32, 128, 512), requires_grad=True))
-        right = builder.add_input(ValueMetadata((512, 64), requires_grad=True))
+        builder = GraphBuilder()
+        left = builder.add_input(Tensor(shape=(32, 128, 512), requires_grad=True))
+        right = builder.add_input(Tensor(shape=(512, 64), requires_grad=True))
         output = builder.add_operation(
             operation_family="matmul",
-            input_ports=(PortSpec("left"), PortSpec("right")),
-            output_ports=(PortSpec("output"),),
-            input_tensors=(left, right),
-            output_metadata=(ValueMetadata((32, 128, 64), requires_grad=True),),
+            input_ports=(Port("left"), Port("right")),
+            output_ports=(Port("output"),),
+            input_edges=(left, right),
+            output_tensors=(Tensor(shape=(32, 128, 64), requires_grad=True),),
             provenance=Provenance((), "Fixture", "matmul", 0),
             operation=MatMul(),
         )[0]
         builder.mark_output(output)
         graph = builder.build()
-        operation = graph.operation(graph.operations[0])
+        operation = graph.node(graph.node_order[0])
         assert operation.result is not None
-        unreduced_id = operation.auxiliary_tensors[GRAD_RIGHT_UNREDUCED]
-        assert graph.tensor(unreduced_id).metadata.shape == (32, 512, 64)
-        grad_id = operation.auxiliary_tensors[GRAD_RIGHT]
-        assert graph.tensor(grad_id).metadata.shape == (512, 64)
+        unreduced_id = operation.auxiliary_edges[GRAD_RIGHT_UNREDUCED]
+        assert graph.edge(unreduced_id).tensor.shape == (32, 512, 64)
+        grad_id = operation.auxiliary_edges[GRAD_RIGHT]
+        assert graph.edge(grad_id).tensor.shape == (512, 64)
+
+
+def test_input_role_consistent_in_estimation_and_lowering() -> None:
+    graph, value, _output = _identity_graph()
+    precision = PrecisionPolicy(
+        default_dtype=DType.FP32,
+        by_role=(
+            (TensorRole.INPUT, DType.FP16),
+            (TensorRole.ACTIVATION, DType.BF16),
+        ),
+    )
+    ctx = InvocationContext(
+        phase="forward",
+        hardware="generic",
+        backend="reference",
+        precision=precision,
+        accounting=AccountingPolicy(precision),
+    )
+    node = graph.node(graph.node_order[0])
+    estimation = build_estimation_context(node, graph, ctx)
+    input_value = estimation.value_for("input")
+    assert input_value is not None
+    assert input_value.role is TensorRole.INPUT
+    assert input_value.dtype is DType.FP16
+
+    lowered = lower(graph, ctx)
+    lowered_input = lowered.edges[lowered.edge_map[value]]
+    assert lowered_input.role is TensorRole.INPUT
+    assert lowered_input.tensor.dtype is DType.FP16
+
+
+def test_structural_aux_gradient_role() -> None:
+    graph, _output = _multiply_broadcast_graph()
+    ctx = reference_invocation()
+    node = graph.node(graph.node_order[0])
+    lowered = lower(graph, ctx)
+    grad_id = node.auxiliary_edges[GRAD_RIGHT]
+    unreduced_id = node.auxiliary_edges[GRAD_RIGHT_UNREDUCED]
+    assert lowered.edges[lowered.edge_map[grad_id]].role is TensorRole.GRADIENT
+    assert lowered.edges[lowered.edge_map[unreduced_id]].role is TensorRole.WORKSPACE
+
+    estimation = build_estimation_context(node, graph, ctx)
+    assert estimation.value_for(GRAD_RIGHT).role is TensorRole.GRADIENT
+    assert estimation.value_for(GRAD_RIGHT_UNREDUCED).role is TensorRole.WORKSPACE
+
+
+def test_graph_input_lowered_role_is_input() -> None:
+    graph, value, output = _identity_graph()
+    lowered = lower(graph, reference_invocation())
+    assert lowered.edges[lowered.edge_map[value]].role is TensorRole.INPUT
+    assert lowered.edges[lowered.edge_map[output]].role is TensorRole.ACTIVATION

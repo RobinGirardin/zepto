@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import add, divide, multiply, reduce_sum, scalar_input, sqrt, subtract
-from ..core.metadata import ValueMetadata
-from ._helpers import (
-    add_bias_parameter,
-    feature_size,
-    norm_axis,
-    require_context,
-    scale_by_parameter,
-)
+from zepto.compose import Module, Tensor
+from zepto.semantic import Identity
 
 
 class LayerNorm(Module):
@@ -57,33 +49,6 @@ class LayerNorm(Module):
                 )
         self._initialized = True
 
-    def forward(self, value: GraphTensor) -> GraphTensor:
-        self._ensure_initialized()
-        assert self._eps is not None and self._inv_norm_size is not None
-
-        axis = norm_axis(value)
-        feature_dim = feature_size(value, axis=axis)
-        if feature_dim != self.normalized_shape:
-            raise ValueError(
-                f"LayerNorm expected last dim {self.normalized_shape}, "
-                f"got {feature_dim} from shape {value.metadata.shape}"
-            )
-
-        mean = divide(
-            reduce_sum(value, axis=axis, keepdim=True),
-            self._inv_norm_size,
-        )
-        centered = subtract(value, mean)
-        variance = divide(
-            reduce_sum(multiply(centered, centered), axis=axis, keepdim=True),
-            self._inv_norm_size,
-        )
-        normalized = divide(centered, sqrt(add(variance, self._eps)))
-
-        if not self.elementwise_affine:
-            return normalized
-
-        return add_bias_parameter(
-            scale_by_parameter(normalized, self.weight),
-            self.bias,
-        )
+    def forward(self, value: Tensor) -> Tensor:
+        """Compose the current placeholder layer-normalization behavior."""
+        return Identity()(value)  # type: ignore[return-value]

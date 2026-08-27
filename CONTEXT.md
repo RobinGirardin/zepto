@@ -15,49 +15,58 @@ _Avoid_: Layer node, component node
 **Operation**:
 A reusable semantic operation declaration that maps input tensors and
 parameters to output tensors according to a mathematical operation and
-complete semantic and estimation behavior. A functional call creates a
-structural graph occurrence of that operation.
+complete semantic and estimation behavior. Calling an operation during
+composition records a node in the structural graph.
 _Avoid_: Kernel, implementation
 
-**ValueMetadata**:
-Backend-neutral shape and semantic metadata shared by flow tensors and
-parameters. Describes dtype, role, persistence, and gradient requirements
-without encoding whether a value lives in the flow or asset plane.
-_Avoid_: TensorMetadata
-
-**GraphTensor**:
-A composition handle for per-invocation data-flow values passed through
-module ``forward()`` methods. Wraps a tensor identity and its metadata.
-_Avoid_: FlowTensor handle, bare TensorId
-
-**GraphParameter**:
-A composition handle for model-persistent weights declared during module
-construction. Carries metadata and a ``trainable`` flag for optimizer
-attachment.
-_Avoid_: Bare ParameterId in user code
+**Tensor**:
+A user-facing description of a data-flow value during model composition —
+shape, dtype, and gradient or persistence flags. Once registered, it carries
+an edge identity linking it to the structural graph.
+_Avoid_: GraphTensor, flow handle, buffer
 
 **Parameter**:
-A static weight asset stored in ``graph.parameters`` and referenced by
-operations through parameter ports. Not produced by the DAG; referenced
-directly at bind time.
-_Avoid_: Parameter tensor node
+A user-facing description of a persistent model weight declared during module
+construction. Once registered, it carries a parameter identity and is stored
+on the graph, not as a data-flow edge.
+_Avoid_: GraphParameter, weight handle, parameter tensor node, ParameterAsset
 
-**Two-plane model**:
-Every structural graph stores two parallel planes. The description layer
-(``ValueMetadata``) is shared. Composition handles split into
-``GraphTensor`` (flow) and ``GraphParameter`` (asset). Storage splits into
-``Tensor`` (producer/consumers in ``graph.tensors``) and ``Parameter``
-(referenced in ``graph.parameters``).
+**Edge**:
+An immutable graph connection carrying a frozen tensor description,
+producer and consumer port links, and optional storage identity.
+_Avoid_: Graph tensor, flow edge, buffer
 
-**Structural operation**:
-One graph occurrence of an operation, including its bound tensor ports,
-provenance, and invocation result metadata. It is part of the structural graph
-and is distinct from the reusable operation declaration.
-_Avoid_: Operation implementation, kernel
+**Node**:
+One recorded occurrence of an operation in the structural graph, binding
+ports to edges and parameters with provenance and invocation metadata.
+_Avoid_: Structural operation, layer node, kernel
 
-**Tensor**:
-A graph value with semantic identity, semantic and accounting metadata, and explicit relationships to storage, aliases, parameters, state, and operation ports.
-_Avoid_: Buffer, memory allocation
+**Port**:
+A named input, output, parameter, or auxiliary slot declared on an operation.
+_Avoid_: PortSpec
+
+**Port contract**:
+A partial specification of what a port accepts — shape, dtype, or semantic
+type. Unset fields and an empty shape are wildcards. Accounting role is not
+part of the structural value; it is inferred during analysis.
+_Avoid_: Port metadata, ValueMetadata, bound port metadata
+
+**Resolved value**:
+An analysis-time pairing of a structural tensor with its inferred accounting
+role and resolved dtype. It is ephemeral and is not stored on the structural
+graph.
+_Avoid_: ValueMetadata, bound port metadata
+
+**PortLink**:
+A reference to a specific port on a node, used to connect edges through
+the graph.
+_Avoid_: PortRef, port reference
+
+**Compose**:
+The eager tracing context in which module and operation calls record structure
+into an immutable graph. Supports a simple tier (automatic root input and
+output registration) and an explicit tier for advanced composition.
+_Avoid_: Graph composition context, tracing session
 
 **Auxiliary tensor**:
 A tensor used internally by an operation or its backward computation, such as a
