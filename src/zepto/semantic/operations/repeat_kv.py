@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-from ..metadata import ValueMetadata
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, numel, persist_only_events, reduced_gradient_metadata
+from .helpers import allocate, numel, persist_only_events, reduced_gradient_tensor
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -37,29 +37,29 @@ class RepeatKV(Operation):
         return "repeat_kv"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("input"),)
+    def input_ports(self) -> tuple[Port, ...]:
+        return (Port("input"),)
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec(GRAD_INPUT, ValueKind.GRADIENT),)
+    def auxiliary_ports(self) -> tuple[Port, ...]:
+        return (Port(GRAD_INPUT, ValueKind.GRADIENT),)
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        return (reduced_gradient_metadata(inputs[0]),)
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        return (reduced_gradient_tensor(inputs[0]),)
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         if inputs[0].requires_grad and self.n_rep > 1:
             return (GRAD_INPUT,)
@@ -75,22 +75,24 @@ class RepeatKV(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
         if self.n_rep < 1:
             raise ValueError("repeat_kv n_rep must be >= 1")
-        (input_meta,) = inputs
-        if not input_meta.shape:
+        (input_tensor,) = inputs
+        if not input_tensor.shape:
             raise ValueError("repeat_kv requires a ranked input tensor")
-        axis = _normalize_axis(self.axis, len(input_meta.shape))
-        shape = list(input_meta.shape)
+        axis = _normalize_axis(self.axis, len(input_tensor.shape))
+        shape = list(input_tensor.shape)
         shape[axis] *= self.n_rep
         return (
-            ValueMetadata(
-                tuple(shape),
-                input_meta.semantic_type,
-                requires_grad=input_meta.requires_grad,
+            Tensor(
+                shape=tuple(shape),
+                dtype=input_tensor.dtype,
+                semantic_type=input_tensor.semantic_type,
+                requires_grad=input_tensor.requires_grad,
+                persistent=input_tensor.persistent,
             ),
         )
 
@@ -101,9 +103,9 @@ class RepeatKV(Operation):
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         return ()
 
@@ -111,14 +113,14 @@ class RepeatKV(Operation):
         return 0
 
     def backward_flops(self, context: EstimationContext) -> int:
-        input_meta = context.metadata_for("input")
-        output = context.metadata_for("output")
-        if input_meta is None or output is None:
+        input_tensor = context.tensor_for("input")
+        output = context.tensor_for("output")
+        if input_tensor is None or output is None:
             raise ValueError(
                 "Estimation context must provide 'input' and 'output' ports"
             )
-        if input_meta.requires_grad and self.n_rep > 1:
-            return numel(output) - numel(input_meta)
+        if input_tensor.requires_grad and self.n_rep > 1:
+            return numel(output) - numel(input_tensor)
         return 0
 
     def resource_events(
@@ -126,7 +128,7 @@ class RepeatKV(Operation):
     ) -> tuple[ResourceEvent, ...]:
         if self.n_rep == 1 and result.aliases:
             return (ResourceEvent(ResourceEventKind.ALIAS, "output:0"),)
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:

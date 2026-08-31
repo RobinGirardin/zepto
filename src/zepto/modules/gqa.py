@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import add, matmul, repeat_kv, reshape, transpose
+from zepto.compose import Module, Tensor
+from zepto.semantic import Add, MatMul, RepeatKV, Reshape, Transpose
 from .linear import Linear
 from .qk_norm import QKNormRMSNorm
 from .rope_apply import RoPEApply
@@ -56,24 +56,26 @@ class GroupedQueryAttention(Module):
         self.k_proj = Linear(hidden_size, self.kv_projection_size)
         self.v_proj = Linear(hidden_size, self.kv_projection_size)
         self.o_proj = Linear(hidden_size, hidden_size)
-
-        self._qk_norm = qk_norm
-        self._rope = rope
         self.softmax = Softmax(scale=attention_softmax_scale(resolved_head_dim))
+
+        if qk_norm is not None:
+            self.qk_norm = qk_norm
+        if rope is not None:
+            self.rope = rope
 
     def forward(
         self,
-        hidden_states: GraphTensor,
-        causal_mask: GraphTensor,
-        rope_cos: GraphTensor | None = None,
-        rope_sin: GraphTensor | None = None,
-    ) -> GraphTensor:
-        if len(hidden_states.metadata.shape) != 2:
+        hidden_states: Tensor,
+        causal_mask: Tensor,
+        rope_cos: Tensor | None = None,
+        rope_sin: Tensor | None = None,
+    ) -> Tensor:
+        if len(hidden_states.shape) != 2:
             raise ValueError(
                 "GroupedQueryAttention expects rank-2 hidden states (S, d), "
-                f"got {hidden_states.metadata.shape}"
+                f"got {hidden_states.shape}"
             )
-        seq_len, hidden = hidden_states.metadata.shape
+        seq_len, hidden = hidden_states.shape
         if hidden != self.hidden_size:
             raise ValueError(
                 f"hidden size mismatch: expected {self.hidden_size}, got {hidden}"
@@ -83,39 +85,39 @@ class GroupedQueryAttention(Module):
         key = self.k_proj(hidden_states)
         value = self.v_proj(hidden_states)
 
-        query_heads = transpose(
-            reshape(query, (seq_len, self.num_heads, self.head_dim)),
-            (1, 0, 2),
+        query_heads = Transpose(permutation=(1, 0, 2))(
+            Reshape(shape=(seq_len, self.num_heads, self.head_dim))(query)
         )
-        key_heads = transpose(
-            reshape(key, (seq_len, self.num_kv_heads, self.head_dim)),
-            (1, 0, 2),
+        key_heads = Transpose(permutation=(1, 0, 2))(
+            Reshape(shape=(seq_len, self.num_kv_heads, self.head_dim))(key)
         )
-        value_heads = transpose(
-            reshape(value, (seq_len, self.num_kv_heads, self.head_dim)),
-            (1, 0, 2),
+        value_heads = Transpose(permutation=(1, 0, 2))(
+            Reshape(shape=(seq_len, self.num_kv_heads, self.head_dim))(value)
         )
 
-        if self._qk_norm is not None:
-            query_heads, key_heads = self._qk_norm.apply(query_heads, key_heads)
+        qk_norm = getattr(self, "qk_norm", None)
+        if qk_norm is not None:
+            query_heads, key_heads = qk_norm(query_heads, key_heads)  # type: ignore[misc]
 
-        if self._rope is not None:
+        rope = getattr(self, "rope", None)
+        if rope is not None:
             if rope_cos is None or rope_sin is None:
-                raise ValueError("GroupedQueryAttention RoPE requires rope_cos and rope_sin")
-            query_heads = self._rope(query_heads, rope_cos, rope_sin)
-            key_heads = self._rope(key_heads, rope_cos, rope_sin)
+                raise ValueError(
+                    "GroupedQueryAttention RoPE requires rope_cos and rope_sin"
+                )
+            query_heads = rope(query_heads, rope_cos, rope_sin)
+            key_heads = rope(key_heads, rope_cos, rope_sin)
 
-        key_heads = repeat_kv(key_heads, self.num_kv_groups, axis=0)
-        value_heads = repeat_kv(value_heads, self.num_kv_groups, axis=0)
+        key_heads = RepeatKV(n_rep=self.num_kv_groups, axis=0)(key_heads)
+        value_heads = RepeatKV(n_rep=self.num_kv_groups, axis=0)(value_heads)
 
-        key_transposed = transpose(key_heads, (0, 2, 1))
-        scores = matmul(query_heads, key_transposed)
-        masked_scores = add(scores, causal_mask)
+        key_transposed = Transpose(permutation=(0, 2, 1))(key_heads)
+        scores = MatMul()(query_heads, key_transposed)
+        masked_scores = Add()(scores, causal_mask)
         attention_weights = self.softmax(masked_scores)
-        context = matmul(attention_weights, value_heads)
+        context = MatMul()(attention_weights, value_heads)
 
-        merged = reshape(
-            transpose(context, (1, 0, 2)),
-            (seq_len, self.hidden_size),
+        merged = Reshape(shape=(seq_len, self.hidden_size))(
+            Transpose(permutation=(1, 0, 2))(context)
         )
-        return self.o_proj(merged)
+        return self.o_proj(merged)  # type: ignore[return-value]

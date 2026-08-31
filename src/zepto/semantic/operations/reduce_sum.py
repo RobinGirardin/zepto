@@ -2,15 +2,10 @@
 
 from dataclasses import dataclass
 
-from ..metadata import ValueMetadata
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import (
-    allocate,
-    numel,
-    persist_only_events,
-    reduced_gradient_metadata,
-)
+from .helpers import allocate, numel, persist_only_events, reduced_gradient_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 GRAD_INPUT = "grad_input"
@@ -52,29 +47,29 @@ class ReduceSum(Operation):
         return "reduce_sum"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("input"),)
+    def input_ports(self) -> tuple[Port, ...]:
+        return (Port("input"),)
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec(GRAD_INPUT, ValueKind.GRADIENT),)
+    def auxiliary_ports(self) -> tuple[Port, ...]:
+        return (Port(GRAD_INPUT, ValueKind.GRADIENT),)
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        return (reduced_gradient_metadata(inputs[0]),)
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        return (reduced_gradient_tensor(inputs[0]),)
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         if inputs[0].requires_grad:
             return (GRAD_INPUT,)
@@ -90,39 +85,41 @@ class ReduceSum(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        (input_meta,) = inputs
-        if not input_meta.shape:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        (input_tensor,) = inputs
+        if not input_tensor.shape:
             raise ValueError("reduce_sum requires a ranked input tensor")
         output_shape = _reduce_output_shape(
-            input_meta.shape, self.axis, keepdim=self.keepdim
+            input_tensor.shape, self.axis, keepdim=self.keepdim
         )
         return (
-            ValueMetadata(
-                output_shape,
-                input_meta.semantic_type,
-                requires_grad=input_meta.requires_grad,
+            Tensor(
+                shape=output_shape,
+                dtype=input_tensor.dtype,
+                semantic_type=input_tensor.semantic_type,
+                requires_grad=input_tensor.requires_grad,
+                persistent=input_tensor.persistent,
             ),
         )
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
-        input_meta = context.metadata_for("input")
-        output = context.metadata_for("output")
-        if input_meta is None or output is None:
+        input_tensor = context.tensor_for("input")
+        output = context.tensor_for("output")
+        if input_tensor is None or output is None:
             raise ValueError(
                 "Estimation context must provide 'input' and 'output' ports"
             )
-        return numel(input_meta) - numel(output)
+        return numel(input_tensor) - numel(output)
 
     def backward_flops(self, context: EstimationContext) -> int:
         return 0
@@ -130,7 +127,7 @@ class ReduceSum(Operation):
     def resource_events(
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:

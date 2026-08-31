@@ -8,6 +8,7 @@ from .divide import Divide
 from .embedding_lookup import EmbeddingLookup
 from .exp import Exp
 from .gather import Gather
+from .greater_than import GreaterThan
 from .identity import Identity
 from .linear_matmul import LinearMatMul
 from .log import Log
@@ -46,29 +47,44 @@ __all__ = [
     "Add",
     "AliasSpec",
     "BackwardSpec",
+    "Concat",
+    "Cos",
     "DeclarationValidator",
     "Divide",
+    "EmbeddingLookup",
     "EstimationContext",
     "EstimationOperation",
+    "Exp",
+    "Gather",
+    "GreaterThan",
     "Identity",
     "IncompleteOperationError",
     "InferenceBundle",
     "InvocationValidator",
     "LinearMatMul",
+    "Log",
     "MatMul",
     "Materialization",
+    "MaterializedCausalMask",
     "Maximum",
     "Minimum",
     "Multiply",
     "Operation",
     "OperationError",
     "OperationResult",
+    "ParameterBias",
+    "ParameterScale",
+    "Pow",
+    "ReduceSum",
+    "RepeatKV",
     "ResourceEvent",
     "ResourceEventKind",
     "Reshape",
     "SemanticOperation",
+    "Sin",
     "Split",
     "SquareRoot",
     "Subtract",
     "Transpose",
+    "Where",
 ]

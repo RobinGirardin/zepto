@@ -9,7 +9,7 @@ from .region import (
     PatternConstraint,
     PatternMatchRule,
     ProvenanceMatchRule,
-    StructuralRegion,
+    Region,
 )
 from .transform import lower
 from .registry import (
@@ -36,7 +36,7 @@ __all__ = [
     "ProvenanceMatchRule",
     "RegionImplementationDescriptor",
     "RegionImplementationSelection",
-    "StructuralRegion",
+    "Region",
     "build_lowering_plan",
     "discover_regions",
     "lower",

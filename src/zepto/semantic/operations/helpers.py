@@ -54,6 +54,25 @@ def broadcast_tensor(
     )
 
 
+def broadcast_tensor_n(
+    inputs: tuple[Tensor, ...],
+    *,
+    family: str,
+    semantic_type: str = "tensor",
+) -> Tensor:
+    """Infer a tensor for an n-ary elementwise broadcast."""
+    if not inputs:
+        raise ValueError(f"{family} requires at least one tensor to broadcast")
+    result = inputs[0]
+    for other in inputs[1:]:
+        result = broadcast_tensor(
+            (result, other),
+            family=family,
+            semantic_type=semantic_type,
+        )
+    return result
+
+
 def broadcast_reduction_flops(operand: Tensor, output: Tensor) -> int:
     """Return FLOPs to sum-reduce a broadcast operand gradient."""
     return numel(output) - numel(operand)

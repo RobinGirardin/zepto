@@ -12,9 +12,14 @@ from .lowering import (
     InvocationContext,
     LoweringError,
     LoweringRegistry,
+    RegionImplementationDescriptor,
+    RegionImplementationSelection,
+    Region,
+    discover_regions,
     lower,
     reference_invocation,
     select_implementation,
+    select_region_implementation,
 )
 
 __all__ = [
@@ -29,11 +34,16 @@ __all__ = [
     "LoweringError",
     "LoweringRegistry",
     "PrecisionPolicy",
+    "RegionImplementationDescriptor",
+    "RegionImplementationSelection",
     "ResolvedValue",
     "RoleContext",
+    "Region",
+    "discover_regions",
     "estimate",
     "infer_accounting_role",
     "lower",
     "reference_invocation",
     "select_implementation",
+    "select_region_implementation",
 ]

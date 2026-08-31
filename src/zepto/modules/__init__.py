@@ -1,4 +1,4 @@
-"""Reusable user-level module compositions built on Zepto core primitives."""
+"""Reusable user-level module compositions built on Zepto operations."""
 
 from .apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
 from .apertus_decoder_block import ApertusDecoderBlock

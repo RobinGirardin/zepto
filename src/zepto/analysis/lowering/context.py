@@ -12,7 +12,7 @@ from zepto.semantic.metadata import DType
 
 @dataclass(frozen=True, slots=True)
 class InvocationContext:
-    """Concrete invocation choices for one structural graph lowering pass."""
+    """Concrete invocation choices for one graph lowering pass."""
 
     phase: str
     hardware: str

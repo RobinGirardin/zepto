@@ -2,45 +2,29 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphCompositionContext, GraphParameter, GraphTensor
-from ..core.operation import ParameterBias, ParameterScale
+from zepto.compose import Parameter, Tensor
+from zepto.semantic import ParameterBias, ParameterScale
 
 
-def require_context() -> GraphCompositionContext:
-    """Return the active graph composition context."""
-    context = GraphCompositionContext.current()
-    if context is None:
-        raise RuntimeError("Module construction requires an active GraphCompositionContext")
-    return context
-
-
-def norm_axis(value: GraphTensor) -> int:
+def norm_axis(value: Tensor) -> int:
     """Return the last-dimension axis used for normalization reductions."""
-    rank = len(value.metadata.shape)
+    rank = len(value.shape)
     if rank < 1:
         raise ValueError("normalization expects rank ≥ 1 input")
     return rank - 1
 
 
-def feature_size(value: GraphTensor, *, axis: int | None = None) -> int:
+def feature_size(value: Tensor, *, axis: int | None = None) -> int:
     """Return the normalized feature dimension size."""
     resolved = norm_axis(value) if axis is None else axis
-    return value.metadata.shape[resolved]
+    return value.shape[resolved]
 
 
-def scale_by_parameter(value: GraphTensor, weight: GraphParameter) -> GraphTensor:
+def scale_by_parameter(value: Tensor, weight: Parameter) -> Tensor:
     """Broadcast-multiply ``value`` by a 1-D ``weight`` parameter."""
-    return require_context().apply(  # type: ignore[return-value]
-        ParameterScale(),
-        value,
-        parameters=(weight,),
-    )
+    return ParameterScale()(value, parameters=(weight,))  # type: ignore[return-value]
 
 
-def add_bias_parameter(value: GraphTensor, bias: GraphParameter) -> GraphTensor:
+def add_bias_parameter(value: Tensor, bias: Parameter) -> Tensor:
     """Broadcast-add a 1-D ``bias`` parameter to ``value``."""
-    return require_context().apply(  # type: ignore[return-value]
-        ParameterBias(),
-        value,
-        parameters=(bias,),
-    )
+    return ParameterBias()(value, parameters=(bias,))  # type: ignore[return-value]

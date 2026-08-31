@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
+from zepto.compose import Module, Tensor
 from .linear import Linear
 from .xielu import XIELU
 
@@ -10,8 +10,8 @@ from .xielu import XIELU
 class FFN(Module):
     """Two-layer MLP: ``Linear(d→d_ff) → activation → Linear(d_ff→d)``.
 
-    Default activation is :class:`XIELU` (Apertus). Pass ``activation=None`` and
-    register a custom nested module under ``activation`` before forward.
+    Default activation is :class:`XIELU` (Apertus). Pass a custom nested module
+    as ``activation`` to replace it.
     """
 
     module_kind = "FFN"
@@ -31,7 +31,7 @@ class FFN(Module):
         self.down_proj = Linear(intermediate_size, hidden_size)
         self.activation = activation if activation is not None else XIELU()
 
-    def forward(self, value: GraphTensor) -> GraphTensor:
+    def forward(self, value: Tensor) -> Tensor:
         hidden = self.up_proj(value)
         activated = self.activation(hidden)
-        return self.down_proj(activated)
+        return self.down_proj(activated)  # type: ignore[return-value]

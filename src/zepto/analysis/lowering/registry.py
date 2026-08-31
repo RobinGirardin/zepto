@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from zepto.graph.ids import NodeId
 from zepto.graph.node import Node
 from .errors import LoweringError
-from .region import PatternMatchRule, ProvenanceMatchRule, StructuralRegion
+from .region import PatternMatchRule, ProvenanceMatchRule, Region
 
 if TYPE_CHECKING:
     from zepto.graph.graph import Graph
@@ -57,7 +57,7 @@ class RegionImplementationSelection:
     """Record of which region implementation was chosen."""
 
     region_id: str
-    structural_operation_ids: tuple[OperationId, ...]
+    node_ids: tuple[NodeId, ...]
     chosen: RegionImplementationDescriptor
     rejected: tuple[tuple[RegionImplementationDescriptor, str], ...]
     reason: str
@@ -93,30 +93,30 @@ class Implementation(Protocol):
 
 @runtime_checkable
 class RegionImplementation(Protocol):
-    """Concrete execution strategy for one structural region."""
+    """Concrete execution strategy for one region."""
 
     @property
     def descriptor(self) -> RegionImplementationDescriptor: ...
 
     def compatible(
         self,
-        region: StructuralRegion,
-        graph: StructuralGraph,
+        region: Region,
+        graph: Graph,
         context: InvocationContext,
     ) -> str | None:
         """Return None if compatible, else a rejection reason."""
 
     def lower(
         self,
-        region: StructuralRegion,
-        graph: StructuralGraph,
+        region: Region,
+        graph: Graph,
         context: InvocationContext,
-        tensor_map: dict,
+        edge_map: dict,
         *,
         estimation: RegionEstimationContext,
-        lowered_tensors: dict,
-    ) -> LoweredOperation:
-        """Produce one lowered operation for a structural region."""
+        lowered_edges: dict,
+    ) -> LoweredNode:
+        """Produce one lowered node for a region."""
 
 
 class LoweringRegistry:
@@ -160,9 +160,9 @@ class LoweringRegistry:
 
 
 def _filter_region_candidates(
-    region: StructuralRegion,
+    region: Region,
     candidates: tuple[RegionImplementation, ...],
-    graph: StructuralGraph,
+    graph: Graph,
     context: InvocationContext,
 ) -> tuple[list[RegionImplementation], list[tuple[RegionImplementationDescriptor, str]]]:
     rejected: list[tuple[RegionImplementationDescriptor, str]] = []
@@ -186,11 +186,11 @@ def _filter_region_candidates(
 
 
 def region_has_compatible_implementation(
-    region: StructuralRegion,
+    region: Region,
     registry: LoweringRegistry,
     context: InvocationContext,
     *,
-    graph: StructuralGraph | None = None,
+    graph: Graph | None = None,
 ) -> bool:
     """Return whether at least one region implementation can lower this region."""
     candidates = registry.region_candidates(region.kind)
@@ -222,7 +222,7 @@ def select_implementation(
     if family in context.implementation_pins:
         pin = context.implementation_pins[family]
         impl = registry.get(pin)
-        if impl is None or not isinstance(impl, Implementation):
+        if impl is None or not isinstance(impl.descriptor, ImplementationDescriptor):
             raise LoweringError(f"Pinned implementation {pin!r} not registered")
         reason = impl.compatible(node, graph, context)
         if reason is not None:
@@ -256,24 +256,24 @@ def select_implementation(
 
 
 def select_region_implementation(
-    region: StructuralRegion,
-    graph: StructuralGraph,
+    region: Region,
+    graph: Graph,
     context: InvocationContext,
     registry: LoweringRegistry,
 ) -> tuple[RegionImplementation, RegionImplementationSelection]:
-    """Select a region implementation for one structural region."""
+    """Select a region implementation for one region."""
     candidates = registry.region_candidates(region.kind)
     if not candidates:
         raise LoweringError(
             f"No region implementations registered for kind {region.kind!r}"
         )
 
-    rejected: list[tuple[RegionImplementationDescriptor, str]] = []
-
     if region.kind in context.region_implementation_pins:
         pin = context.region_implementation_pins[region.kind]
         impl = registry.get(pin)
-        if impl is None or not isinstance(impl, RegionImplementation):
+        if impl is None or not isinstance(
+            impl.descriptor, RegionImplementationDescriptor
+        ):
             raise LoweringError(f"Pinned region implementation {pin!r} not registered")
         reason = impl.compatible(region, graph, context)
         if reason is not None:
@@ -290,7 +290,9 @@ def select_region_implementation(
     if component_type and component_type in context.module_implementation_pins:
         pin = context.module_implementation_pins[component_type]
         impl = registry.get(pin)
-        if impl is None or not isinstance(impl, RegionImplementation):
+        if impl is None or not isinstance(
+            impl.descriptor, RegionImplementationDescriptor
+        ):
             raise LoweringError(f"Pinned module implementation {pin!r} not registered")
         reason = impl.compatible(region, graph, context)
         if reason is not None:

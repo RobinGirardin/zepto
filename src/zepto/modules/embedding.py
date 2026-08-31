@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.metadata import ValueMetadata
-from ..core.operation import EmbeddingLookup
-from ._helpers import require_context
+from zepto.compose import Module, Parameter, Tensor
+from zepto.semantic import EmbeddingLookup
 
 
 class Embedding(Module):
@@ -22,28 +20,17 @@ class Embedding(Module):
             raise ValueError("hidden_size and vocab_size must be positive")
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self._initialized = False
+        self.weight = Parameter(
+            shape=(hidden_size, vocab_size),
+            semantic_type="weight",
+        )
 
-    def _ensure_initialized(self) -> None:
-        if self._initialized:
-            return
-        if "weight" not in self._parameters:
-            self.weight = require_context().parameter(
-                ValueMetadata(
-                    (self.hidden_size, self.vocab_size),
-                    semantic_type="weight",
-                )
-            )
-        self._initialized = True
-
-    def forward(self, token_ids: GraphTensor) -> GraphTensor:
-        self._ensure_initialized()
-        if len(token_ids.metadata.shape) != 1:
+    def forward(self, token_ids: Tensor) -> Tensor:
+        if len(token_ids.shape) != 1:
             raise ValueError(
-                f"Embedding token_ids must be rank-1 (S,), got {token_ids.metadata.shape}"
+                f"Embedding token_ids must be rank-1 (S,), got {token_ids.shape}"
             )
-        return require_context().apply(  # type: ignore[return-value]
-            EmbeddingLookup(),
+        return EmbeddingLookup()(
             token_ids,
             parameters=(self.weight,),
-        )
+        )  # type: ignore[return-value]

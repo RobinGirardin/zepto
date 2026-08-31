@@ -1,9 +1,10 @@
 """Embedding lookup from a weight parameter and token-id indices."""
 
-from ..metadata import ValueMetadata, TensorRole
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from zepto.semantic.metadata import PortContract
+from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, persist_only_events, reduced_gradient_metadata
+from .helpers import allocate, persist_only_events, reduced_gradient_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 GRAD_WEIGHT = "grad_weight"
@@ -17,41 +18,41 @@ class EmbeddingLookup(Operation):
         return "embedding_lookup"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("token_ids", metadata=ValueMetadata((), semantic_type="token_ids")),)
+    def input_ports(self) -> tuple[Port, ...]:
+        return (Port("token_ids"),)
 
     @property
-    def parameter_ports(self) -> tuple[PortSpec, ...]:
+    def parameter_ports(self) -> tuple[Port, ...]:
         return (
-            PortSpec(
+            Port(
                 "weight",
                 value_kind=ValueKind.PARAMETER,
-                metadata=ValueMetadata((), semantic_type="weight"),
+                contract=PortContract(semantic_type="weight"),
             ),
         )
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec(GRAD_WEIGHT, ValueKind.GRADIENT),)
+    def auxiliary_ports(self) -> tuple[Port, ...]:
+        return (Port(GRAD_WEIGHT, ValueKind.GRADIENT),)
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
         (_token_ids,) = inputs
         (weight,) = parameters
-        return (reduced_gradient_metadata(weight),)
+        return (reduced_gradient_tensor(weight),)
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         (_token_ids,) = inputs
         (weight,) = parameters
@@ -70,9 +71,9 @@ class EmbeddingLookup(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
         (token_ids,) = inputs
         (weight,) = parameters
         if len(weight.shape) != 2:
@@ -86,19 +87,19 @@ class EmbeddingLookup(Operation):
         hidden_size, _vocab = weight.shape
         seq_len = token_ids.shape[0]
         return (
-            ValueMetadata(
-                (seq_len, hidden_size),
+            Tensor(
+                shape=(seq_len, hidden_size),
+                dtype=weight.dtype,
                 semantic_type="tensor",
                 requires_grad=token_ids.requires_grad or weight.requires_grad,
-                role=TensorRole.ACTIVATION,
             ),
         )
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         (_token_ids,) = inputs
         (weight,) = parameters
@@ -117,7 +118,7 @@ class EmbeddingLookup(Operation):
         context: EstimationContext,
         result: OperationResult,
     ) -> tuple[ResourceEvent, ...]:
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:

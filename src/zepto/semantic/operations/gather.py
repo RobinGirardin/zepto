@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-from ..metadata import ValueMetadata
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, persist_only_events, reduced_gradient_metadata
+from .helpers import allocate, persist_only_events, reduced_gradient_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 GRAD_INPUT = "grad_input"
@@ -29,30 +29,30 @@ class Gather(Operation):
         return "gather"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("input"), PortSpec("index"))
+    def input_ports(self) -> tuple[Port, ...]:
+        return (Port("input"), Port("index"))
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec(GRAD_INPUT, ValueKind.GRADIENT),)
+    def auxiliary_ports(self) -> tuple[Port, ...]:
+        return (Port(GRAD_INPUT, ValueKind.GRADIENT),)
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        input_meta, _index = inputs
-        return (reduced_gradient_metadata(input_meta),)
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        input_tensor, _index = inputs
+        return (reduced_gradient_tensor(input_tensor),)
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         if inputs[0].requires_grad:
             return (GRAD_INPUT,)
@@ -69,28 +69,30 @@ class Gather(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        input_meta, index_meta = inputs
-        if not input_meta.shape:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        input_tensor, index = inputs
+        if not input_tensor.shape:
             raise ValueError("gather requires a ranked input tensor")
-        axis = _normalize_axis(self.axis, len(input_meta.shape))
-        output_shape = list(input_meta.shape)
-        output_shape[axis : axis + 1] = list(index_meta.shape)
+        axis = _normalize_axis(self.axis, len(input_tensor.shape))
+        output_shape = list(input_tensor.shape)
+        output_shape[axis : axis + 1] = list(index.shape)
         return (
-            ValueMetadata(
-                tuple(output_shape),
-                input_meta.semantic_type,
-                requires_grad=input_meta.requires_grad,
+            Tensor(
+                shape=tuple(output_shape),
+                dtype=input_tensor.dtype,
+                semantic_type=input_tensor.semantic_type,
+                requires_grad=input_tensor.requires_grad,
+                persistent=input_tensor.persistent,
             ),
         )
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         if inputs[0].requires_grad:
             return ("index",)
@@ -105,7 +107,7 @@ class Gather(Operation):
     def resource_events(
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:

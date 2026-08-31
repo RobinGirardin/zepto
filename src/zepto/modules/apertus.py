@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.composition import GraphTensor, Module
+from zepto.compose import Module, Tensor
 from .apertus_decoder_block import ApertusDecoderBlock
 from .embedding import Embedding
 from .lm_head import LMHead
@@ -118,7 +118,7 @@ class Apertus(Module):
             seq_len=seq_len,
         )
 
-    def forward(self, token_ids: GraphTensor) -> GraphTensor:
+    def forward(self, token_ids: Tensor) -> Tensor:
         hidden_states = self.embedding(token_ids)
         causal_mask = self.causal_mask()
         rope_cos, rope_sin = self.rope_materialize()
@@ -129,7 +129,7 @@ class Apertus(Module):
                 causal_mask,
                 rope_cos,
                 rope_sin,
-            )
+            )  # type: ignore[assignment]
 
         hidden_states = self.final_norm(hidden_states)
-        return self.lm_head(hidden_states)
+        return self.lm_head(hidden_states)  # type: ignore[return-value]

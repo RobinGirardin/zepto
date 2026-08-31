@@ -111,6 +111,10 @@ _Avoid_: Operation, backend
 A lowered execution strategy that combines multiple logical operations without materializing all intermediate outputs in global memory.
 _Avoid_: Fused operation
 
+**Region**:
+A lowering-time candidate for fusing multiple graph nodes into one implementation leaf. Carries boundary edges, internal node ids, parameters, and module provenance. Not stored on the graph at composition time.
+_Avoid_: Structural region, fused module
+
 **Resource event**:
 An ordered lowered-execution event describing allocation, release, aliasing,
 persistence, workspace, or other storage behavior used by memory accounting.
@@ -129,6 +133,18 @@ _Avoid_: Long traversal, giant graph
 **Estimation context**:
 An immutable typed description of every context-dependent choice that can affect lowering or cost, including hardware, backend, dtype, layout, concrete shapes, phase, state, policies, and implementation requests.
 _Avoid_: Global configuration
+
+**Backend profile**:
+A scenario label on an estimation context that names which whole-invocation costing profile is being modeled (for example reference, vLLM serve, or HuggingFace eager). It narrows compatible implementation variants; it is not executable backend code and is not a per-kernel override.
+_Avoid_: CUDA backend, runtime backend
+
+**Attention backend**:
+The estimation-context choice for how grouped-query attention is costed — for example eager decomposition versus a FlashAttention-style fused leaf. Defaults to eager when unspecified.
+_Avoid_: PyTorch SDPA dispatcher, kernel source
+
+**Region kind**:
+The fusion category for a region and its registered implementations (for example RMSNorm or grouped-query attention). Variants within one kind share discovery rules; backend-specific cost leaves differ by implementation identity, not by kind.
+_Avoid_: Backend folder, module type
 
 **Theoretical FLOP**:
 A mathematical operation count using Zepto's convention that one multiply-add counts as two FLOPs.

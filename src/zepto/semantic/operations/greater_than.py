@@ -1,32 +1,22 @@
-"""Shared additive causal mask allocation."""
-
-from dataclasses import dataclass
+"""Elementwise greater-than comparison operation declaration."""
 
 from zepto.compose.values import Tensor
 from ..ports import Port
 from .base import Operation
-from .records import (
-    BackwardSpec,
-    EstimationContext,
-    OperationResult,
-    ResourceEvent,
-    ResourceEventKind,
-)
+from .helpers import allocate, broadcast_tensor, numel
+from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-@dataclass(frozen=True, slots=True)
-class MaterializedCausalMask(Operation):
-    """Allocate a persistent additive causal mask of shape ``(1, S, S)``."""
-
-    seq_len: int
+class GreaterThan(Operation):
+    """Return an elementwise boolean mask where ``left > right``."""
 
     @property
     def family(self) -> str:
-        return "materialized_causal_mask"
+        return "greater_than"
 
     @property
     def input_ports(self) -> tuple[Port, ...]:
-        return ()
+        return (Port("left"), Port("right"))
 
     @property
     def output_ports(self) -> tuple[Port, ...]:
@@ -41,14 +31,17 @@ class MaterializedCausalMask(Operation):
         inputs: tuple[Tensor, ...],
         parameters: tuple[Tensor, ...] = (),
     ) -> tuple[Tensor, ...]:
-        if self.seq_len <= 0:
-            raise ValueError("materialized_causal_mask seq_len must be positive")
+        left, right = inputs
+        output = broadcast_tensor(
+            (left, right),
+            family=self.family,
+            semantic_type="comparison_mask",
+        )
         return (
             Tensor(
-                shape=(1, self.seq_len, self.seq_len),
-                semantic_type="tensor",
+                shape=output.shape,
+                semantic_type=output.semantic_type,
                 requires_grad=False,
-                persistent=True,
             ),
         )
 
@@ -61,7 +54,10 @@ class MaterializedCausalMask(Operation):
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
-        return 0
+        output = context.tensor_for("output")
+        if output is None:
+            raise ValueError("Estimation context must provide an 'output' port")
+        return numel(output)
 
     def backward_flops(self, context: EstimationContext) -> int:
         return 0
@@ -69,10 +65,7 @@ class MaterializedCausalMask(Operation):
     def resource_events(
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
-        return (
-            ResourceEvent(ResourceEventKind.ALLOCATE, "output:0"),
-            ResourceEvent(ResourceEventKind.PERSIST, "output:0"),
-        )
+        return tuple(allocate(len(self.output_ports)))
 
 
-__all__ = ["MaterializedCausalMask"]
+__all__ = ["GreaterThan"]

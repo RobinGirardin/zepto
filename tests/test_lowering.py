@@ -248,8 +248,8 @@ def test_relu_pattern_selects_relu_mask_implementation() -> None:
     lowered = lower(graph, reference_invocation())
     op = lowered.nodes[0]
 
-    assert op.implementation == "maximum/relu-mask"
-    assert lowered.selections[0].chosen.id == "maximum/relu-mask"
+    assert op.implementation == "region/relu"
+    assert lowered.region_selections[0].chosen.id == "region/relu"
     assert len(op.auxiliary_edges) == 1
     save_events = [
         event for event in op.resource_events if event.kind is ResourceEventKind.SAVE
@@ -337,8 +337,8 @@ def test_selection_records_rejected_candidates() -> None:
         structural, graph, reference_invocation(), registry
     )
 
-    assert selection.chosen.id == "region/relu"
-    assert selection.reason == "only_candidate"
+    assert selection.chosen.id == "maximum/relu-mask"
+    assert selection.reason == "highest_priority"
     assert not selection.rejected
 
 

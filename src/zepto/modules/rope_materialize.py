@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.composition import GraphCompositionContext, GraphTensor, Module
-from ..core.functional import concat, cos, matmul, multiply, reshape, scalar_input, sin
-from ..core.metadata import ValueMetadata
-from ._helpers import require_context
+from zepto.compose import Module, Tensor
+from zepto.semantic import Concat, Cos, MatMul, Multiply, Reshape, Sin
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,31 +41,30 @@ class RoPEMaterialize(Module):
         self.head_dim = head_dim
         self.config = config or RoPEConfig()
 
-        ctx = require_context()
         half = head_dim // 2
-        self._inv_freq = ctx.input(
-            ValueMetadata(
-                (half,),
-                semantic_type="inv_freq",
-                requires_grad=False,
-                persistent=True,
-            )
+        self._inv_freq = Tensor(
+            shape=(half,),
+            semantic_type="inv_freq",
+            requires_grad=False,
+            persistent=True,
         )
-        self._position_ids = ctx.input(
-            ValueMetadata(
-                (seq_len,),
-                semantic_type="position_ids",
-                requires_grad=False,
-            )
+        self._position_ids = Tensor(
+            shape=(seq_len,),
+            semantic_type="position_ids",
+            requires_grad=False,
         )
-        self._attention_scaling = scalar_input(semantic_type="attention_scaling")
+        self._attention_scaling = Tensor(
+            shape=(1,),
+            semantic_type="attention_scaling",
+            requires_grad=False,
+        )
 
-    def forward(self) -> tuple[GraphTensor, GraphTensor]:
+    def forward(self) -> tuple[Tensor, Tensor]:  # type: ignore[override]
         half = self.head_dim // 2
-        position_col = reshape(self._position_ids, (self.seq_len, 1))
-        inv_row = reshape(self._inv_freq, (1, half))
-        freqs = matmul(position_col, inv_row)
-        emb = concat(freqs, freqs, axis=1)
-        cos_cache = multiply(cos(emb), self._attention_scaling)
-        sin_cache = multiply(sin(emb), self._attention_scaling)
-        return cos_cache, sin_cache
+        position_col = Reshape(shape=(self.seq_len, 1))(self._position_ids)
+        inv_row = Reshape(shape=(1, half))(self._inv_freq)
+        freqs = MatMul()(position_col, inv_row)
+        emb = Concat(axis=1, input_count=2)(freqs, freqs)
+        cos_cache = Multiply()(Cos()(emb), self._attention_scaling)
+        sin_cache = Multiply()(Sin()(emb), self._attention_scaling)
+        return cos_cache, sin_cache  # type: ignore[return-value]

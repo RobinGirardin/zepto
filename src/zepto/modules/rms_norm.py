@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from zepto.compose import Module, Tensor
-from zepto.semantic import Identity
+from zepto.compose import Module, Parameter, Tensor
+from zepto.semantic import Add, Divide, Multiply, ReduceSum, SquareRoot
+from ._helpers import feature_size, norm_axis, scale_by_parameter
 
 
 class RMSNorm(Module):
@@ -28,25 +29,32 @@ class RMSNorm(Module):
         self.normalized_shape = normalized_shape
         self.eps = eps
         self.elementwise_affine = elementwise_affine
-        self._eps: GraphTensor | None = None
-        self._inv_norm_size: GraphTensor | None = None
-        self._initialized = False
 
-    def _ensure_initialized(self) -> None:
-        if self._initialized:
-            return
-        ctx = require_context()
-        self._eps = scalar_input(semantic_type="epsilon")
-        self._inv_norm_size = scalar_input(semantic_type="inv_norm_size")
-        if self.elementwise_affine and "weight" not in self._parameters:
-            self.weight = ctx.parameter(
-                ValueMetadata(
-                    (self.normalized_shape,),
-                    semantic_type="weight",
-                )
-            )
-        self._initialized = True
+        self._eps = Tensor(shape=(1,), semantic_type="epsilon", requires_grad=False)
+        self._inv_norm_size = Tensor(
+            shape=(1,), semantic_type="inv_norm_size", requires_grad=False
+        )
+        if elementwise_affine:
+            self.weight = Parameter(shape=(normalized_shape,), semantic_type="weight")
 
     def forward(self, value: Tensor) -> Tensor:
-        """Compose the current placeholder RMS-normalization behavior."""
-        return Identity()(value)  # type: ignore[return-value]
+        axis = norm_axis(value)
+        feature_dim = feature_size(value, axis=axis)
+        if feature_dim != self.normalized_shape:
+            raise ValueError(
+                f"RMSNorm expected last dim {self.normalized_shape}, "
+                f"got {feature_dim} from shape {value.shape}"
+            )
+
+        squared = Multiply()(value, value)
+        variance = Divide()(
+            ReduceSum(axis=axis, keepdim=True)(squared),
+            self._inv_norm_size,
+        )
+        denom = SquareRoot()(Add()(variance, self._eps))
+        normalized = Divide()(value, denom)
+
+        if not self.elementwise_affine:
+            return normalized  # type: ignore[return-value]
+
+        return scale_by_parameter(normalized, self.weight)  # type: ignore[arg-type]

@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor
+from zepto.compose import Module, Tensor
 from .rms_norm import RMSNorm
 
 
-class QKNormRMSNorm:
+class QKNormRMSNorm(Module):
     """Apply separate last-dim RMSNorm to headed Q and K (Apertus QK-Norm)."""
 
+    module_kind = "QKNormRMSNorm"
+
     def __init__(self, head_dim: int, *, eps: float = 1e-5) -> None:
+        super().__init__()
         self.q_norm = RMSNorm(head_dim, eps=eps)
         self.k_norm = RMSNorm(head_dim, eps=eps)
 
-    def apply(
-        self,
-        query: GraphTensor,
-        key: GraphTensor,
-    ) -> tuple[GraphTensor, GraphTensor]:
+    def forward(self, query: Tensor, key: Tensor) -> tuple[Tensor, Tensor]:
         """Normalize headed Q/K tensors of shape ``(h, S, d_h)``."""
-        return self.q_norm(query), self.k_norm(key)
+        return self.q_norm(query), self.k_norm(key)  # type: ignore[return-value]

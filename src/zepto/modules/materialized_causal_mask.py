@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import materialized_causal_mask
+from zepto.compose import Module, Tensor
+from zepto.semantic import MaterializedCausalMask as MaterializedCausalMaskOp
 
 
 class MaterializedCausalMask(Module):
@@ -17,5 +17,5 @@ class MaterializedCausalMask(Module):
             raise ValueError("seq_len must be positive")
         self.seq_len = seq_len
 
-    def forward(self) -> GraphTensor:
-        return materialized_causal_mask(self.seq_len)
+    def forward(self) -> Tensor:  # type: ignore[override]
+        return MaterializedCausalMaskOp(self.seq_len)()  # type: ignore[return-value]

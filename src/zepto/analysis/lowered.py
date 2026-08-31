@@ -10,7 +10,7 @@ from zepto.compose.values import Tensor
 from zepto.graph.ids import EdgeId, NodeId
 from zepto.semantic.metadata import TensorRole
 from .lowering.context import InvocationContext
-from .lowering.registry import ImplementationSelection
+from .lowering.registry import ImplementationSelection, RegionImplementationSelection
 from zepto.semantic.operations.records import ResourceEvent
 
 
@@ -39,6 +39,14 @@ class LoweredNode:
     resource_events: tuple[ResourceEvent, ...]
     forward_flops: int
     backward_flops: int
+    module_path: tuple[str, ...] = ()
+    component_type: str | None = None
+    region_id: str | None = None
+    node_ids: tuple[NodeId, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.node_ids:
+            object.__setattr__(self, "node_ids", (self.node_id,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,3 +59,6 @@ class LoweredGraph:
     edge_map: Mapping[EdgeId, str]
     node_map: Mapping[NodeId, str]
     selections: tuple[ImplementationSelection, ...]
+    fusion_map: Mapping[NodeId, str] = MappingProxyType({})
+    region_map: Mapping[str, tuple[NodeId, ...]] = MappingProxyType({})
+    region_selections: tuple[RegionImplementationSelection, ...] = ()

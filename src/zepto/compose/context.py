@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Iterable
+from typing import ClassVar, Iterable
 
 from .values import Parameter, Tensor
 from zepto.graph.errors import ComposeError, MetadataMismatchError, PortArityError
@@ -17,10 +17,18 @@ from zepto.semantic.operations import Operation
 class Module:
     """User-facing composition and provenance boundary."""
 
+    module_kind: ClassVar[str | None] = None
+
     def __init__(self) -> None:
         """Create an empty module composition boundary."""
         self._parameters: dict[str, Parameter] = {}
         self._modules: dict[str, Module] = {}
+        self._registered_name: str | None = None
+
+    @property
+    def component_type(self) -> str:
+        """Stable reportable kind for provenance and region matching."""
+        return self.module_kind or self.__class__.__name__
 
     def register_parameter(self, name: str, parameter: Parameter) -> None:
         """Register a graph parameter under a module-local name.
@@ -43,6 +51,63 @@ class Module:
         if not name or name in self._parameters or name in self._modules:
             raise ValueError(f"Invalid or duplicate module member {name!r}")
         self._modules[name] = module
+        module._registered_name = name
+
+    @staticmethod
+    def _require_compose_context() -> Compose:
+        context = Compose.current()
+        if context is None:
+            raise RuntimeError(
+                "Module member assignment requires an active Compose context"
+            )
+        return context
+
+    @classmethod
+    def _register_graph_parameter(cls, spec: Parameter) -> Parameter:
+        if spec._parameter_id is not None:
+            return spec
+        return cls._require_compose_context().parameter(spec)
+
+    @classmethod
+    def _register_graph_buffer(cls, spec: Tensor) -> Tensor:
+        if spec._edge_id is not None:
+            return spec
+        return cls._require_compose_context().input(spec)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Auto-register nested modules, parameters, and buffers on assignment."""
+        if name in ("_parameters", "_modules", "_registered_name"):
+            object.__setattr__(self, name, value)
+            return
+
+        parameters = self.__dict__.get("_parameters")
+        if parameters is not None:
+            if name.startswith("_") and isinstance(value, Tensor):
+                object.__setattr__(
+                    self, name, self._register_graph_buffer(value)
+                )
+                return
+
+            if isinstance(value, Module):
+                existing = self._modules.get(name)
+                if existing is None:
+                    self.register_module(name, value)
+                elif existing is not value:
+                    raise ValueError(f"Invalid or duplicate module member {name!r}")
+                object.__setattr__(self, name, value)
+                return
+
+            if isinstance(value, Parameter):
+                value = self._register_graph_parameter(value)
+                existing_param = self._parameters.get(name)
+                if existing_param is None:
+                    self.register_parameter(name, value)
+                elif existing_param is not value:
+                    raise ValueError(f"Invalid or duplicate module member {name!r}")
+                object.__setattr__(self, name, value)
+                return
+
+        object.__setattr__(self, name, value)
 
     def __call__(self, *inputs: Tensor) -> Tensor | tuple[Tensor, ...]:
         """Compose this module in the active graph context.
@@ -98,6 +163,7 @@ class Compose:
         """
         self.builder = builder or GraphBuilder()
         self._module_path: tuple[str, ...] = ()
+        self._component_type: str | None = None
         self._instance_counts: dict[tuple[str, str], int] = {}
         self._previous: Compose | None = None
 
@@ -161,7 +227,7 @@ class Compose:
         self._instance_counts[key] = instance + 1
         provenance = Provenance(
             module_path=module_path or self._module_path,
-            component_type=component_type,
+            component_type=component_type or self._component_type,
             operation_family=operation.family,
             operation_instance=instance,
             source_label=source_label,
@@ -238,12 +304,15 @@ class Compose:
     ) -> Tensor | tuple[Tensor, ...]:
         """Invoke a module while recording its provenance path."""
         previous_path = self._module_path
-        name = module.__class__.__name__
-        self._module_path = (*previous_path, name)
+        previous_component = self._component_type
+        segment = module._registered_name or module.component_type
+        self._module_path = (*previous_path, segment)
+        self._component_type = module.component_type
         try:
             return module.forward(*inputs)
         finally:
             self._module_path = previous_path
+            self._component_type = previous_component
 
     def mark_output(self, value: Tensor) -> None:
         """Expose a graph value as a graph output."""

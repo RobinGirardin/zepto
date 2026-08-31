@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Mapping
 
 from zepto.compose.values import Tensor
 from zepto.graph.edge import Edge
@@ -11,7 +12,9 @@ from zepto.graph.ids import EdgeId
 from zepto.graph.node import Node
 from zepto.semantic.operations.records import EstimationContext, ResourceEvent, ResourceEventKind
 from zepto.semantic.ports import ValueKind
+from ..accounting import PrecisionPolicy
 from .context import InvocationContext
+from .region import Region
 from .role import RoleContext, resolve_for_accounting, resolve_lowered_edge
 
 
@@ -280,3 +283,63 @@ def is_zero_operand(edge: Edge, graph: Graph) -> bool:
     """Return whether an edge is provably a constant-zero operand."""
     del graph
     return edge.tensor.semantic_type == "constant_zero"
+
+
+@dataclass(frozen=True, slots=True)
+class RegionEstimationContext:
+    """Aggregated port tensors for one region."""
+
+    region: Region
+    phase: str
+    input_tensors: Mapping[str, Tensor]
+    output_tensors: Mapping[str, Tensor]
+    parameter_tensors: Mapping[str, Tensor]
+    precision: PrecisionPolicy | None
+    state: tuple[tuple[str, object], ...]
+
+
+def build_region_estimation_context(
+    region: Region,
+    graph: Graph,
+    context: InvocationContext,
+) -> RegionEstimationContext:
+    """Resolve boundary tensor and parameter values for a region."""
+    input_tensors: dict[str, Tensor] = {}
+    for index, edge_id in enumerate(region.boundary_inputs):
+        edge = graph.edge(edge_id)
+        role_ctx = RoleContext(graph=graph, edge_id=edge_id, port_direction="input")
+        tensor, _role = resolve_lowered_edge(
+            edge.tensor, role_ctx=role_ctx, context=context
+        )
+        input_tensors["input" if index == 0 else f"input{index}"] = tensor
+
+    output_tensors: dict[str, Tensor] = {}
+    for index, edge_id in enumerate(region.boundary_outputs):
+        edge = graph.edge(edge_id)
+        role_ctx = RoleContext(graph=graph, edge_id=edge_id, port_direction="output")
+        tensor, _role = resolve_lowered_edge(
+            edge.tensor, role_ctx=role_ctx, context=context
+        )
+        output_tensors["output" if index == 0 else f"output{index}"] = tensor
+
+    parameter_tensors: dict[str, Tensor] = {}
+    for index, parameter_id in enumerate(region.parameter_ids):
+        param = graph.parameter(parameter_id)
+        role_ctx = RoleContext(
+            port_direction="parameter",
+            port_value_kind=ValueKind.PARAMETER,
+        )
+        tensor, _role = resolve_lowered_edge(
+            param.as_tensor(), role_ctx=role_ctx, context=context
+        )
+        parameter_tensors[f"param{index}"] = tensor
+
+    return RegionEstimationContext(
+        region=region,
+        phase=context.phase,
+        input_tensors=input_tensors,
+        output_tensors=output_tensors,
+        parameter_tensors=parameter_tensors,
+        precision=context.precision,
+        state=context.state,
+    )

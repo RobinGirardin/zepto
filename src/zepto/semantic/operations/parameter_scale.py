@@ -1,7 +1,8 @@
 """Broadcast multiply of an activation by a 1-D parameter vector."""
 
-from ..metadata import ValueMetadata, TensorRole
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from zepto.semantic.metadata import PortContract
+from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
     GRAD_LEFT,
@@ -10,12 +11,11 @@ from .helpers import (
     GRAD_RIGHT_UNREDUCED,
     active_binary_auxiliary_ports,
     allocate,
-    broadcast_metadata,
     broadcast_reduction_flops,
     emit_binary_backward_resource_events,
     numel,
-    reduced_gradient_metadata,
-    unreduced_gradient_metadata,
+    reduced_gradient_tensor,
+    unreduced_gradient_tensor,
 )
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
@@ -28,58 +28,58 @@ class ParameterScale(Operation):
         return "parameter_scale"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("input"),)
+    def input_ports(self) -> tuple[Port, ...]:
+        return (Port("input"),)
 
     @property
-    def parameter_ports(self) -> tuple[PortSpec, ...]:
+    def parameter_ports(self) -> tuple[Port, ...]:
         return (
-            PortSpec(
+            Port(
                 "weight",
                 value_kind=ValueKind.PARAMETER,
-                metadata=ValueMetadata((), semantic_type="weight"),
+                contract=PortContract(semantic_type="weight"),
             ),
         )
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
+    def auxiliary_ports(self) -> tuple[Port, ...]:
         return (
-            PortSpec(GRAD_LEFT, ValueKind.GRADIENT),
-            PortSpec(GRAD_RIGHT, ValueKind.GRADIENT),
-            PortSpec(GRAD_LEFT_UNREDUCED, ValueKind.GRADIENT),
-            PortSpec(GRAD_RIGHT_UNREDUCED, ValueKind.GRADIENT),
+            Port(GRAD_LEFT, ValueKind.GRADIENT),
+            Port(GRAD_RIGHT, ValueKind.GRADIENT),
+            Port(GRAD_LEFT_UNREDUCED, ValueKind.GRADIENT),
+            Port(GRAD_RIGHT_UNREDUCED, ValueKind.GRADIENT),
         )
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        (input_meta,) = inputs
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        (activation,) = inputs
         (weight,) = parameters
         (output,) = outputs
         return (
-            reduced_gradient_metadata(input_meta),
-            reduced_gradient_metadata(weight),
-            unreduced_gradient_metadata(output),
-            unreduced_gradient_metadata(output),
+            reduced_gradient_tensor(activation),
+            reduced_gradient_tensor(weight),
+            unreduced_gradient_tensor(output),
+            unreduced_gradient_tensor(output),
         )
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
-        (input_meta,) = inputs
+        (activation,) = inputs
         (weight,) = parameters
         (output,) = outputs
         return active_binary_auxiliary_ports(
-            input_meta, weight, output, materializes_vjp=True
+            activation, weight, output, materializes_vjp=True
         )
 
     @property
@@ -93,67 +93,68 @@ class ParameterScale(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        (input_meta,) = inputs
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        (activation,) = inputs
         (weight,) = parameters
         if len(weight.shape) != 1:
             raise ValueError(
                 f"parameter_scale weight must be rank-1, got {weight.shape}"
             )
-        if input_meta.shape[-1] != weight.shape[0]:
+        if activation.shape[-1] != weight.shape[0]:
             raise ValueError(
-                f"parameter_scale last dim {input_meta.shape[-1]} must match "
+                f"parameter_scale last dim {activation.shape[-1]} must match "
                 f"weight length {weight.shape[0]}"
             )
         return (
-            ValueMetadata(
-                input_meta.shape,
-                input_meta.semantic_type,
-                requires_grad=input_meta.requires_grad or weight.requires_grad,
-                role=TensorRole.ACTIVATION,
+            Tensor(
+                shape=activation.shape,
+                dtype=activation.dtype,
+                semantic_type=activation.semantic_type,
+                requires_grad=activation.requires_grad or weight.requires_grad,
+                persistent=activation.persistent,
             ),
         )
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
-        (input_meta,) = inputs
+        (activation,) = inputs
         (weight,) = parameters
         saved: list[str] = []
         if weight.requires_grad:
             saved.append("input")
-        if input_meta.requires_grad:
+        if activation.requires_grad:
             saved.append("weight")
         return tuple(saved)
 
     def forward_flops(self, context: EstimationContext) -> int:
-        output = context.metadata_for("output")
+        output = context.tensor_for("output")
         if output is None:
             raise ValueError("Estimation context must provide an 'output' port")
         return numel(output)
 
     def backward_flops(self, context: EstimationContext) -> int:
-        input_meta = context.metadata_for("input")
-        weight = context.metadata_for("weight")
-        output = context.metadata_for("output")
-        if input_meta is None or weight is None or output is None:
+        activation = context.tensor_for("input")
+        weight = context.tensor_for("weight")
+        output = context.tensor_for("output")
+        if activation is None or weight is None or output is None:
             raise ValueError(
                 "Estimation context must provide 'input', 'weight', and 'output' ports"
             )
         flops = 0
-        if input_meta.requires_grad:
+        if activation.requires_grad:
             flops += numel(output)
             if weight.shape != output.shape:
                 flops += broadcast_reduction_flops(weight, output)
         if weight.requires_grad:
             flops += numel(output)
-            if input_meta.shape != output.shape:
-                flops += broadcast_reduction_flops(input_meta, output)
+            if activation.shape != output.shape:
+                flops += broadcast_reduction_flops(activation, output)
         return flops
 
     def resource_events(
@@ -161,7 +162,7 @@ class ParameterScale(Operation):
         context: EstimationContext,
         result: OperationResult,
     ) -> tuple[ResourceEvent, ...]:
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         events.extend(

@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-from ..metadata import ValueMetadata
-from ..ports import PortSpec, ValueKind
+from zepto.compose.values import Tensor
+from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, persist_only_events, reduced_gradient_metadata
+from .helpers import allocate, persist_only_events, reduced_gradient_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
@@ -28,34 +28,32 @@ class Concat(Operation):
         return "concat"
 
     @property
-    def input_ports(self) -> tuple[PortSpec, ...]:
-        return tuple(
-            PortSpec(f"input_{index}") for index in range(self.input_count)
-        )
+    def input_ports(self) -> tuple[Port, ...]:
+        return tuple(Port(f"input_{index}") for index in range(self.input_count))
 
     @property
-    def output_ports(self) -> tuple[PortSpec, ...]:
-        return (PortSpec("output"),)
+    def output_ports(self) -> tuple[Port, ...]:
+        return (Port("output"),)
 
-    def auxiliary_ports(self) -> tuple[PortSpec, ...]:
+    def auxiliary_ports(self) -> tuple[Port, ...]:
         return tuple(
-            PortSpec(f"grad_input_{index}", ValueKind.GRADIENT)
+            Port(f"grad_input_{index}", ValueKind.GRADIENT)
             for index in range(self.input_count)
         )
 
     def infer_auxiliary_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
-        return tuple(reduced_gradient_metadata(value) for value in inputs)
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
+        return tuple(reduced_gradient_tensor(value) for value in inputs)
 
     def active_auxiliary_ports(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         return tuple(
             f"grad_input_{index}"
@@ -75,9 +73,9 @@ class Concat(Operation):
 
     def infer_outputs(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-    ) -> tuple[ValueMetadata, ...]:
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+    ) -> tuple[Tensor, ...]:
         if self.input_count < 2:
             raise ValueError("concat requires at least two input tensors")
         if len(inputs) != self.input_count:
@@ -103,20 +101,21 @@ class Concat(Operation):
                         f"concat non-concat dimensions mismatch on input_{index}: "
                         f"{inputs[0].shape} vs {value.shape}"
                     )
-        requires_grad = any(value.requires_grad for value in inputs)
         return (
-            ValueMetadata(
-                tuple(output_shape),
-                inputs[0].semantic_type,
-                requires_grad=requires_grad,
+            Tensor(
+                shape=tuple(output_shape),
+                dtype=inputs[0].dtype,
+                semantic_type=inputs[0].semantic_type,
+                requires_grad=any(value.requires_grad for value in inputs),
+                persistent=inputs[0].persistent,
             ),
         )
 
     def saved_for_backward(
         self,
-        inputs: tuple[ValueMetadata, ...],
-        parameters: tuple[ValueMetadata, ...] = (),
-        outputs: tuple[ValueMetadata, ...] = (),
+        inputs: tuple[Tensor, ...],
+        parameters: tuple[Tensor, ...] = (),
+        outputs: tuple[Tensor, ...] = (),
     ) -> tuple[str, ...]:
         return ()
 
@@ -129,7 +128,7 @@ class Concat(Operation):
     def resource_events(
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
-        events = list(allocate(result))
+        events = list(allocate(len(self.output_ports)))
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:

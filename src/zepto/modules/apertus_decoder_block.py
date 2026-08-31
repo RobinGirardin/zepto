@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..core.composition import GraphTensor, Module
-from ..core.functional import add
+from zepto.compose import Module, Tensor
+from zepto.semantic import Add
 from .ffn import FFN
 from .gqa import GroupedQueryAttention
 from .qk_norm import QKNormRMSNorm
@@ -32,9 +32,7 @@ class ApertusDecoderBlock(Module):
         )
 
         self.pre_attn_norm = RMSNorm(hidden_size)
-
-        self.rope = RoPEApply(resolved_head_dim)
-
+        rope = RoPEApply(resolved_head_dim)
         qk = QKNormRMSNorm(resolved_head_dim) if qk_norm else None
         self.attn = GroupedQueryAttention(
             hidden_size,
@@ -42,19 +40,18 @@ class ApertusDecoderBlock(Module):
             num_kv_heads,
             head_dim=resolved_head_dim,
             qk_norm=qk,
-            rope=self.rope,
+            rope=rope,
         )
-
         self.pre_ffn_norm = RMSNorm(hidden_size)
         self.ffn = FFN(hidden_size, intermediate_size)
 
     def forward(
         self,
-        hidden_states: GraphTensor,
-        causal_mask: GraphTensor,
-        rope_cos: GraphTensor,
-        rope_sin: GraphTensor,
-    ) -> GraphTensor:
+        hidden_states: Tensor,
+        causal_mask: Tensor,
+        rope_cos: Tensor,
+        rope_sin: Tensor,
+    ) -> Tensor:
         residual = hidden_states
         normed = self.pre_attn_norm(hidden_states)
         attention_out = self.attn(
@@ -63,9 +60,9 @@ class ApertusDecoderBlock(Module):
             rope_cos,
             rope_sin,
         )
-        hidden_states = add(residual, attention_out)
+        hidden_states = Add()(residual, attention_out)  # type: ignore[assignment]
 
         residual = hidden_states
         normed = self.pre_ffn_norm(hidden_states)
         ffn_out = self.ffn(normed)
-        return add(residual, ffn_out)
+        return Add()(residual, ffn_out)  # type: ignore[return-value]
