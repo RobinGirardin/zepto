@@ -2,6 +2,7 @@
 
 from .base import EstimationOperation, Operation, SemanticOperation
 from .add import Add
+from .cast import Cast
 from .concat import Concat
 from .cos import Cos
 from .divide import Divide
@@ -47,6 +48,7 @@ __all__ = [
     "Add",
     "AliasSpec",
     "BackwardSpec",
+    "Cast",
     "Concat",
     "Cos",
     "DeclarationValidator",

@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor
-from zepto.semantic import Add, Divide, Multiply, ReduceSum, SquareRoot
-from ._helpers import feature_size, norm_axis, scale_by_parameter
+from zepto.semantic import Add, Cast, Divide, Multiply, ReduceSum, SquareRoot
+from zepto.semantic.metadata import DType
+from ._helpers import (
+    RMSNORM_COMPUTE_DTYPE,
+    activation_dtype,
+    feature_size,
+    norm_axis,
+    scale_by_parameter,
+)
 
 
 class RMSNorm(Module):
     """RMS normalization matching HuggingFace Llama eager semantics.
 
-    Normalizes over the last dimension. With ``elementwise_affine=True`` (default)
-    a learnable scale ``weight`` (γ) is applied; Apertus uses γ-only (no β).
+    Normalizes over the last dimension. Variance accumulation runs in fp32
+    (``Cast`` up/down), matching ``LlamaRMSNorm`` / ``ApertusRMSNorm`` eager.
+    With ``elementwise_affine=True`` (default) a learnable scale ``weight``
+    (γ) is applied; Apertus uses γ-only (no β).
     """
 
     module_kind = "RMSNorm"
@@ -22,6 +31,8 @@ class RMSNorm(Module):
         *,
         eps: float = 1e-5,
         elementwise_affine: bool = True,
+        compute_dtype: DType = RMSNORM_COMPUTE_DTYPE,
+        activation_dtype_default: DType = DType.BF16,
     ) -> None:
         super().__init__()
         if normalized_shape <= 0:
@@ -29,6 +40,8 @@ class RMSNorm(Module):
         self.normalized_shape = normalized_shape
         self.eps = eps
         self.elementwise_affine = elementwise_affine
+        self.compute_dtype = compute_dtype
+        self._activation_dtype_default = activation_dtype_default
 
         self._eps = Tensor(shape=(1,), semantic_type="epsilon", requires_grad=False)
         self._inv_norm_size = Tensor(
@@ -46,13 +59,25 @@ class RMSNorm(Module):
                 f"got {feature_dim} from shape {value.shape}"
             )
 
-        squared = Multiply()(value, value)
+        restore_dtype = activation_dtype(
+            value, default=self._activation_dtype_default
+        )
+
+        # HF eager: hidden_states = hidden_states.to(float32)
+        x_compute = Cast(to_dtype=self.compute_dtype)(value)
+
+        squared = Multiply()(x_compute, x_compute)
         variance = Divide()(
             ReduceSum(axis=axis, keepdim=True)(squared),
             self._inv_norm_size,
         )
         denom = SquareRoot()(Add()(variance, self._eps))
-        normalized = Divide()(value, denom)
+
+        # Normalize in fp32 using x_compute (not raw value)
+        normalized = Divide()(x_compute, denom)
+
+        # HF eager: hidden_states.to(input_dtype) before × γ
+        normalized = Cast(to_dtype=restore_dtype)(normalized)  # type: ignore[assignment]
 
         if not self.elementwise_affine:
             return normalized  # type: ignore[return-value]

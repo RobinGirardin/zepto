@@ -157,6 +157,22 @@ $$
 \frac{\partial L}{\partial A} = \frac{\partial L}{\partial Y}
 $$
 
+## Cast
+
+> Forward: $y = \mathrm{cast}(x, T)$ with fixed target dtype $T$; shape unchanged.
+>
+> Backward: $\partial L/\partial x = \mathrm{cast}(\partial L/\partial y,\, \dtype(x))$.
+>
+> **Broadcast.** None.
+>
+> **Saved.** None — input and target dtypes are fixed by the operation declaration.
+>
+> **FLOPs.** 0 forward and backward (dtype conversion is a memory/metadata op).
+>
+> **Memory.** Forward allocates output at `itemsize(T) × numel(x)`. Widening
+> (e.g. bf16→fp32) doubles bytes; narrowing halves them. Backward allocates
+> `grad_input` at the input dtype when `input.requires_grad`.
+
 ## Split
 
 For $Y_1, Y_2 = \text{split}(A)$
