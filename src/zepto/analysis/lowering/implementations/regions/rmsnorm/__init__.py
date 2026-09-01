@@ -1,9 +1,7 @@
-"""Fused region lowering implementations."""
+"""Fused RMSNorm region implementations."""
 
-from .linear import FUSED_LINEAR_REGION
-from .layernorm import FUSED_LAYERNORM_REGION
-from .relu import RELU_REGION
-from .rmsnorm import (
+from .rules import RMSNORM_PATTERN, RMSNORM_PROVENANCE
+from .variants import (
     FUSED_RMSNORM_HUB_MPS,
     FUSED_RMSNORM_HUB_XPU,
     FUSED_RMSNORM_LIGER,
@@ -12,12 +10,11 @@ from .rmsnorm import (
 )
 
 __all__ = [
-    "FUSED_LAYERNORM_REGION",
-    "FUSED_LINEAR_REGION",
     "FUSED_RMSNORM_HUB_MPS",
     "FUSED_RMSNORM_HUB_XPU",
     "FUSED_RMSNORM_LIGER",
     "FUSED_RMSNORM_REFERENCE",
-    "RELU_REGION",
+    "RMSNORM_PATTERN",
+    "RMSNORM_PROVENANCE",
     "RMSNORM_REGIONS",
 ]

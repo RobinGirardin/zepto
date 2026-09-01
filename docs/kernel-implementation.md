@@ -149,10 +149,65 @@ QK-Norm is the **same kernel** on the last axis of headed tensors, with \(n = d_
 | Backend | Implementation | What is fused |
 |---------|----------------|---------------|
 | HF eager | `pow2 → mean → rsqrt → mul γ` in Python | Nothing; full-size temps in autograd |
-| HF hub (`USE_HUB_KERNELS`) | `@use_kernel_forward_from_hub("RMSNorm")` → `kernels-community/liger-kernels` **`LigerRMSNorm`** (CUDA/ROCm/NPU); XPU `kernels-community/rmsnorm`; MPS `mlx_rmsnorm` | Normalize + scale in one Triton kernel; **cache RMS / rstd** for backward ([Dai et al., 2024, §RMSNorm](https://arxiv.org/html/2410.10989v1)) |
+| HF hub — CUDA / ROCm / NPU | `@use_kernel_forward_from_hub("RMSNorm")` → [`kernels-community/liger-kernels`](https://huggingface.co/kernels-community/liger-kernels) **`LigerRMSNorm`** (Triton; training + inference) | Normalize + scale in one Triton kernel; **cache `rstd`** for backward ([Dai et al., 2024, §RMSNorm](https://arxiv.org/html/2410.10989v1)) |
+| HF hub — **Intel XPU** | Same decorator → [`kernels-community/rmsnorm`](https://huggingface.co/kernels-community/rmsnorm) **`RMSNorm`** (SYCL/ESIMD C++; **inference only** in [`hub_kernels.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/hub_kernels.py)) | Same math in one native XPU kernel; **cache `rstd`**; see §5.1 |
+| HF hub — **Apple MPS** | Same decorator → [`kernels-community/mlx-rmsnorm`](https://huggingface.co/kernels-community/mlx-rmsnorm) **`RMSNorm`** (Metal; **inference only** in [`hub_kernels.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/hub_kernels.py); legacy repo id `mlx_rmsnorm`) | MLX-lineage Metal kernel on PyTorch MPS; **`rstd` stays in threadgroup SLM** (not written to HBM); see §5.2 |
 | vLLM | `RMSNorm` CUDA/IR op; **`fused_add_rms_norm`** when a residual is passed | Residual add + RMSNorm; returns `(y, residual')` so the next block does not re-read a separate residual buffer ([`vllm/.../layernorm.py`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/layernorm.py)) |
 
 Liger reports ~\(7\times\) lower kernel time and ~\(3\times\) lower **peak** memory vs HuggingFace RMSNorm at hidden size 16384, by avoiding materializing intermediates and caching only the RMS statistic ([Dai et al., 2024](https://arxiv.org/abs/2410.10989)).
+
+#### 5.1 HF Hub: `kernels-community/rmsnorm` (Intel XPU fallback)
+
+Transformers routes **`RMSNorm` on `device.type == "xpu"`** to this repo when `USE_HUB_KERNELS=YES`. CUDA/ROCm/NPU stay on Liger; Apple Silicon MPS uses **`kernels-community/mlx-rmsnorm`** (§5.2). This is **not** a second CUDA backend — it is the **default XPU inference** kernel in the hub registry.
+
+| Property | Detail |
+|----------|--------|
+| **Hub repo** | [`kernels-community/rmsnorm`](https://huggingface.co/kernels-community/rmsnorm) (Apache-2.0; built with [`kernel-builder`](https://github.com/huggingface/kernels)) |
+| **Load path** | `from kernels import get_kernel` → `get_kernel("kernels-community/rmsnorm")` → `apply_rms_norm_forward` / `apply_rms_norm_backward` |
+| **Transformers wiring** | `hub_kernels.py`: `"xpu": { Mode.INFERENCE: LayerRepository(repo_id="kernels-community/rmsnorm", layer_name="RMSNorm", version=1) }` — **no `Mode.TRAINING` entry**; XPU training falls back to eager PyTorch |
+| **Implementation** | Precompiled **SYCL ESIMD** extension (`torch.ops._rmsnorm_xpu_*::apply_rms_norm`), not Triton. Builds exist for Torch 2.10–2.29 × XPU 2025.x (Linux/Windows) plus **CPU** wheels (likely CI/dev fallback). Lineage overlaps Intel XPU norm work (e.g. [`intel/llm-scaler` omni_xpu_kernel](https://github.com/intel/llm-scaler) ESIMD RMSNorm / `fused_add_rms_norm`). |
+| **Public API** | `RMSNorm` module + `RMSNormFunction` autograd wrapper; ops return `(output, rstd)` from forward |
+| **Fusion scope** | Single kernel: per-row \(\sum x_i^2 \to \mathrm{rstd} \to y = x \cdot \mathrm{rstd} \cdot \gamma\) with on-chip reduction (SLM/sub-group), no full-rank `squared` / `normalized` HBM temps |
+| **vs Liger on XPU** | Liger added XPU Triton tuning ([Liger-Kernel #653](https://github.com/linkedin/Liger-Kernel/pull/653): `grf_mode`, warp/stage counts), but Transformers **still defaults XPU inference to `kernels-community/rmsnorm`**, not `LigerRMSNorm`. Zepto should treat them as **device-routed variants of the same fused leaf** (\(4n\) FLOPs, elided temps), not competing math. |
+
+**Autograd saved tensors (hub XPU vs Liger):**
+
+| Kernel | Saved for backward (training) | Notes |
+|--------|-------------------------------|-------|
+| HF eager | \(x\), intermediate activations along the 7-op chain | Highest HBM footprint |
+| Liger | \(x\) + **`rstd`** per row (fp32); optional \(W\) if affine | Does **not** save output \(y\) |
+| **`kernels-community/rmsnorm`** | **`hidden_states`, `weight`, `output`, `rstd`** (four tensors) | Saves **full output \(y\)** in addition to \(x\) and `rstd` — heavier than Liger for training, though Transformers only registers this path for **XPU inference** today |
+
+**Execution constraints:** last-axis normalization on 2D views `(B·T, H)` or `(B, T, H)`; dtypes fp16/bf16/fp32 per build; contiguity assumed by custom op. Intel ESIMD paths in related code often require `hidden_size` divisible by 32 and \(\le 8192\) for tiled dispatch (model-specific one-WI paths exist for odd sizes like QK-Norm \(d_h{=}128\)).
+
+**Zepto variant note:** Same closed-form **`region/rmsnorm/liger`** recipe applies (\(4 \lvert x \rvert\) forward FLOPs, ALLOCATE `y` + `rstd`, SAVE `rstd` only). A future `region/rmsnorm/hub-xpu` descriptor id is optional if backend routing must distinguish XPU hub from CUDA Liger; cost model is identical, only the **saved-tensor policy in real PyTorch autograd** differs (see table above).
+
+#### 5.2 HF Hub: `kernels-community/mlx-rmsnorm` (Apple MPS / Metal fallback)
+
+Transformers routes **`RMSNorm` on `device.type == "mps"`** to this repo when `USE_HUB_KERNELS=YES`. CUDA/ROCm/NPU stay on Liger; Intel XPU uses `kernels-community/rmsnorm` (§5.1). This is **not** a native MLX-array backend — it is a **PyTorch MPS custom op** whose Metal shader is ported from [MLX `rms_norm.metal`](https://github.com/ml-explore/mlx/blob/main/mlx/backend/metal/kernels/rms_norm.metal).
+
+| Property | Detail |
+|----------|--------|
+| **Hub repo** | [`kernels-community/mlx-rmsnorm`](https://huggingface.co/kernels-community/mlx-rmsnorm) (MIT; built with [`kernel-builder`](https://github.com/huggingface/kernels) **`metal`** backend). Source: [`kernels-community/mlx-rmsnorm`](https://github.com/huggingface/kernels-community/tree/main/mlx-rmsnorm). Older underscore id `kernels-community/mlx_rmsnorm` is deprecated ([Transformers #46293](https://github.com/huggingface/transformers/pull/46293)). |
+| **Load path** | `from kernels import get_kernel` → `get_kernel("kernels-community/mlx-rmsnorm", version=1)` → `rmsnorm_forward` / `rmsnorm_backward` or `layers.RMSNorm` |
+| **Transformers wiring** | `hub_kernels.py`: `"mps": { Mode.INFERENCE: LayerRepository(repo_id="kernels-community/mlx_rmsnorm", layer_name="RMSNorm", version=1) }` — **no `Mode.TRAINING` entry**; MPS training falls back to eager PyTorch (same policy as XPU hub) |
+| **Implementation** | Precompiled **Metal** extension (`torch.ops._mlx_rmsnorm_metal_*::launch_forward_kernel` / `launch_backward_kernel`, `at::kMPS` dispatch). Wheels under `build/torch*-metal-aarch64-darwin/`. Embedded metallib from `mlx_rmsnorm/rmsnorm.metal` + Objective-C++ launcher (`metal_rmsnorm.mm`). |
+| **Public API** | `rmsnorm_forward(x, weight, epsilon)` returns **output only** (no `(output, rstd)` tuple). `rmsnorm_backward` recomputes the row normalizer inside the VJP Metal kernel. |
+| **Fusion scope** | One dispatch per row batch: \(\sum x_i^2\) via `simd_sum` → `local_inv_mean[0] = rsqrt(acc/axis_size + eps)` in **threadgroup SLM** → \(y_i = w_i \cdot x_i \cdot \mathrm{inv\_mean}\). No full-rank `squared` / `normalized` HBM temps. |
+| **Dispatch variants** | `axis_size ≤ 4096`: `rms{float32\|float16\|bfloat16}` / `vjp_rms*`. Larger last dim: `rms_looped*` / `vjp_rms_looped*` (same math, tiled loop over the axis). |
+| **vs Liger on MPS** | Liger targets CUDA/ROCm/NPU Triton; Transformers **does not** route MPS to `LigerRMSNorm`. Zepto should treat MLX-hub Metal and Liger as **device-routed variants of the same fused leaf** (\(4n\) forward FLOPs, elided temps), not competing math. |
+
+**Autograd / saved activations (hub MPS vs Liger vs XPU hub):**
+
+| Kernel | Saved for backward (training) | Notes |
+|--------|-------------------------------|-------|
+| Liger | \(x\) + **`rstd`** per row (fp32) | Writes `rstd` to HBM for backward |
+| **`kernels-community/rmsnorm`** (XPU) | \(x\) + **`rstd`** + **`y`** | Heavier autograd surface; hub registry inference-only on XPU |
+| **`kernels-community/mlx-rmsnorm`** (MPS) | **`x`** (and **`weight`** if affine grad) only | Forward keeps **`inv_mean` in threadgroup memory only** — **no `rstd` tensor in HBM**. Backward **recomputes** \(\sum x_i^2\) and `rsqrt` from saved \(x\) in the VJP kernel (recompute-style, like FlashAttention backward). Hub registry is **MPS inference-only** today; backward exists in the package but is not selected by default `hub_kernels.py`. |
+
+**Execution constraints:** tensors must be on **`mps`** device; launcher copies to **contiguous** storage if needed. Supported dtypes: fp16, bf16, fp32. Last-axis normalization on views flattened to `(B·T, H)` inside `rmsnorm_forward`. Not torch.compile-friendly (same note as Liger RMSNorm in `hub_kernels.py`).
+
+**Zepto variant note:** Same closed-form **`region/rmsnorm/liger`** recipe applies for FLOPs and elided forward temps (\(4 \lvert x \rvert\), no `squared`/`normalized` `ALLOCATE`s). Zepto’s fused leaf still models **`SAVE rstd`** for training backward (\(\approx S \times 4\) bytes fp32 per row) because that is the Liger/hub-XPU convention and matches `RMSNormRecipe.rstd_shape`. A future `region/rmsnorm/hub-mps` descriptor id is optional if backend routing must distinguish MPS Metal from CUDA Liger; **peak VRAM during real MPS inference** is one output buffer only (no `rstd` HBM write on the forward path).
 
 ### FLOPs
 
@@ -174,12 +229,14 @@ QK-Norm Appendix E:
 
 Let \(n = \lvert x \rvert\) (e.g. \(S d\) for hidden RMSNorm).
 
-| Quantity | Eager / unfused | Fused Liger-style | vLLM fused add+norm |
-|----------|-----------------|-------------------|---------------------|
-| Output \(y\) | \(n e\) | \(n e\) | \(n e\) |
-| Full-size temps | \(\sim 1\text{–}2 \times n e\) | **0** (on-chip) | **0** |
-| Saved for backward | \(x\) and/or several activations | \(x\) (if grad) + **`rstd` of shape \((S,1)\)** (or per-token) | same + residual already in the returned pair |
-| Residual extra read | separate `x + dx` kernel | separate | **elided** |
+| Quantity | Eager / unfused | Fused Liger-style (CUDA/ROCm/NPU) | HF hub XPU (`kernels-community/rmsnorm`) | HF hub MPS (`kernels-community/mlx-rmsnorm`) | vLLM fused add+norm |
+|----------|-----------------|-----------------------------------|------------------------------------------|----------------------------------------------|---------------------|
+| Output \(y\) | \(n e\) | \(n e\) | \(n e\) | \(n e\) | \(n e\) |
+| Full-size temps | \(\sim 1\text{–}2 \times n e\) | **0** (on-chip) | **0** (ESIMD SLM) | **0** (Metal threadgroup SLM) | **0** |
+| Saved for backward | \(x\) and/or several activations | \(x\) (if grad) + **`rstd`** \((S,1)\) fp32 per row | \(x\) + **`rstd`** + **`y`** (+ \(W\) if grad) in autograd; hub registry is inference-only on XPU | **`x`** only if autograd enabled; **`rstd` not materialized** (recomputed in VJP); hub registry is inference-only on MPS | same + residual already in the returned pair |
+| Residual extra read | separate `x + dx` kernel | separate | separate | separate | **elided** |
+
+**Arithmetic intensity.** RMSNorm is **memory-bound** at LLM hidden sizes: forward reads \(x\) and \(\gamma\), writes \(y\), and (for Liger / XPU hub) writes one fp32 scalar per row for `rstd`. Fused kernels win on wall-clock by keeping the reduction and scale in **SRAM/SLM** (Liger Triton registers; XPU ESIMD SLM + sub-group reduce; MPS Metal `threadgroup float local_inv_mean[1]`), not by lowering theoretical FLOPs below \(4n\).
 
 Apertus-8B, \(S{=}8192\), one hidden RMSNorm: \(S d e = 64\,\mathrm{MiB}\) bf16. Two full-size temps on pre-attn **and** pre-FFN ≈ **256 MiB** of elidable peak if counted as simultaneous — fused `region/rmsnorm` must **replace** the primitive chain so those temps never enter the resource-event stream.
 
@@ -426,16 +483,16 @@ Huang and Schlag ([2025](https://arxiv.org/abs/2411.13010)) derive xIELU by inte
 \[
 \mathrm{xIELU}(x) =
 \begin{cases}
-\alpha_p x^{2} + 0.5\, x & x > 0, \\
-\alpha_n (e^{x} - 1) - \alpha_n x + 0.5\, x & x \le 0,
+\alpha_p x^{2} + \beta x & x > 0, \\
+\alpha_n (e^{\min(x,\varepsilon)} - 1 - x) + \beta x & x \le 0,
 \end{cases}
 \]
 
-with **per-layer scalar** \(\alpha_p, \alpha_n\). Equivalently, with \(\beta = 0.5\):
+with **per-layer scalar** \(\alpha_p, \alpha_n\), \(\beta = 0.5\), and \(\varepsilon = -10^{-6}\). Learned parameters map through softplus:
 
 \[
-\alpha_n (e^{x}-1-x) + \beta x
-\quad (x \le 0).
+\alpha_p = \mathrm{softplus}(\alpha_{p,\mathrm{param}}), \qquad
+\alpha_n = \beta + \mathrm{softplus}(\alpha_{n,\mathrm{param}}).
 \]
 
 HuggingFace / vLLM eager Python ([`XIELUActivation`](https://github.com/huggingface/transformers/blob/main/src/transformers/activations.py)):
@@ -447,33 +504,84 @@ y = where(x > 0, α_p x² + β x,
           (expm1(min(x, ε)) - x) α_n + β x)
 ```
 
-\(\varepsilon = -10^{-6}\) clamps the exponential for stability (Huang & Schlag, §3.4). Parameters are stored in **inverse-softplus** space: \(\alpha_p\) init \(0.8\) as \(\log(\mathrm{expm1}(0.8))\); \(\alpha_n\) param is \(\log(\mathrm{expm1}(\alpha_n^{\mathrm{init}}-\beta))\) because the forward adds \(\beta\) after softplus.
+\(\varepsilon\) clamps the exponential for stability (Huang & Schlag, §3.4). Parameters are stored in **inverse-softplus** space: \(\alpha_p\) init \(0.8\) as \(\log(\mathrm{expm1}(0.8))\); \(\alpha_n\) param is \(\log(\mathrm{expm1}(\alpha_n^{\mathrm{init}}-\beta))\) because the forward adds \(\beta\) after softplus.
 
-xIELU is **not** a GLU: one activation, two linears. Hidden width is scaled \(1.5\times\) vs SwiGLU to match FLOPs/parameters ([Huang and Schlag, 2025, §3.5](https://arxiv.org/abs/2411.13010); Apertus §2.4).
+xIELU is **not** a GLU: one activation, two linears (`Up GEMM → xIELU → Down GEMM`). Hidden width is scaled \(1.5\times\) vs SwiGLU to match FLOPs/parameters ([Huang and Schlag, 2025, §3.5](https://arxiv.org/abs/2411.13010); Apertus §2.4).
 
 ### Programmatic implementations
 
-| Backend | Path |
-|---------|------|
-| HF / vLLM Python | `torch.where` + `expm1` (always available) |
-| Optional CUDA | `pip install git+https://github.com/nickjbrowning/XIELU` → `torch.classes.xielu.XIELU().forward` when the tensor is CUDA |
-| Hub kernels | **Not registered** in Transformers `hub_kernels.py` |
+| Backend | Path | Fused? | Notes |
+|---------|------|--------|-------|
+| HF eager Python | [`XIELUActivation`](https://github.com/huggingface/transformers/blob/main/src/transformers/activations.py): `torch.where` + `expm1` | No | Default; always available |
+| vLLM | [`CustomOp` `XIELU`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/activation.py) | Partial | CUDA wheel if installed, else Python fallback |
+| SGLang | [`BaseFusedOp` `XIELU`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/activation.py) | Partial | Same optional CUDA path as HF/vLLM |
+| nickjbrowning / rubber-duck-debug CUDA | `pip install git+https://github.com/nickjbrowning/XIELU` → `torch.classes.xielu.XIELU().forward` | Yes | CUDA only (cc 6.0+); `torch.compile` via `allow_in_graph`; optional `with_vector_loads` |
+| llama.cpp / ggml | [`ggml_cuda_op_xielu`](https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda/unary.cu) | Yes | Apertus GGUF inference; F16/F32 contiguous tensors |
+| Liger Kernel | — | — | **No xIELU Triton kernel** |
+| HF Hub kernels | — | — | **Not registered** in [`hub_kernels.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/hub_kernels.py) |
+| Zepto (today) | [`src/zepto/modules/xielu.py`](../src/zepto/modules/xielu.py): `Where` + `Exp` + `Minimum` + `Multiply` … | No | Decomposed; `effective_alpha_p` / `effective_alpha_n` fold `softplus` at inference |
+| Zepto (planned) | `region/xielu` | Yes | Atto-parity leaf; elide branch temps |
 
-Huang & Schlag §3.5: scalars have negligible memory; quadratic and exponential terms are computed **on the fly** (like GELU/SiLU); eager PyTorch is slower than fused GELU because of branching and multiple kernels; **a fused CUDA kernel** is expected to close that gap. Memory footprint of activations/gradients is comparable to GELU — **one output of size \(\lvert H \rvert\)**, not a persistent extra buffer, if fused.
+**Delivery & integration.** HF, vLLM, and SGLang share the same pattern: try `import xielu.ops` at init; on success bind `torch.classes.xielu.XIELU()` and route CUDA tensors through `_xielu_cuda`, otherwise emit a one-time warning and use `_xielu_python`. The CUDA path expects **3D** tensors \((B, T, H)\) and reshapes rank-2 inputs. llama.cpp embeds a standalone elementwise CUDA kernel with \(\alpha_p, \alpha_n, \beta, \varepsilon\) passed as op params (per-layer scalars from GGUF). There is **no** Liger monkey-patch or Hub dynamic loader for xIELU today.
+
+Huang & Schlag §3.5: scalars have negligible memory; quadratic and exponential terms are computed **on the fly** (like GELU/SiLU); eager PyTorch is slower than fused GELU because of branching and multiple kernel launches; **a fused CUDA kernel** closes that gap by keeping the piecewise logic in registers. Memory footprint of activations/gradients is comparable to GELU — **one output of size \(\lvert H \rvert\)**, not a persistent extra buffer, when fused.
+
+### Interoperability and composition
+
+- **Layer scope:** xIELU runs **sequentially** inside the MLP (`Up GEMM → xIELU → Down GEMM`). It does **not** overlap or collide with RMSNorm, RoPE, FlashAttention, or other hub kernels.
+- **Execution constraints:** contiguous tensors; bf16 / fp16 / fp32; CUDA wheel requires NVIDIA GPU with compute capability \(\ge 6.0\). XPU and MPS backends use the Python `where` path only (see §16.1–16.2).
+- **Training vs inference:** inverse-softplus parameter storage; two scalar `softplus` ops per forward (negligible FLOPs). nickjbrowning CUDA provides a full backward via custom autograd; HF/vLLM Python path uses standard autograd through `where` / `expm1`.
 
 ### FLOPs
 
-Appendix E **omits** xIELU (MLP leaf is GEMM-only). A fused elementwise leaf consistent with the arithmetic is on the order of
+Appendix E **omits** xIELU (MLP leaf is GEMM-only). Closed-form leaves:
+
+**Forward (fused leaf):**
 
 \[
-8 \cdot S \cdot d_{\mathrm{ff}}
+\mathrm{FLOPs}_{\mathrm{xIELU,fwd}} \approx 8 \cdot S \cdot d_{\mathrm{ff}}
 \]
 
-(square, several muls/adds, `expm1` on the negative branch). Unfused Zepto (`where` + `exp` + `minimum` + many `multiply`) reports \(\approx 10\text{–}12 \cdot S d_{\mathrm{ff}}\) plus **full-size branch temps**.
+(square on positive branch, several muls/adds, `expm1` on the negative branch). Unfused Zepto decomposition (`where` + `exp` + `minimum` + many `multiply`) reports \(\approx 10\text{–}12 \cdot S d_{\mathrm{ff}}\) plus **full-size branch temps**.
 
-At \(S{=}8192\), \(d_{\mathrm{ff}}{=}21504\): \(\lvert H \rvert \approx 1.76 \times 10^8\) → one bf16 buffer ≈ **336 MiB**. Fused CUDA: output only; optional mask of \(\lvert H \rvert\) bytes if the backward needs a sign mask (same pattern as Zepto `region/relu`).
+**Backward (piecewise derivative with exp-branch recomputation):**
 
-**Zepto:** optional `region/xielu`. Inference estimates may fold `softplus` into the scalars (current graph inputs `effective_alpha_p` / `effective_alpha_n`). Training estimates may add two scalar `softplus` ops (negligible FLOPs).
+\[
+\mathrm{FLOPs}_{\mathrm{xIELU,bwd}} \approx 16 \cdot S \cdot d_{\mathrm{ff}}.
+\]
+
+**MLP context.** At \(S{=}8192\), \(d_{\mathrm{ff}}{=}21504\): xIELU forward ≈ **1.4B FLOPs/layer** vs Up+Down GEMMs ≈ **57B FLOPs/layer** — xIELU is ~**2.5%** of MLP arithmetic but can dominate MLP **HBM traffic** when unfused (see memory below).
+
+**Arithmetic intensity.** Elementwise at ~8 FLOPs per element with ~4 bytes moved (bf16 read + write) gives \(\approx 2\,\mathrm{FLOPs/byte}\) — **memory-bound** (HBM bandwidth, not Tensor Cores). Fusion wins by eliminating HBM round-trips for branch masks and `expm1` intermediates, not by reducing the leading FLOP count.
+
+**Zepto:** optional `region/xielu`. Inference estimates may fold `softplus` into the scalars (graph inputs `effective_alpha_p` / `effective_alpha_n`). Training estimates may add two scalar `softplus` ops (negligible FLOPs).
+
+### Memory (forward-lived and saved)
+
+Let \(\lvert H \rvert = S \cdot d_{\mathrm{ff}}\). At \(S{=}8192\), \(d_{\mathrm{ff}}{=}21504\): \(\lvert H \rvert \approx 1.76 \times 10^8\) → one bf16 buffer ≈ **336 MiB**.
+
+| Quantity | Eager / unfused (HF Python, Zepto decomposed) | Fused CUDA / `region/xielu` | ggml CUDA (inference) |
+|----------|-----------------------------------------------|-----------------------------|------------------------|
+| Output \(y\) | \(\lvert H \rvert \cdot e\) | \(\lvert H \rvert \cdot e\) | \(\lvert H \rvert \cdot e\) |
+| Full-size temps | branch masks, `expm1` path, `where` intermediates — **2–3×** \(\lvert H \rvert \cdot e\) peak | **0** (on-chip registers) | **0** (in-register) |
+| Saved for backward | full input + output | output, or **1-byte sign mask** per element (same pattern as `region/relu`) | N/A (inference) |
+
+Fused nickjbrowning CUDA: output only; optional \(\lvert H \rvert\)-byte mask if backward needs a sign bit. Unfused eager can account for **672–1008 MiB** of elidable peak temps per layer at Apertus-8B prefill shapes if branch buffers are counted as simultaneous — `region/xielu` must **replace** the primitive chain so those temps never enter the resource-event stream.
+
+### Implementation summary
+
+| Implementation | Package / access | Fused? | Primary target | Memory strategy |
+|----------------|------------------|--------|----------------|-----------------|
+| HF Python eager | `transformers.activations.XIELUActivation` | No | Portability / training | Full branch temps in HBM |
+| nickjbrowning CUDA | `pip install …/XIELU` → `torch.classes.xielu.XIELU` | Yes | CUDA inference (Apertus) | Output only; optional sign mask for backward |
+| vLLM / SGLang | `CustomOp` / `BaseFusedOp` + CUDA fallback | Partial | Serving | Same as HF/CUDA |
+| llama.cpp ggml | `ggml_cuda_op_xielu` | Yes | GGUF inference | In-register, single dst |
+| Liger Kernel | — | — | — | **Not available** |
+| HF Hub kernels | — | — | — | **Not registered** |
+| Zepto (current) | `src/zepto/modules/xielu.py` | No | Cost estimation | ~10–12 FLOP leaf + branch temps |
+| Zepto (planned) | `region/xielu` | Yes | Atto-parity costing | 8 FLOP leaf; elide branch temps |
+
+**Key takeaways for Zepto:** xIELU is optional for Appendix-E-comparable totals (small FLOP fraction) but matters for **VRAM accounting** when unfused. No ecosystem fused **training** kernel exists outside nickjbrowning CUDA autograd; Liger and Hub have nothing. `region/xielu` is a reasonable optional leaf — ~8 FLOPs/element, elide branch temps (~336 MiB/layer at Apertus-8B prefill), fold `softplus` into scalars at inference.
 
 ---
 
@@ -523,6 +631,48 @@ LM head              cuBLAS
 
 Eager attention replaces the FlashAttention line with `matmul + fp32 softmax + matmul`. Other hub substitutions may still apply.
 
+### 16.1 XPU inference variant (`USE_HUB_KERNELS=YES`, `device="xpu"`)
+
+```text
+Embedding            gather (ATen)
+RoPE materialize     PyTorch fp32 freq → cos/sin
+for each layer:
+  RMSNorm            kernels-community/rmsnorm (SYCL ESIMD)  or  eager fp32 variance
+  QKV GEMM           oneDNN / PyTorch XPU GEMM
+  Q/K RMSNorm        kernels-community/rmsnorm
+  RoPE apply         rotary hub (XPU build)  or  eager
+  Attention          eager / SDPA (no FA2 on XPU by default)
+  O GEMM             oneDNN / PyTorch
+  RMSNorm            hub rmsnorm  or  eager
+  Up / Down GEMM     oneDNN / PyTorch
+  xIELU              Python where
+Final RMSNorm        hub rmsnorm
+LM head              GEMM
+```
+
+XPU hub RMSNorm is registered for **inference only**; training uses eager `LlamaRMSNorm` unless a custom `KernelConfig` overrides the mapping.
+
+### 16.2 MPS inference variant (`USE_HUB_KERNELS=YES`, `device="mps"`)
+
+```text
+Embedding            gather (ATen)
+RoPE materialize     PyTorch fp32 freq → cos/sin
+for each layer:
+  RMSNorm            kernels-community/mlx-rmsnorm (Metal)  or  eager fp32 variance
+  QKV GEMM           PyTorch MPS GEMM
+  Q/K RMSNorm        mlx-rmsnorm (Metal)
+  RoPE apply         eager rotate_half  (no default MPS hub rotary in Apertus map)
+  Attention          eager / SDPA (no FA2 on MPS by default)
+  O GEMM             PyTorch MPS
+  RMSNorm            mlx-rmsnorm  or  eager
+  Up / Down GEMM     PyTorch MPS
+  xIELU              Python where
+Final RMSNorm        mlx-rmsnorm
+LM head              GEMM
+```
+
+MPS hub RMSNorm is registered for **inference only**; training uses eager `LlamaRMSNorm` unless a custom `KernelConfig` overrides the mapping. Forward path writes **output only** — row `inv_mean` stays in Metal threadgroup memory and is **not** cached as an HBM `rstd` tensor.
+
 ---
 
 ## 17. Recommended Zepto leaves (summary)
@@ -533,7 +683,9 @@ Use these closed forms when a fused **implementation** is selected. Unfused iden
 |--------|---------------------|---------------------|-----------------|
 | Linear / GEMM | \(2 S n_{\mathrm{in}} n_{\mathrm{out}}\) | none (already one kernel) | \(X\) |
 | Fused QKV | sum of three GEMMs | two extra reads of \(X\) | \(X\) |
-| RMSNorm | \(4 \lvert x \rvert\) | `squared`, full `normalized` | `rstd` \((S,1)\) |
+| RMSNorm (Liger / hub leaf) | \(4 \lvert x \rvert\) | `squared`, full `normalized` | `rstd` \((S,1)\) |
+| RMSNorm hub XPU (PyTorch autograd) | same | same | `rstd` + \(x\) + \(y\) if backward enabled |
+| RMSNorm hub MPS (Metal forward) | same | same | none at inference; Zepto leaf still models `rstd` for training parity |
 | Fused add+RMSNorm | \(4 \lvert x \rvert + \lvert x \rvert\) | residual temp | `rstd` |
 | Softmax | \(3 h S^2\) | exp buffer | \(P\) or Flash stats |
 | Masked softmax | \(3 h S^2\) (+ mask add if unfused) | pre-softmax logits | \(P\) |
@@ -568,7 +720,7 @@ Henry, A., Dachapally, P. R., Pawar, S., and Chen, Y. (2020). Query-key normaliz
 
 Hernández-Cano, A., Hägele, A., Huang, A. H., et al. (2025). Apertus: Democratizing open and compliant LLMs for global language environments. [arXiv:2509.14233](https://arxiv.org/abs/2509.14233). Appendix E: FLOP script. Table 5: long-context RoPE \(\Theta\) schedule.
 
-Huang, A. H., and Schlag, I. (2025). Deriving activation functions using integration. [arXiv:2411.13010](https://arxiv.org/abs/2411.13010). CUDA: [nickjbrowning/XIELU](https://github.com/nickjbrowning/XIELU).
+Huang, A. H., and Schlag, I. (2025). Deriving activation functions using integration. [arXiv:2411.13010](https://arxiv.org/abs/2411.13010). CUDA: [nickjbrowning/XIELU](https://github.com/nickjbrowning/XIELU) (also [rubber-duck-debug/xielu](https://github.com/rubber-duck-debug/xielu)). ggml: [llama.cpp `unary.cu`](https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda/unary.cu).
 
 Peng, B., Quesnelle, J., Fan, H., and Shippole, E. (2023). YaRN: Efficient context window extension of large language models. [arXiv:2309.00071](https://arxiv.org/abs/2309.00071). (NTK-aware interpolation lineage used by Llama-3-style RoPE in Transformers.)
 
@@ -587,10 +739,14 @@ Zhang, B., and Sennrich, R. (2019). Root mean square layer normalization. NeurIP
 **Library sources (implementation, not papers):**
 
 - HuggingFace Apertus modular / generated: [`transformers/.../apertus/`](https://github.com/huggingface/transformers/tree/main/src/transformers/models/apertus)
+- HuggingFace `hub_kernels.py` RMSNorm device map: [`integrations/hub_kernels.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/hub_kernels.py)
+- HF Hub XPU RMSNorm: [`kernels-community/rmsnorm`](https://huggingface.co/kernels-community/rmsnorm)
+- HF Hub MPS RMSNorm (MLX-lineage Metal): [`kernels-community/mlx-rmsnorm`](https://huggingface.co/kernels-community/mlx-rmsnorm) — source [`kernels-community/mlx-rmsnorm`](https://github.com/huggingface/kernels-community/tree/main/mlx-rmsnorm); MLX reference [`mlx/backend/metal/kernels/rms_norm.metal`](https://github.com/ml-explore/mlx/blob/main/mlx/backend/metal/kernels/rms_norm.metal)
+- Intel XPU ESIMD norm (related): [`intel/llm-scaler` omni_xpu_kernel](https://github.com/intel/llm-scaler)
 - HuggingFace `XIELUActivation`: [`activations.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/activations.py)
 - Llama-3 RoPE init: [`modeling_rope_utils.py` `_compute_llama3_parameters`](https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py)
 - vLLM Apertus: [`vllm/model_executor/models/apertus.py`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/apertus.py)
 - Checkpoints: [Apertus-8B-Instruct-2509](https://huggingface.co/swiss-ai/Apertus-8B-Instruct-2509), [Apertus-70B-Instruct-2509](https://huggingface.co/swiss-ai/Apertus-70B-Instruct-2509)
 - PyTorch SDPA: [`F.scaled_dot_product_attention`](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)
 
-*Kernel formulas cross-checked 2026-08-26 against Transformers `main`, vLLM `main`, swiss-ai Instruct-2509 configs, and the papers above.*
+*Kernel formulas cross-checked 2026-08-26 against Transformers `main`, vLLM `main`, swiss-ai Instruct-2509 configs, and the papers above. RMSNorm hub device map, `kernels-community/rmsnorm` autograd surface, and `kernels-community/mlx-rmsnorm` Metal implementation verified 2026-09-01.*

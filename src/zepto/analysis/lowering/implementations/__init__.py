@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from zepto.semantic.metadata import DType
 from zepto.semantic.operations import (
     Add,
+    Cast,
     Concat,
     Cos,
     Divide,
@@ -35,7 +37,12 @@ from zepto.semantic.operations import (
 from ..registry import ImplementationDescriptor, LoweringRegistry
 from .identity import IdentityImplementation
 from .maximum import RELU_MASK
-from .regions import FUSED_LAYERNORM_REGION, FUSED_LINEAR_REGION, RELU_REGION
+from .regions import (
+    FUSED_LAYERNORM_REGION,
+    FUSED_LINEAR_REGION,
+    RELU_REGION,
+    RMSNORM_REGIONS,
+)
 
 
 def register_identity_defaults(registry: LoweringRegistry) -> None:
@@ -54,6 +61,7 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         Maximum(),
         Minimum(),
         SquareRoot(),
+        Cast(to_dtype=DType.FP32),
         Concat(axis=0, input_count=2),
         Cos(),
         EmbeddingLookup(),
@@ -92,6 +100,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     registry.register_region(RELU_REGION)
     registry.register_region(FUSED_LINEAR_REGION)
     registry.register_region(FUSED_LAYERNORM_REGION)
+    for impl in RMSNORM_REGIONS:
+        registry.register_region(impl)
 
 
 def register_defaults(registry: LoweringRegistry) -> None:

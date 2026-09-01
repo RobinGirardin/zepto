@@ -13,6 +13,7 @@ from zepto.semantic import (
     AliasSpec,
     Add,
     BackwardSpec,
+    Cast,
     DeclarationValidator,
     EstimationContext,
     Identity,
@@ -34,6 +35,7 @@ from zepto.semantic import (
     Transpose,
     DType,
 )
+from zepto.semantic.operations.cast import GRAD_INPUT
 from zepto.semantic.operations.helpers import (
     GRAD_LEFT,
     GRAD_RIGHT,
@@ -685,3 +687,67 @@ def test_active_aux_must_be_declared_port() -> None:
 
     with pytest.raises(OperationError, match="undeclared auxiliary port"):
         BadActive().infer_result((Tensor(shape=(2,)),))
+
+
+def test_cast_infer_outputs_changes_dtype() -> None:
+    operation = Cast(to_dtype=DType.FP32)
+    input_tensor = Tensor(shape=(4, 8), dtype=DType.BF16)
+    inferred = operation.infer_result((input_tensor,))
+    assert inferred.outputs[0].dtype is DType.FP32
+    assert inferred.outputs[0].shape == (4, 8)
+
+
+def test_cast_forward_allocates_and_has_zero_flops() -> None:
+    operation = Cast(to_dtype=DType.FP32)
+    input_tensor = Tensor(shape=(4, 8), dtype=DType.BF16)
+    inferred = operation.infer_result((input_tensor,))
+    context = _estimation(input=input_tensor, output=inferred.outputs[0])
+    events = operation.resource_events(context, inferred.result)
+    assert operation.forward_flops(context) == 0
+    assert any(
+        event.kind is ResourceEventKind.ALLOCATE and event.value == "output:0"
+        for event in events
+    )
+
+
+def test_cast_backward_exposes_grad_input_when_required() -> None:
+    operation = Cast(to_dtype=DType.FP32)
+    input_tensor = Tensor(shape=(4, 8), dtype=DType.BF16, requires_grad=True)
+    inferred = operation.infer_result((input_tensor,))
+    assert GRAD_INPUT in inferred.result.active_auxiliary_ports
+    assert operation.saved_for_backward((input_tensor,), (), inferred.outputs) == ()
+
+
+def test_rmsnorm_graph_has_nine_ops_with_casts() -> None:
+    from zepto.modules.rms_norm import RMSNorm
+
+    graph = compose_graph(lambda ctx: RMSNorm(8), (Tensor(shape=(4, 8), dtype=DType.BF16),))
+    families = tuple(graph.node(node_id).operation_family for node_id in graph.node_order)
+    assert families == (
+        "cast",
+        "multiply",
+        "reduce_sum",
+        "divide",
+        "add",
+        "square_root",
+        "divide",
+        "cast",
+        "parameter_scale",
+    )
+
+
+def test_rmsnorm_normalize_uses_fp32_compute_tensor() -> None:
+    from zepto.modules.rms_norm import RMSNorm
+
+    graph = compose_graph(lambda ctx: RMSNorm(8), (Tensor(shape=(4, 8), dtype=DType.BF16),))
+    divide_nodes = [
+        graph.node(node_id)
+        for node_id in graph.node_order
+        if graph.node(node_id).operation_family == "divide"
+    ]
+    normalize_divide = divide_nodes[-1]
+    left_edge = graph.edge(normalize_divide.input_edges[0])
+    upcast_node = graph.node(graph.node_order[0])
+    assert upcast_node.operation_family == "cast"
+    assert left_edge.producer is not None
+    assert left_edge.producer.node_id == upcast_node.id
