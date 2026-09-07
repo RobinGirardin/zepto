@@ -1,0 +1,23 @@
+"""Fused softmax region implementations."""
+
+from .rules import (
+    SOFTMAX_OP_SEQUENCES,
+    SOFTMAX_PATTERN,
+    SOFTMAX_PATTERN_SCALED,
+    SOFTMAX_PROVENANCE,
+)
+from .variants import (
+    FUSED_SOFTMAX_CUDA,
+    FUSED_SOFTMAX_REFERENCE,
+    SOFTMAX_REGIONS,
+)
+
+__all__ = [
+    "FUSED_SOFTMAX_CUDA",
+    "FUSED_SOFTMAX_REFERENCE",
+    "SOFTMAX_OP_SEQUENCES",
+    "SOFTMAX_PATTERN",
+    "SOFTMAX_PATTERN_SCALED",
+    "SOFTMAX_PROVENANCE",
+    "SOFTMAX_REGIONS",
+]

@@ -42,6 +42,8 @@ from .regions import (
     FUSED_LINEAR_REGION,
     RELU_REGION,
     RMSNORM_REGIONS,
+    SOFTMAX_REGIONS,
+    XIELU_REGIONS,
 )
 
 
@@ -101,6 +103,10 @@ def register_regions(registry: LoweringRegistry) -> None:
     registry.register_region(FUSED_LINEAR_REGION)
     registry.register_region(FUSED_LAYERNORM_REGION)
     for impl in RMSNORM_REGIONS:
+        registry.register_region(impl)
+    for impl in XIELU_REGIONS:
+        registry.register_region(impl)
+    for impl in SOFTMAX_REGIONS:
         registry.register_region(impl)
 
 
