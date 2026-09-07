@@ -9,3 +9,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Pi harness handoff and eval workspaces
+_workspace/
+.pi/skills/kernel-search-workspace/
+.pi/skills/kernel-architecture-workspace/

@@ -1,0 +1,39 @@
+{
+  "skill_name": "kernel-architecture",
+  "evals": [
+    {
+      "id": "xielu-from-research",
+      "prompt": "Using _workspace/research.md from xIELU research, write the architecture proposal.",
+      "prerequisite": "Copy kernel-search-workspace/iteration-1/eval-xielu-leaf/with_skill/outputs/research.md to _workspace/research.md",
+      "expected_output": "Architecture proposal in _workspace/architecture.md with file tree, recipe mapping, variants, tests; no implementation code.",
+      "assertions": [
+        "Lists recipes/xielu.py and regions/xielu/{rules,variants}.py",
+        "Documents requested_capabilities fused gate",
+        "Includes test_xielu.py plan",
+        "Does not propose new modules/xielu.py (already exists)"
+      ]
+    },
+    {
+      "id": "gqa-paged-from-research",
+      "prompt": "Architecture proposal for GQA paged decode from existing research.",
+      "prerequisite": "Copy kernel-search-workspace/iteration-1/eval-gqa-flash-decode/with_skill/outputs/research.md to _workspace/research.md",
+      "expected_output": "Architecture maps §8 region/gqa/paged variants to file plan; flags G3 KV-cache gap.",
+      "assertions": [
+        "Proposes region/gqa/paged variants from §8 YAML",
+        "Notes G3 KV-cache gap in open questions",
+        "References modules/gqa.py for identity chain, no duplicate module"
+      ]
+    },
+    {
+      "id": "masked-softmax-from-research",
+      "prompt": "Turn masked softmax boundary-B research into an implementation file plan.",
+      "prerequisite": "Copy kernel-search-workspace/iteration-1/eval-masked-softmax-b/with_skill/outputs/research.md to _workspace/research.md",
+      "expected_output": "Architecture for region/masked_softmax or equivalent with fusion boundary B documented.",
+      "assertions": [
+        "Fusion boundary B appears in summary",
+        "Pattern rule op_families mapped to rules.py",
+        "Registration checklist files listed in modified files"
+      ]
+    }
+  ]
+}

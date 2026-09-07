@@ -1,0 +1,41 @@
+{
+  "skill_name": "kernel-search",
+  "evals": [
+    {
+      "id": "xielu-leaf",
+      "prompt": "Research xIELU for Zepto. Scope: standalone activation leaf, Apertus-8B prefill, training + inference on CUDA.",
+      "expected_output": "Complete research report in _workspace/research.md covering math definition, forward/backward FLOP step tables, memory and resource event chains, implementation catalog, YAML recipe spec, and cited sources.",
+      "assertions": [
+        "Report contains Section 0 mathematical definition with tensor shapes",
+        "Forward FLOP derivation uses a step table before closed form",
+        "YAML block includes region_kind, resource_events_forward, resource_events_backward, saved_backward",
+        "Bibliography cites at least one primary source URL",
+        "Cross-checks registered region/xielu or notes to_implement status"
+      ]
+    },
+    {
+      "id": "masked-softmax-b",
+      "prompt": "Analyze masked softmax for Zepto — fusion boundary B only, not full FlashAttention. Prefill, bf16, causal mask.",
+      "expected_output": "Report classifies boundary B, bills stable softmax at 5×|tile|, includes identity vs fused resource event chains side by side, and distinguishes paper 3hS² from kernel-accurate 5hS² when both appear.",
+      "assertions": [
+        "Report explicitly labels fusion boundary B",
+        "Forward FLOP closed form uses 5*h*S^2 stable leaf or equivalent, with paper 3*h*S^2 labeled separately if mentioned",
+        "Contains both identity lowering and fused region resource event chains in Section 6.3",
+        "YAML block includes fusion_boundary: B",
+        "Bibliography cites at least one Transformers or Megatron/TE source"
+      ]
+    },
+    {
+      "id": "gqa-flash-decode",
+      "prompt": "Research GQA with FlashAttention boundary C for decode context (S_q=1, paged KV). Inference only.",
+      "expected_output": "Three-layer costing model, backward FLOPs = 0, documents (m,ℓ) saved-stats vs save-P tradeoff, no full (h,S,S) temps in fused path.",
+      "assertions": [
+        "Report classifies fusion boundary C",
+        "Backward FLOPs stated as 0 or Section 5 notes requires_grad=False",
+        "Memory section states no (h,S,S) score/weight temps for fused Flash path",
+        "Three-layer costing model names reference kernel, identity lowering, and Zepto region",
+        "Discusses saved activation strategy: row stats vs full P tensor"
+      ]
+    }
+  ]
+}
