@@ -52,7 +52,7 @@ For each production kernel:
 4. Set `forward_flops` from the paper/Appendix E leaf, not from summing unfused primitive estimates, unless the backend is literally the eager chain.
 5. Record HBM/IO complexity when the kernel is memory-bound (FlashAttention, fused RMSNorm). Wall-clock speedup is *not* a Zepto output; IO complexity explains *why* peak VRAM drops.
 
-Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`). Apertus-critical missing regions are called out per kernel below.
+Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`), `region/softmax`, `region/masked_softmax`. Apertus-critical missing regions are called out per kernel below.
 
 ---
 
@@ -452,8 +452,8 @@ Four **fusion boundaries** recur below. Hub and serving kernels plug into these;
 | **Liger `FusedLinearCrossEntropy`** | Token-chunked GEMM + vocab softmax + CE ([`fused_linear_cross_entropy.py`](https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/fused_linear_cross_entropy.py)) | D | Vocab axis \(V\), not keys \(S\); **chunk peak ≠ 0**; see §14 | No |
 | **TRL Hub fused linear CE** | [`trl-lib/fused-linear-ce`](https://huggingface.co/trl-lib/fused-linear-ce) | D | Same op as Liger; **vocab-tiled** rather than token-chunked; see §14.1 | No |
 | **Zepto (today)** | `MatMul → Add(mask) → Softmax` in `GroupedQueryAttention` ([`gqa.py`](../src/zepto/modules/gqa.py), [`softmax.py`](../src/zepto/modules/softmax.py)) | A unfused | Materialized causal mask | Decomposed primitives |
-| **Zepto (registered)** | `region/softmax` (boundary A) | A | Elide `exp_scores`; stable 5× leaf | Fused region leaf |
-| **Zepto (planned)** | `region/masked_softmax`, `region/gqa/*`, `region/linear_ce` | B / C / D | Elide pre-softmax logits or the whole \((h,S,S)\) tile | Fused region leaves |
+| **Zepto (registered)** | `region/softmax` (boundary A), `region/masked_softmax` (boundary B) | A / B | Elide `exp_scores` or pre-softmax logits; stable 5× leaf | Fused region leaves |
+| **Zepto (planned)** | `region/gqa/*`, `region/linear_ce` | C / D | Elide the whole \((h,S,S)\) tile or vocab logits | Fused region leaves |
 
 **Composition rules.** `region/masked_softmax` (boundary B) and `region/gqa` / Flash / Metal-Flash / paged / Sage (boundary C) are **mutually exclusive** on the same attention layer — C replaces score + softmax + context. Liger patches (RMSNorm, CE, SwiGLU, …) compose with FlashAttention Hub kernels per [TRL kernels hub docs](https://huggingface.co/docs/trl/en/kernels_hub); they do not replace attention masked softmax. Boundary **D** (`LigerFusedLinearCrossEntropyLoss`, `trl-lib/fused-linear-ce`) is orthogonal: vocab-axis training CE, not causal masking over keys (§14). AITER `softmax` is boundary **A** on ROCm and does **not** replace C (`aiter-flash-attn`).
 
@@ -1312,16 +1312,15 @@ Use these closed forms when a fused **implementation** is selected. Unfused iden
 
 ### Still to implement in Zepto (softmax-family + related)
 
-Registered today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu`, `region/softmax`. The following fused leaves are specified above but **not** yet registered as `RegionImplementation`s:
+Registered today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu`, `region/softmax`, `region/masked_softmax`. The following fused leaves are specified above but **not** yet registered as `RegionImplementation`s:
 
 | Priority | Region id | Spec | Boundary |
 |----------|-----------|------|----------|
-| 1 | `region/masked_softmax` | §10 (Megatron/TE) | B |
-| 2 | `region/gqa/flash2` | §11.3–§11.7 | C |
-| 3 | `region/gqa/metal-flash` | §11.8 | C (MPS) |
-| 4 | `region/gqa/paged` | §11.9 + §15 | C (decode) |
-| 5 | `region/linear_ce` | §14 (Liger) + §14.1 (TRL Hub) | D |
-| 6 | `region/gqa/flash3`, `flash4`, `vllm-flash-attn3` | §11.5, §11.10 | C |
+| 1 | `region/gqa/flash2` | §11.3–§11.7 | C |
+| 2 | `region/gqa/metal-flash` | §11.8 | C (MPS) |
+| 3 | `region/gqa/paged` | §11.9 + §15 | C (decode) |
+| 4 | `region/linear_ce` | §14 (Liger) + §14.1 (TRL Hub) | D |
+| 5 | `region/gqa/flash3`, `flash4`, `vllm-flash-attn3` | §11.5, §11.10 | C |
 | optional | `region/gqa/sage` | §11.11 | C (quantized) |
 | optional | AITER `softmax` routing | §10.1 | A on ROCm only |
 
