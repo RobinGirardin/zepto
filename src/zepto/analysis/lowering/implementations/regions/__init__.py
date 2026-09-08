@@ -1,5 +1,11 @@
 """Fused region lowering implementations."""
 
+from .gqa import (
+    FUSED_GQA_FLASH2,
+    FUSED_GQA_FLASH3,
+    GQA_PATTERN,
+    GQA_REGIONS,
+)
 from .linear import FUSED_LINEAR_REGION
 from .layernorm import FUSED_LAYERNORM_REGION
 from .relu import RELU_REGION
@@ -33,8 +39,12 @@ from .xielu import (
 )
 
 __all__ = [
+    "FUSED_GQA_FLASH2",
+    "FUSED_GQA_FLASH3",
     "FUSED_LAYERNORM_REGION",
     "FUSED_LINEAR_REGION",
+    "GQA_PATTERN",
+    "GQA_REGIONS",
     "FUSED_MASKED_SOFTMAX_MEGATRON",
     "FUSED_MASKED_SOFTMAX_REFERENCE",
     "FUSED_MASKED_SOFTMAX_TE",

@@ -40,6 +40,7 @@ from .maximum import RELU_MASK
 from .regions import (
     FUSED_LAYERNORM_REGION,
     FUSED_LINEAR_REGION,
+    GQA_REGIONS,
     MASKED_SOFTMAX_REGIONS,
     RELU_REGION,
     RMSNORM_REGIONS,
@@ -110,6 +111,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in SOFTMAX_REGIONS:
         registry.register_region(impl)
     for impl in MASKED_SOFTMAX_REGIONS:
+        registry.register_region(impl)
+    for impl in GQA_REGIONS:
         registry.register_region(impl)
 
 
