@@ -24,6 +24,7 @@ class InvocationContext:
     module_implementation_pins: Mapping[str, str] = MappingProxyType({})
     region_implementation_pins: Mapping[str, str] = MappingProxyType({})
     requested_capabilities: frozenset[str] = frozenset()
+    attention_backend: str = "eager"
     allow_fallback: bool = True
 
 
@@ -37,6 +38,8 @@ def reference_invocation(
     module_implementation_pins: Mapping[str, str] | None = None,
     region_implementation_pins: Mapping[str, str] | None = None,
     requested_capabilities: frozenset[str] | None = None,
+    attention_backend: str = "eager",
+    state: tuple[tuple[str, object], ...] | None = None,
     allow_fallback: bool = True,
 ) -> InvocationContext:
     """Build a reference lowering context with FP32 defaults."""
@@ -58,15 +61,18 @@ def reference_invocation(
         else MappingProxyType({})
     )
     capabilities = requested_capabilities or frozenset()
+    invocation_state = state if state is not None else ()
     return InvocationContext(
         phase=phase,
         hardware=hardware,
         backend=backend,
         precision=precision,
         accounting=accounting,
+        state=invocation_state,
         implementation_pins=pins,
         module_implementation_pins=module_pins,
         region_implementation_pins=region_pins,
         requested_capabilities=capabilities,
+        attention_backend=attention_backend,
         allow_fallback=allow_fallback,
     )
