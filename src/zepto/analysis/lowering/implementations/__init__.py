@@ -41,8 +41,9 @@ from .regions import (
     FUSED_LAYERNORM_REGION,
     FUSED_LINEAR_REGION,
     GQA_REGIONS,
+    LINEAR_CE_REGIONS,
     MASKED_SOFTMAX_REGIONS,
-    RELU_REGION,
+    RELU_REGIONS,
     RMSNORM_REGIONS,
     SOFTMAX_REGIONS,
     XIELU_REGIONS,
@@ -101,7 +102,8 @@ def register_specialized(registry: LoweringRegistry) -> None:
 
 def register_regions(registry: LoweringRegistry) -> None:
     """Register fused region implementations."""
-    registry.register_region(RELU_REGION)
+    for impl in RELU_REGIONS:
+        registry.register_region(impl)
     registry.register_region(FUSED_LINEAR_REGION)
     registry.register_region(FUSED_LAYERNORM_REGION)
     for impl in RMSNORM_REGIONS:
@@ -109,6 +111,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in XIELU_REGIONS:
         registry.register_region(impl)
     for impl in SOFTMAX_REGIONS:
+        registry.register_region(impl)
+    for impl in LINEAR_CE_REGIONS:
         registry.register_region(impl)
     for impl in MASKED_SOFTMAX_REGIONS:
         registry.register_region(impl)

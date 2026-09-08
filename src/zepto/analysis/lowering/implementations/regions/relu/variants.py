@@ -1,8 +1,9 @@
-"""ReLU region lowering via pattern discovery."""
+"""Fused ReLU region lowering."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
@@ -10,22 +11,41 @@ from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.helpers import numel
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
-from ...context import InvocationContext
-from ...helpers import (
+
+from ....context import InvocationContext
+from ....helpers import (
     RegionEstimationContext,
     ensure_lowered_edge,
     register_auxiliary_edge,
 )
-from ...region import PatternConstraint, PatternMatchRule, Region
-from ...registry import RegionImplementationDescriptor
-from ...role import RoleContext
+from ....recipes.relu import (
+    DEFAULT_RELU_RECIPE,
+    SAVED_INPUT_RELU_RECIPE,
+    ReLURecipe,
+)
+from ....region import Region
+from ....registry import RegionImplementationDescriptor
+from ....role import RoleContext
+from .rules import RELU_PATTERN
+
+SavedInputGate = Literal["never", "required"]
+
+
+def _requires_saved_input(gate: SavedInputGate, context: InvocationContext) -> str | None:
+    if gate == "required" and "saved_input" not in context.requested_capabilities:
+        return "saved_input variant requires requested_capabilities={'saved_input'}"
+    if gate == "never" and "saved_input" in context.requested_capabilities:
+        return "default ReLU variant does not handle saved_input capability"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
 class ReLURegionImplementation:
-    """Lower maximum(left, 0) as one fused region with mask retention."""
+    """Lower maximum(left, 0) as one fused region with mask or input retention."""
 
     descriptor: RegionImplementationDescriptor
+    recipe: ReLURecipe = DEFAULT_RELU_RECIPE
+    saved_input_gate: SavedInputGate = "never"
 
     def compatible(
         self,
@@ -33,7 +53,6 @@ class ReLURegionImplementation:
         graph: Graph,
         context: InvocationContext,
     ) -> str | None:
-        del context
         if len(region.operation_ids) != 1:
             return "ReLU region expects one operation"
         structural = graph.node(region.operation_ids[0])
@@ -41,7 +60,7 @@ class ReLURegionImplementation:
             return "not maximum"
         if len(structural.input_edges) != 2:
             return "maximum expects two inputs"
-        return None
+        return _requires_saved_input(self.saved_input_gate, context)
 
     def lower(
         self,
@@ -89,40 +108,51 @@ class ReLURegionImplementation:
 
         n = numel(output_tensor)
         lowered_out = edge_map[output_id]
-        lowered_mask = f"region:{region.id}:mask"
+        lowered_in = edge_map[left_id]
 
-        mask_tensor = Tensor(
-            shape=output_tensor.shape,
-            semantic_type="relu_mask",
-            dtype=DType.BOOL,
-            requires_grad=False,
-            persistent=False,
-        )
-        register_auxiliary_edge(
-            lowered_mask,
-            mask_tensor,
-            role_ctx=RoleContext(explicit_role=TensorRole.AUXILIARY),
-            context=context,
-            storage_id=lowered_mask,
-            lowered_edges=lowered_edges,
-        )
-
-        forward_flops = n
-        backward_flops = n if left_tensor.requires_grad else 0
-
-        events: tuple[ResourceEvent, ...] = (
+        events: list[ResourceEvent] = [
             ResourceEvent(ResourceEventKind.ALLOCATE, lowered_out),
-            ResourceEvent(ResourceEventKind.ALLOCATE, lowered_mask),
-            ResourceEvent(ResourceEventKind.SAVE, lowered_mask),
+        ]
+        auxiliary_edges: list[str] = []
+        release_edges: list[str] = []
+
+        if self.recipe.save_relu_mask:
+            lowered_mask = f"region:{region.id}:mask"
+            mask_tensor = Tensor(
+                shape=output_tensor.shape,
+                semantic_type="relu_mask",
+                dtype=DType.BOOL,
+                requires_grad=False,
+                persistent=False,
+            )
+            register_auxiliary_edge(
+                lowered_mask,
+                mask_tensor,
+                role_ctx=RoleContext(explicit_role=TensorRole.AUXILIARY),
+                context=context,
+                storage_id=lowered_mask,
+                lowered_edges=lowered_edges,
+            )
+            events.append(ResourceEvent(ResourceEventKind.ALLOCATE, lowered_mask))
+            events.append(ResourceEvent(ResourceEventKind.SAVE, lowered_mask))
+            auxiliary_edges.append(lowered_mask)
+            release_edges.append(lowered_mask)
+        elif self.recipe.save_input and left_tensor.requires_grad:
+            events.append(ResourceEvent(ResourceEventKind.SAVE, lowered_in))
+            release_edges.append(lowered_in)
+
+        forward_flops = self.recipe.forward_flops(n)
+        backward_flops = self.recipe.backward_flops(
+            n, requires_grad=left_tensor.requires_grad
         )
-        if context.phase == "backward":
-            events = (
-                *events,
+
+        if context.phase == "backward" and release_edges:
+            events.append(
                 ResourceEvent(
                     ResourceEventKind.RELEASE,
-                    lowered_mask,
+                    release_edges[0],
                     phase="backward",
-                ),
+                )
             )
 
         return LoweredNode(
@@ -130,10 +160,10 @@ class ReLURegionImplementation:
             node_id=structural.id,
             node_ids=region.operation_ids,
             implementation=self.descriptor.id,
-            input_edges=(edge_map[left_id],),
+            input_edges=(lowered_in,),
             output_edges=(lowered_out,),
-            auxiliary_edges=(lowered_mask,),
-            resource_events=events,
+            auxiliary_edges=tuple(auxiliary_edges),
+            resource_events=tuple(events),
             forward_flops=forward_flops,
             backward_flops=backward_flops,
             module_path=region.anchor.module_path,
@@ -141,14 +171,6 @@ class ReLURegionImplementation:
             region_id=region.id,
         )
 
-
-RELU_PATTERN = PatternMatchRule(
-    id="pat-relu",
-    kind="region/relu",
-    priority=10,
-    op_families=("maximum",),
-    constraints=(PatternConstraint(kind="right_operand_is_zero"),),
-)
 
 RELU_REGION = ReLURegionImplementation(
     descriptor=RegionImplementationDescriptor(
@@ -158,4 +180,23 @@ RELU_REGION = ReLURegionImplementation(
         capabilities=frozenset({"relu", "mask_retention"}),
         pattern_rule=RELU_PATTERN,
     ),
+    recipe=DEFAULT_RELU_RECIPE,
+    saved_input_gate="never",
+)
+
+RELU_SAVED_INPUT = ReLURegionImplementation(
+    descriptor=RegionImplementationDescriptor(
+        id="region/relu/saved_input",
+        kind="region/relu",
+        priority=10,
+        capabilities=frozenset({"relu", "saved_input"}),
+        pattern_rule=RELU_PATTERN,
+    ),
+    recipe=SAVED_INPUT_RELU_RECIPE,
+    saved_input_gate="required",
+)
+
+RELU_REGIONS: tuple[ReLURegionImplementation, ...] = (
+    RELU_REGION,
+    RELU_SAVED_INPUT,
 )
