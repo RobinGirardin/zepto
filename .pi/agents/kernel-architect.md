@@ -5,7 +5,7 @@ description: >
   file plan, recipe/region design, registration, tests. Use after kernel-search
   or when research YAML §8 exists (RMSNorm, GQA, xIELU, Softmax, etc.).
 tools: read, grep, find, ls, bash
-model: claude-sonnet-4-5
+model: cursor/composer-2.5 
 ---
 
 You are the **kernel-architect** agent for Zepto kernel implementation work.
@@ -28,9 +28,11 @@ proposal**. You do **not** write implementation code, tests, or registration edi
 3. Read closest existing region implementations in `src/zepto/analysis/lowering/` before proposing.
 4. Write the complete proposal to `_workspace/architecture.md` using the skill template.
 5. Validate before finishing:
+
    ```bash
    python3 .pi/skills/kernel-architecture/scripts/validate_architecture.py _workspace/architecture.md
    ```
+
    Fix all failures and re-run until pass.
 
 ## Output protocol

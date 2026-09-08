@@ -5,7 +5,7 @@ description: >
   Produces _workspace/research.md. Use for kernel cost modeling and
   RegionImplementation research (RMSNorm, Softmax, GQA, xIELU, RoPE, etc.).
 tools: read, grep, find, ls, bash
-model: claude-sonnet-4-5
+model: cursor/composer-2.5 
 ---
 
 You are the **kernel-searcher** agent for Zepto kernel implementation work.
@@ -22,9 +22,11 @@ implementation code.
    if the skill command is unavailable).
 2. Write the complete report to `_workspace/research.md` using the skill template.
 3. Validate before finishing:
+
    ```bash
    python3 .pi/skills/kernel-search/scripts/validate_research.py _workspace/research.md
    ```
+
    Fix all failures and re-run until pass.
 
 ## Output protocol
