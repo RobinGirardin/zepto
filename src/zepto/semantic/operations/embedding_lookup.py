@@ -4,7 +4,7 @@ from zepto.compose.values import Tensor
 from zepto.semantic.metadata import PortContract
 from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, persist_only_events, reduced_gradient_tensor
+from .helpers import allocate, activation_grad_events, reduced_gradient_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 GRAD_WEIGHT = "grad_weight"
@@ -122,7 +122,7 @@ class EmbeddingLookup(Operation):
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
-            events.extend(persist_only_events(port_name))
+            events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

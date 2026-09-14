@@ -174,6 +174,10 @@ class LinearMatMul(Operation):
         if context.phase != "backward":
             return tuple(events)
         events.extend(
-            emit_binary_backward_resource_events(result, materializes_vjp=True)
+            emit_binary_backward_resource_events(
+                result,
+                materializes_vjp=True,
+                parameter_grad_ports=frozenset({GRAD_RIGHT}),
+            )
         )
         return tuple(events)

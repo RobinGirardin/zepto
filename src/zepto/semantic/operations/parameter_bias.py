@@ -9,7 +9,8 @@ from .helpers import (
     broadcast_tensor,
     broadcast_reduction_flops,
     numel,
-    persist_only_events,
+    activation_grad_events,
+    weight_grad_accum_events,
     reduced_gradient_tensor,
 )
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
@@ -142,7 +143,10 @@ class ParameterBias(Operation):
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
-            events.extend(persist_only_events(port_name))
+            if port_name == GRAD_BIAS:
+                events.extend(weight_grad_accum_events(port_name))
+            else:
+                events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

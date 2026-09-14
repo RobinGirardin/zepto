@@ -9,7 +9,7 @@ from .helpers import (
     broadcast_reduction_flops,
     broadcast_tensor_n,
     numel,
-    persist_only_events,
+    activation_grad_events,
     reduced_gradient_tensor,
     unreduced_gradient_tensor,
 )
@@ -166,7 +166,7 @@ class Where(Operation):
                     )
                 )
             else:
-                events.extend(persist_only_events(port_name))
+                events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

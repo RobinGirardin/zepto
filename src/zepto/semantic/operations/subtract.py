@@ -13,7 +13,7 @@ from .helpers import (
     broadcast_tensor,
     broadcast_reduction_flops,
     numel,
-    persist_only_events,
+    activation_grad_events,
     reduced_gradient_tensor,
     unreduced_gradient_tensor,
 )
@@ -138,7 +138,7 @@ class Subtract(Operation):
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
-            events.extend(persist_only_events(port_name))
+            events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

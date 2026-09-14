@@ -183,8 +183,23 @@ def release(target: str, *, phase: str = "backward") -> ResourceEvent:
     return ResourceEvent(ResourceEventKind.RELEASE, target, phase=phase)
 
 
-def persist_only_events(port_name: str) -> tuple[ResourceEvent, ...]:
-    """Describe allocate-and-persist for a backward gradient port."""
+def activation_grad_events(port_name: str) -> tuple[ResourceEvent, ...]:
+    """Backward input activation grad: allocate only; simulator schedules release."""
+    return (
+        ResourceEvent(ResourceEventKind.ALLOCATE, port_name, phase="backward"),
+    )
+
+
+def unreduced_grad_events(unreduced_port: str) -> tuple[ResourceEvent, ...]:
+    """Transient workspace: allocate and release within the same backward node."""
+    return (
+        ResourceEvent(ResourceEventKind.ALLOCATE, unreduced_port, phase="backward"),
+        ResourceEvent(ResourceEventKind.RELEASE, unreduced_port, phase="backward"),
+    )
+
+
+def weight_grad_accum_events(port_name: str) -> tuple[ResourceEvent, ...]:
+    """Parameter gradient accumulator: survives across backward nodes / horizon steps."""
     return (
         ResourceEvent(ResourceEventKind.ALLOCATE, port_name, phase="backward"),
         ResourceEvent(ResourceEventKind.PERSIST, port_name, phase="backward"),
@@ -195,23 +210,16 @@ def backward_gradient_port_events(
     port_name: str,
     *,
     unreduced_port: str | None,
+    is_parameter: bool = False,
 ) -> tuple[ResourceEvent, ...]:
-    """Describe unreduced temp and reduced gradient lifetimes."""
+    """Emit backward auxiliary resource events with correct peak semantics."""
     events: list[ResourceEvent] = []
     if unreduced_port is not None:
-        events.append(
-            ResourceEvent(ResourceEventKind.ALLOCATE, unreduced_port, phase="backward")
-        )
-    events.append(
-        ResourceEvent(ResourceEventKind.ALLOCATE, port_name, phase="backward")
-    )
-    if unreduced_port is not None:
-        events.append(
-            ResourceEvent(ResourceEventKind.RELEASE, unreduced_port, phase="backward")
-        )
-    events.append(
-        ResourceEvent(ResourceEventKind.PERSIST, port_name, phase="backward")
-    )
+        events.extend(unreduced_grad_events(unreduced_port))
+    if is_parameter:
+        events.extend(weight_grad_accum_events(port_name))
+    else:
+        events.extend(activation_grad_events(port_name))
     return tuple(events)
 
 
@@ -230,6 +238,7 @@ def emit_binary_backward_resource_events(
     result: OperationResult,
     *,
     materializes_vjp: bool,
+    parameter_grad_ports: frozenset[str] = frozenset(),
 ) -> tuple[ResourceEvent, ...]:
     """Emit backward auxiliary resource events for binary operations."""
     active = set(result.active_auxiliary_ports)
@@ -242,12 +251,11 @@ def emit_binary_backward_resource_events(
             candidate = f"{port_name}_unreduced"
             if candidate in active:
                 unreduced_port = candidate
-        if materializes_vjp and unreduced_port is not None:
-            events.extend(
-                backward_gradient_port_events(
-                    port_name, unreduced_port=unreduced_port
-                )
+        events.extend(
+            backward_gradient_port_events(
+                port_name,
+                unreduced_port=unreduced_port if materializes_vjp else None,
+                is_parameter=port_name in parameter_grad_ports,
             )
-        else:
-            events.extend(persist_only_events(port_name))
+        )
     return tuple(events)

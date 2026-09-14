@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from zepto.compose.values import Tensor
 from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, numel, persist_only_events, reduced_gradient_tensor
+from .helpers import allocate, activation_grad_events, numel, reduced_gradient_tensor
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -132,7 +132,7 @@ class RepeatKV(Operation):
         if context.phase != "backward":
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
-            events.extend(persist_only_events(port_name))
+            events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

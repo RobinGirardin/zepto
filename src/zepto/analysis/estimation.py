@@ -1,26 +1,37 @@
-"""Composition helpers for lowering and future cost estimation."""
+"""Composition helpers for lowering and cost estimation."""
 
 from __future__ import annotations
 
-from zepto.graph.graph import Graph
-from .lowering import InvocationContext, lower
-from .lowered import LoweredGraph
+from typing import TYPE_CHECKING
 
-__all__ = ["LoweredGraph", "lower", "InvocationContext"]
+from zepto.graph.graph import Graph
+
+from .lowering import InvocationContext, lower
+from .reports import CostReport
+
+if TYPE_CHECKING:
+    from .lowered import LoweredGraph
+
+__all__ = [
+    "CostReport",
+    "InvocationContext",
+    "estimate",
+    "lower",
+]
 
 
 def estimate(
     graph: Graph,
     context: InvocationContext,
     *,
-    memory_policy: object | None = None,
-) -> None:
-    """Compose lowering with memory and FLOP accounting.
+    return_lowered: bool = False,
+) -> CostReport | tuple[CostReport, LoweredGraph]:
+    """Compose lowering with memory and FLOP accounting."""
+    from .flops import account_flops
+    from .memory import account_memory
 
-    Full ``CostReport`` support is deferred until memory and FLOP modules land.
-    """
-    del memory_policy
-    lower(graph, context)
-    raise NotImplementedError(
-        "estimate() requires account_memory() and account_flops()"
-    )
+    lowered = lower(graph, context)
+    mem = account_memory(lowered)
+    flops = account_flops(lowered)
+    report = CostReport(memory=mem, flops=flops, context=context)
+    return (report, lowered) if return_lowered else report

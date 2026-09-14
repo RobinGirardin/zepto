@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from zepto.compose.values import Tensor
-from zepto.graph.ids import EdgeId, NodeId
+from zepto.graph.ids import EdgeId, NodeId, ParameterId
 from zepto.semantic.metadata import TensorRole
-from .lowering.context import InvocationContext
-from .lowering.registry import ImplementationSelection, RegionImplementationSelection
 from zepto.semantic.operations.records import ResourceEvent
+
+if TYPE_CHECKING:
+    from .lowering.context import InvocationContext
+    from .lowering.registry import ImplementationSelection, RegionImplementationSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +26,18 @@ class LoweredEdge:
     role: TensorRole
     storage_id: str
     workspace: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LoweredParameter:
+    """One invocation-refined graph parameter."""
+
+    id: str
+    parameter_id: ParameterId
+    tensor: Tensor
+    role: TensorRole
+    storage_id: str
+    trainable: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,10 +68,13 @@ class LoweredGraph:
     """Immutable lowered graph for one invocation."""
 
     edges: Mapping[str, LoweredEdge]
+    parameters: Mapping[str, LoweredParameter]
+    parameter_map: Mapping[ParameterId, str]
     nodes: tuple[LoweredNode, ...]
     context: InvocationContext
     edge_map: Mapping[EdgeId, str]
     node_map: Mapping[NodeId, str]
+    output_edge_ids: tuple[str, ...]
     selections: tuple[ImplementationSelection, ...]
     fusion_map: Mapping[NodeId, str] = MappingProxyType({})
     region_map: Mapping[str, tuple[NodeId, ...]] = MappingProxyType({})

@@ -395,7 +395,7 @@ class TestBroadcastBackwardLowering:
         ]
         assert ResourceEventKind.ALLOCATE in kinds
         assert ResourceEventKind.RELEASE in kinds
-        assert ResourceEventKind.PERSIST in kinds
+        assert ResourceEventKind.PERSIST not in kinds
         allocate_idx = next(
             i
             for i, event in enumerate(op.resource_events)

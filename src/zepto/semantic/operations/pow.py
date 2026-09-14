@@ -14,7 +14,7 @@ from .helpers import (
     broadcast_reduction_flops,
     backward_gradient_port_events,
     numel,
-    persist_only_events,
+    activation_grad_events,
     reduced_gradient_tensor,
     unreduced_gradient_tensor,
 )
@@ -169,7 +169,7 @@ class Pow(Operation):
                     )
                 )
             else:
-                events.extend(persist_only_events(port_name))
+                events.extend(activation_grad_events(port_name))
         return tuple(events)
 
 

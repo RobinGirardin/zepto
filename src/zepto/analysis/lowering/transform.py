@@ -6,9 +6,11 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from zepto.graph.graph import Graph
-from zepto.graph.ids import NodeId
-from ..lowered import LoweredGraph, LoweredNode
+from zepto.graph.ids import NodeId, ParameterId
+from zepto.graph.parameter import parameter_as_tensor
+from ..lowered import LoweredGraph, LoweredNode, LoweredParameter
 from .context import InvocationContext
+from .role import RoleContext, resolve_lowered_edge
 from .defaults import DEFAULT_REGISTRY
 from .discovery import discover_regions
 from .helpers import (
@@ -35,6 +37,8 @@ class LoweringState:
     """Mutable state accumulated during one lowering pass."""
 
     lowered_edges: dict[str, object] = field(default_factory=dict)
+    lowered_parameters: dict[str, LoweredParameter] = field(default_factory=dict)
+    parameter_map: dict[ParameterId, str] = field(default_factory=dict)
     edge_map: dict = field(default_factory=dict)
     nodes: list[LoweredNode] = field(default_factory=list)
     node_map: dict[NodeId, str] = field(default_factory=dict)
@@ -65,6 +69,8 @@ def lower(
             state.edge_map,
         )
 
+    _register_parameters(graph, context, state)
+
     regions = discover_regions(graph, context, active_registry)
     plan = build_lowering_plan(graph, regions, context, active_registry)
 
@@ -78,17 +84,49 @@ def lower(
                 step.operation_id, graph, context, active_registry, state
             )
 
+    output_edge_ids = tuple(
+        state.edge_map[output_id] for output_id in graph.outputs
+    )
+
     return LoweredGraph(
         edges=MappingProxyType(dict(state.lowered_edges)),
+        parameters=MappingProxyType(dict(state.lowered_parameters)),
+        parameter_map=MappingProxyType(dict(state.parameter_map)),
         nodes=tuple(state.nodes),
         context=context,
         edge_map=MappingProxyType(dict(state.edge_map)),
         node_map=MappingProxyType(dict(state.node_map)),
+        output_edge_ids=output_edge_ids,
         selections=tuple(state.selections),
         fusion_map=MappingProxyType(dict(state.fusion_map)),
         region_map=MappingProxyType(dict(state.region_map)),
         region_selections=tuple(state.region_selections),
     )
+
+
+def _register_parameters(
+    graph: Graph,
+    context: InvocationContext,
+    state: LoweringState,
+) -> None:
+    """Register graph parameters on the lowered graph."""
+    for param_id, param in graph.parameters.items():
+        lowered_id = f"p{param_id.index}"
+        tensor, role = resolve_lowered_edge(
+            parameter_as_tensor(param),
+            role_ctx=RoleContext(graph=graph, port_direction="parameter"),
+            context=context,
+        )
+        storage_id = f"param:{param_id.index}"
+        state.lowered_parameters[lowered_id] = LoweredParameter(
+            id=lowered_id,
+            parameter_id=param_id,
+            tensor=tensor,
+            role=role,
+            storage_id=storage_id,
+            trainable=param.trainable,
+        )
+        state.parameter_map[param_id] = lowered_id
 
 
 def lower_operation(
