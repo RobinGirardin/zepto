@@ -51,6 +51,8 @@ class PatternConstraint:
         "parameter_count",
         "min_rank",
         "silu_mul_x_sigmoid_x",
+        "gelu_tanh_activation",
+        "gelu_erf_activation",
     ]
     max_parameters: int | None = None
     min_rank: int | None = None

@@ -10,6 +10,7 @@ from zepto.semantic.operations import (
     Cos,
     Divide,
     EmbeddingLookup,
+    Erf,
     Exp,
     Gather,
     GreaterThan,
@@ -32,6 +33,7 @@ from zepto.semantic.operations import (
     Split,
     SquareRoot,
     Subtract,
+    Tanh,
     Transpose,
     Where,
 )
@@ -41,6 +43,7 @@ from .maximum import RELU_MASK
 from .regions import (
     FUSED_LAYERNORM_REGION,
     FUSED_LINEAR_REGION,
+    GELU_REGIONS,
     GQA_REGIONS,
     LINEAR_CE_REGIONS,
     MASKED_SOFTMAX_REGIONS,
@@ -84,6 +87,8 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         RepeatKV(n_rep=1),
         Sigmoid(),
         Sin(),
+        Tanh(),
+        Erf(),
         Where(),
     ):
         registry.register(
@@ -108,6 +113,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in RELU_REGIONS:
         registry.register_region(impl)
     for impl in SILU_REGIONS:
+        registry.register_region(impl)
+    for impl in GELU_REGIONS:
         registry.register_region(impl)
     registry.register_region(FUSED_LINEAR_REGION)
     registry.register_region(FUSED_LAYERNORM_REGION)

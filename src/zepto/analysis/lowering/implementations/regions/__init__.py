@@ -1,5 +1,14 @@
 """Fused region lowering implementations."""
 
+from .gelu import (
+    FUSED_GELU_ERF,
+    FUSED_GELU_TANH,
+    GELU_ERF_PATTERN,
+    GELU_ERF_PROVENANCE,
+    GELU_REGIONS,
+    GELU_TANH_PATTERN,
+    GELU_TANH_PROVENANCE,
+)
 from .gqa import (
     FUSED_GQA_FLASH2,
     FUSED_GQA_FLASH3,
@@ -48,6 +57,8 @@ from .xielu import (
 )
 
 __all__ = [
+    "FUSED_GELU_ERF",
+    "FUSED_GELU_TANH",
     "FUSED_GQA_FLASH2",
     "FUSED_GQA_FLASH3",
     "FUSED_LAYERNORM_REGION",
@@ -58,6 +69,11 @@ __all__ = [
     "LINEAR_CE_PROVENANCE",
     "LINEAR_CE_REGIONS",
     "FUSED_LINEAR_REGION",
+    "GELU_ERF_PATTERN",
+    "GELU_ERF_PROVENANCE",
+    "GELU_REGIONS",
+    "GELU_TANH_PATTERN",
+    "GELU_TANH_PROVENANCE",
     "GQA_PATTERN",
     "GQA_REGIONS",
     "FUSED_MASKED_SOFTMAX_MEGATRON",

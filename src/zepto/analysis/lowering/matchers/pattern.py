@@ -221,7 +221,76 @@ class PatternRegionMatcher:
             if not sigmoid_op.input_edges or not multiply_op.input_edges:
                 return False
             return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
+        if constraint.kind == "gelu_tanh_activation":
+            return _check_gelu_tanh_activation(graph, operation_ids)
+        if constraint.kind == "gelu_erf_activation":
+            return _check_gelu_erf_activation(graph, operation_ids)
         return True
+
+
+def _edge_semantic_type(graph: Graph, edge_id: object) -> str:
+    return graph.edge(edge_id).tensor.semantic_type
+
+
+def _check_gelu_tanh_activation(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 9:
+        return False
+    mul_x_squared = graph.node(operation_ids[0])
+    mul_x_cubed = graph.node(operation_ids[1])
+    mul_kappa = graph.node(operation_ids[2])
+    mul_scale = graph.node(operation_ids[4])
+    tanh_op = graph.node(operation_ids[5])
+    if len(mul_x_squared.input_edges) < 2 or len(mul_x_cubed.input_edges) < 2:
+        return False
+    x_edge = mul_x_squared.input_edges[0]
+    if mul_x_squared.input_edges[0] != mul_x_squared.input_edges[1]:
+        return False
+    if x_edge not in mul_x_cubed.input_edges:
+        return False
+    if mul_x_squared.output_edges[0] not in mul_x_cubed.input_edges:
+        return False
+    kappa_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_kappa.input_edges
+    }
+    if "gelu_kappa" not in kappa_types:
+        return False
+    sqrt_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_scale.input_edges
+    }
+    if "gelu_sqrt_2_over_pi" not in sqrt_types:
+        return False
+    if not mul_scale.output_edges or not tanh_op.input_edges:
+        return False
+    return mul_scale.output_edges[0] in tanh_op.input_edges
+
+
+def _check_gelu_erf_activation(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 5:
+        return False
+    mul_scale = graph.node(operation_ids[0])
+    erf_op = graph.node(operation_ids[1])
+    add_op = graph.node(operation_ids[2])
+    mul4 = graph.node(operation_ids[4])
+    scale_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_scale.input_edges
+    }
+    if "gelu_inv_sqrt2" not in scale_types:
+        return False
+    if not mul_scale.output_edges or not erf_op.input_edges:
+        return False
+    if mul_scale.output_edges[0] not in erf_op.input_edges:
+        return False
+    add_types = {_edge_semantic_type(graph, edge_id) for edge_id in add_op.input_edges}
+    if "one" not in add_types:
+        return False
+    half_types = {_edge_semantic_type(graph, edge_id) for edge_id in mul4.input_edges}
+    return "gelu_half" in half_types
 
 
 def _edge_satisfied(

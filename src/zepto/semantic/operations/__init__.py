@@ -7,6 +7,7 @@ from .concat import Concat
 from .cos import Cos
 from .divide import Divide
 from .embedding_lookup import EmbeddingLookup
+from .erf import Erf
 from .exp import Exp
 from .gather import Gather
 from .greater_than import GreaterThan
@@ -29,6 +30,7 @@ from .sin import Sin
 from .split import Split
 from .square_root import SquareRoot
 from .subtract import Subtract
+from .tanh import Tanh
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -55,6 +57,7 @@ __all__ = [
     "DeclarationValidator",
     "Divide",
     "EmbeddingLookup",
+    "Erf",
     "EstimationContext",
     "EstimationOperation",
     "Exp",
@@ -89,6 +92,7 @@ __all__ = [
     "Split",
     "SquareRoot",
     "Subtract",
+    "Tanh",
     "Transpose",
     "Where",
 ]

@@ -1,5 +1,11 @@
 """Closed-form cost recipes for fused region implementations."""
 
+from .gelu import (
+    GELU_ERF_RECIPE,
+    GELU_QUICK_RECIPE,
+    GELU_TANH_RECIPE,
+    GeluRecipe,
+)
 from .gqa import (
     DEFAULT_GQA_RECIPE,
     DEFAULT_SDPA_MATH_RECIPE,
@@ -17,6 +23,10 @@ from .xielu import XIELURecipe
 __all__ = [
     "DEFAULT_RELU_RECIPE",
     "SAVED_INPUT_RELU_RECIPE",
+    "GELU_ERF_RECIPE",
+    "GELU_QUICK_RECIPE",
+    "GELU_TANH_RECIPE",
+    "GeluRecipe",
     "DEFAULT_GQA_RECIPE",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
