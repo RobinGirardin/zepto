@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+from zepto.analysis.horizon.records import HorizonSimulation
 from zepto.analysis.lowered import LoweredGraph
+from zepto.analysis.reports.horizon import HorizonMemoryReport
 from zepto.analysis.reports.memory import MemoryReport
 
 from .simulator import ResourceEventSimulator
 
 
-def account_memory(lowered: LoweredGraph) -> MemoryReport:
-    """Run resource event simulation and return a memory report."""
+def account_memory(
+    target: LoweredGraph | HorizonSimulation,
+) -> MemoryReport | HorizonMemoryReport:
+    """Run resource event simulation for one invocation or a horizon."""
+    if isinstance(target, LoweredGraph):
+        return _account_single_memory(target)
+    from zepto.analysis.horizon.account import account_horizon_memory
+
+    return account_horizon_memory(target)
+
+
+def _account_single_memory(lowered: LoweredGraph) -> MemoryReport:
     result = ResourceEventSimulator(lowered).run()
     return MemoryReport(
         sum_all_bytes=result.sum_all_bytes,

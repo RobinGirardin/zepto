@@ -1,0 +1,245 @@
+"""Cross-invocation state ports for horizon simulation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
+
+from zepto.semantic.metadata import DType
+
+if TYPE_CHECKING:
+    from ..lowered import LoweredGraph
+    from ..lowering.context import InvocationContext
+    from ..optimizer import OptimizerPolicy
+    from .spec import HorizonStep
+
+
+@dataclass(frozen=True, slots=True)
+class KVCacheState:
+    """KV cache footprint for one layer group."""
+
+    num_layers: int
+    num_kv_heads: int
+    head_dim: int
+    seq_len: int
+    dtype: DType
+
+    @property
+    def bytes(self) -> int:
+        itemsize = self.dtype.itemsize or 0
+        return (
+            2
+            * self.num_layers
+            * self.num_kv_heads
+            * self.seq_len
+            * self.head_dim
+            * itemsize
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GradAccumState:
+    """Gradient accumulation buffer carried across micro-batch forwards."""
+
+    parameter_bytes: int
+    micro_batches_seen: int
+
+    @property
+    def bytes(self) -> int:
+        return self.parameter_bytes if self.micro_batches_seen > 0 else 0
+
+
+@dataclass(frozen=True, slots=True)
+class OptimizerState:
+    """Optimizer moment buffers persisted after an optimizer step."""
+
+    policy: OptimizerPolicy
+    bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class StateSnapshot:
+    """Immutable view of all carried state at one horizon boundary."""
+
+    kv_caches: tuple[KVCacheState, ...] = ()
+    grad_accum: GradAccumState | None = None
+    optimizer: OptimizerState | None = None
+    custom: tuple[tuple[str, object], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _KVTemplate:
+    num_layers: int
+    num_kv_heads: int
+    head_dim: int
+    dtype: DType
+
+
+def state_object_bytes(value: object) -> int:
+    """Return accounted bytes for a context.state entry value."""
+    if isinstance(value, GradAccumState):
+        return value.bytes
+    if hasattr(value, "bytes"):
+        raw = value.bytes  # type: ignore[attr-defined]
+        if callable(raw):
+            return int(raw())
+        return int(raw)
+    return 0
+
+
+def snapshot_state_bytes(snapshot: StateSnapshot) -> int:
+    """Sum accounted bytes for all entries in a state snapshot."""
+    total = 0
+    for kv in snapshot.kv_caches:
+        total += kv.bytes
+    if snapshot.grad_accum is not None:
+        total += snapshot.grad_accum.bytes
+    if snapshot.optimizer is not None:
+        total += snapshot.optimizer.bytes
+    for _name, value in snapshot.custom:
+        total += state_object_bytes(value)
+    return total
+
+
+def parameter_bytes(lowered: LoweredGraph) -> int:
+    """Total parameter storage bytes from a lowered graph."""
+    from ..resolved import ResolvedValue
+
+    accounting = lowered.context.accounting
+    total = 0
+    for param in lowered.parameters.values():
+        total += accounting.bytes_for(
+            ResolvedValue(
+                tensor=param.tensor,
+                role=param.role,
+                dtype=param.tensor.dtype,
+            )
+        )
+    return total
+
+
+@dataclass
+class StatePortRegistry:
+    """Mutable registry of cross-step state injected into invocation contexts."""
+
+    kv_template: _KVTemplate | None = None
+    kv_caches: tuple[KVCacheState, ...] = ()
+    grad_accum: GradAccumState | None = None
+    optimizer: OptimizerState | None = None
+    optimizer_policy: OptimizerPolicy | None = None
+    custom: tuple[tuple[str, object], ...] = ()
+
+    @classmethod
+    def empty(cls) -> StatePortRegistry:
+        return cls()
+
+    def configure_kv(
+        self,
+        *,
+        num_layers: int,
+        num_kv_heads: int,
+        head_dim: int,
+        dtype: DType,
+    ) -> StatePortRegistry:
+        return replace(
+            self,
+            kv_template=_KVTemplate(
+                num_layers=num_layers,
+                num_kv_heads=num_kv_heads,
+                head_dim=head_dim,
+                dtype=dtype,
+            ),
+        )
+
+    def snapshot(self) -> StateSnapshot:
+        return StateSnapshot(
+            kv_caches=self.kv_caches,
+            grad_accum=self.grad_accum,
+            optimizer=self.optimizer,
+            custom=self.custom,
+        )
+
+    def bind_to_context(self, base: InvocationContext) -> InvocationContext:
+        from ..lowering.context import InvocationContext as Ctx
+
+        entries: list[tuple[str, object]] = []
+        for index, kv in enumerate(self.kv_caches):
+            entries.append((f"kv_cache:{index}", kv))
+        if self.grad_accum is not None:
+            entries.append(("grad_accum", self.grad_accum))
+        if self.optimizer is not None:
+            entries.append(("optimizer", self.optimizer))
+        entries.extend(self.custom)
+        return Ctx(
+            phase=base.phase,
+            hardware=base.hardware,
+            backend=base.backend,
+            precision=base.precision,
+            accounting=base.accounting,
+            state=tuple(entries),
+            implementation_pins=base.implementation_pins,
+            module_implementation_pins=base.module_implementation_pins,
+            region_implementation_pins=base.region_implementation_pins,
+            requested_capabilities=base.requested_capabilities,
+            attention_backend=base.attention_backend,
+            allow_fallback=base.allow_fallback,
+        )
+
+    def advance(self, step: HorizonStep, lowered: LoweredGraph) -> StatePortRegistry:
+        registry = self
+
+        if step.name == "prefill" and registry.kv_template is not None:
+            template = registry.kv_template
+            kv = KVCacheState(
+                num_layers=template.num_layers,
+                num_kv_heads=template.num_kv_heads,
+                head_dim=template.head_dim,
+                seq_len=step.seq_len,
+                dtype=template.dtype,
+            )
+            registry = replace(registry, kv_caches=(kv,))
+
+        elif step.name.startswith("decode_") and registry.kv_caches:
+            current = registry.kv_caches[0]
+            registry = replace(
+                registry,
+                kv_caches=(
+                    replace(current, seq_len=current.seq_len + step.seq_len),
+                ),
+            )
+
+        elif step.name.startswith("micro_forward_"):
+            param_bytes = parameter_bytes(lowered)
+            accum = registry.grad_accum
+            if accum is None:
+                accum = GradAccumState(
+                    parameter_bytes=param_bytes,
+                    micro_batches_seen=0,
+                )
+            registry = replace(
+                registry,
+                grad_accum=replace(
+                    accum,
+                    parameter_bytes=param_bytes,
+                    micro_batches_seen=accum.micro_batches_seen + 1,
+                ),
+            )
+
+        elif step.name == "optimizer" or step.phase == "optimizer":
+            param_bytes = parameter_bytes(lowered)
+            policy = registry.optimizer_policy
+            if policy is None:
+                from ..optimizer import AdamW
+
+                policy = AdamW
+            opt_bytes = (
+                param_bytes * policy.state_bytes_per_parameter
+                + policy.workspace_bytes
+            )
+            registry = replace(
+                registry,
+                optimizer=OptimizerState(policy=policy, bytes=opt_bytes),
+                grad_accum=None,
+            )
+
+        return registry

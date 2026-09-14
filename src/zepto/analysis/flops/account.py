@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from zepto.analysis.horizon.records import HorizonSimulation
 from zepto.analysis.lowered import LoweredGraph, LoweredNode
 from zepto.analysis.reports.attribution import AttributionSlice
 from zepto.analysis.reports.flops import FlopReport
+from zepto.analysis.reports.horizon import HorizonFlopReport
 
 
 @dataclass
@@ -15,8 +17,18 @@ class _FlopAccumulator:
     backward_flops: int = 0
 
 
-def account_flops(lowered: LoweredGraph) -> FlopReport:
-    """Sum lowered node FLOPs and roll up by module, region, and implementation."""
+def account_flops(
+    target: LoweredGraph | HorizonSimulation,
+) -> FlopReport | HorizonFlopReport:
+    """Sum lowered node FLOPs for one invocation or a horizon."""
+    if isinstance(target, LoweredGraph):
+        return _account_single_flops(target)
+    from zepto.analysis.horizon.account import account_horizon_flops
+
+    return account_horizon_flops(target)
+
+
+def _account_single_flops(lowered: LoweredGraph) -> FlopReport:
     forward = sum(node.forward_flops for node in lowered.nodes)
     backward = sum(node.backward_flops for node in lowered.nodes)
     total = _select_total(forward, backward, lowered.context.phase)

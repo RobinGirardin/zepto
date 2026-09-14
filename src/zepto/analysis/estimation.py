@@ -7,15 +7,19 @@ from typing import TYPE_CHECKING
 from zepto.graph.graph import Graph
 
 from .lowering import InvocationContext, lower
-from .reports import CostReport
+from .reports import CostReport, HorizonCostReport
 
 if TYPE_CHECKING:
+    from .horizon import HorizonSimulation, HorizonSpec, StatePortRegistry
+    from .horizon.simulate import ComposeFn
     from .lowered import LoweredGraph
 
 __all__ = [
     "CostReport",
+    "HorizonCostReport",
     "InvocationContext",
     "estimate",
+    "estimate_horizon",
     "lower",
 ]
 
@@ -35,3 +39,48 @@ def estimate(
     flops = account_flops(lowered)
     report = CostReport(memory=mem, flops=flops, context=context)
     return (report, lowered) if return_lowered else report
+
+
+def estimate_horizon(
+    compose_fn: ComposeFn,
+    context: InvocationContext,
+    horizon: HorizonSpec,
+    *,
+    return_simulation: bool = False,
+    state: StatePortRegistry | None = None,
+) -> HorizonCostReport | tuple[HorizonCostReport, HorizonSimulation]:
+    """Simulate a horizon and return combined memory and FLOP accounting."""
+    from .flops import account_flops
+    from .horizon import simulate_horizon
+    from .memory import account_memory
+
+    sim = simulate_horizon(
+        compose_fn,
+        horizon,
+        context,
+        state=state,
+    )
+    hmem = account_memory(sim)
+    hflops = account_flops(sim)
+    per_step = tuple(
+        CostReport(
+            memory=step_mem,
+            flops=step_flop,
+            context=record.lowered.context,
+        )
+        for record, step_mem, step_flop in zip(
+            sim.timeline,
+            hmem.per_step,
+            hflops.per_step,
+            strict=True,
+        )
+    )
+    report = HorizonCostReport(
+        peak_vram=hmem.peak_live_bytes,
+        total_flops=hflops.total_flops,
+        per_step=per_step,
+        state_final=sim.state_final,
+        memory=hmem,
+        flops=hflops,
+    )
+    return (report, sim) if return_simulation else report

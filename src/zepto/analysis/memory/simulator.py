@@ -158,9 +158,27 @@ class ResourceEventSimulator:
                 )
 
     def _bootstrap_state_ports(self) -> None:
+        from zepto.analysis.horizon.state import state_object_bytes
+
         for name, value in self._context.state:
-            del name, value
-            # Phase 3: explicit state port byte accounting.
+            byte_count = state_object_bytes(value)
+            if byte_count <= 0:
+                continue
+            storage_id = f"state:{name}"
+            self._sum_all += byte_count
+            self._breakdown = replace(
+                self._breakdown, state=self._breakdown.state + byte_count
+            )
+            self._allocate_slot(
+                storage_id=storage_id,
+                edge_id=None,
+                bytes=byte_count,
+                kind="state",
+                node_index=-1,
+                phase="bootstrap",
+                pinned=True,
+            )
+            self._persist_slot(storage_id)
 
     def _apply_event(
         self,

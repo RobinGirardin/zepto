@@ -20,16 +20,36 @@ from .lowering import (
     select_implementation,
     select_region_implementation,
 )
-from .reports import CostReport, FlopReport, MemoryReport
+from .reports import (
+    CostReport,
+    FlopReport,
+    HorizonCostReport,
+    HorizonFlopReport,
+    HorizonMemoryReport,
+    MemoryReport,
+)
 from .memory import account_memory
 from .flops import account_flops
-from .estimation import estimate
+from .estimation import estimate, estimate_horizon
+from .horizon import (
+    HorizonSimulation,
+    HorizonSpec,
+    StatePortRegistry,
+    simulate_horizon,
+)
+from .optimizer import AdamW, OptimizerPolicy, SGD
 
 __all__ = [
     "AccountingPolicy",
+    "AdamW",
     "CostReport",
     "DEFAULT_REGISTRY",
     "FlopReport",
+    "HorizonCostReport",
+    "HorizonFlopReport",
+    "HorizonMemoryReport",
+    "HorizonSimulation",
+    "HorizonSpec",
     "ImplementationDescriptor",
     "ImplementationSelection",
     "InvocationContext",
@@ -39,19 +59,24 @@ __all__ = [
     "LoweringError",
     "LoweringRegistry",
     "MemoryReport",
+    "OptimizerPolicy",
     "PrecisionPolicy",
     "RegionImplementationDescriptor",
     "RegionImplementationSelection",
     "ResolvedValue",
     "RoleContext",
     "Region",
+    "SGD",
+    "StatePortRegistry",
     "account_flops",
     "account_memory",
     "discover_regions",
     "estimate",
+    "estimate_horizon",
     "infer_accounting_role",
     "lower",
     "reference_invocation",
     "select_implementation",
     "select_region_implementation",
+    "simulate_horizon",
 ]
