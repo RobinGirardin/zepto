@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from zepto.graph.graph import Graph
+
+if TYPE_CHECKING:
+    from zepto.analysis.horizon.state import StatePortRegistry
 from zepto.graph.ids import NodeId, ParameterId
 from zepto.graph.parameter import parameter_as_tensor
-from ..lowered import LoweredGraph, LoweredNode, LoweredParameter
+from ..lowered import LoweredGraph, LoweredNode, LoweredParameter, StatePortEvent
 from .context import InvocationContext
 from .role import RoleContext, resolve_lowered_edge
 from .defaults import DEFAULT_REGISTRY
@@ -48,6 +52,7 @@ class LoweringState:
     region_selections: list[RegionImplementationSelection] = field(
         default_factory=list
     )
+    state_port_events: list[StatePortEvent] = field(default_factory=list)
 
 
 def lower(
@@ -55,8 +60,12 @@ def lower(
     context: InvocationContext,
     *,
     registry: LoweringRegistry | None = None,
+    state_ports: StatePortRegistry | None = None,
 ) -> LoweredGraph:
     """Lower one graph for a concrete invocation context."""
+    if state_ports is not None:
+        context = state_ports.bind_to_context(context)
+
     active_registry = registry if registry is not None else DEFAULT_REGISTRY
     state = LoweringState()
 
@@ -101,6 +110,7 @@ def lower(
         fusion_map=MappingProxyType(dict(state.fusion_map)),
         region_map=MappingProxyType(dict(state.region_map)),
         region_selections=tuple(state.region_selections),
+        state_port_events=tuple(state.state_port_events),
     )
 
 
@@ -195,13 +205,18 @@ def lower_region(
         region, graph, context, registry
     )
     estimation = build_region_estimation_context(region, graph, context)
+    lower_kwargs: dict = {
+        "estimation": estimation,
+        "lowered_edges": state.lowered_edges,
+    }
+    if region.kind == "region/gqa":
+        lower_kwargs["state_port_collector"] = state.state_port_events
     lowered_node = impl.lower(
         region,
         graph,
         context,
         state.edge_map,
-        estimation=estimation,
-        lowered_edges=state.lowered_edges,
+        **lower_kwargs,
     )
     _NODE_VALIDATOR.validate(lowered_node)
     state.nodes.append(lowered_node)

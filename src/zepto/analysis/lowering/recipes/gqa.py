@@ -21,6 +21,13 @@ class GQARecipe:
         h, s, dh = num_heads, seq_len, head_dim
         return 4 * h * s * s * dh + 5 * h * s * s
 
+    def paged_forward_flops(
+        self, *, num_heads: int, cache_len: int, head_dim: int
+    ) -> int:
+        """Decode-step FLOPs with S_q=1 attending over cache_len."""
+        h, s, dh = num_heads, cache_len, head_dim
+        return 4 * h * s * dh + 5 * h * s
+
     def backward_flops(
         self,
         *,

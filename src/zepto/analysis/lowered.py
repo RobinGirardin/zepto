@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Mapping
 from zepto.compose.values import Tensor
 from zepto.graph.ids import EdgeId, NodeId, ParameterId
 from zepto.semantic.metadata import TensorRole
-from zepto.semantic.operations.records import ResourceEvent
+from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 
 if TYPE_CHECKING:
     from .lowering.context import InvocationContext
@@ -26,6 +26,16 @@ class LoweredEdge:
     role: TensorRole
     storage_id: str
     workspace: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class StatePortEvent:
+    """Cross-step state port mutation recorded during lowering."""
+
+    port_name: str
+    kind: ResourceEventKind
+    bytes: int
+    layer_index: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +89,4 @@ class LoweredGraph:
     fusion_map: Mapping[NodeId, str] = MappingProxyType({})
     region_map: Mapping[str, tuple[NodeId, ...]] = MappingProxyType({})
     region_selections: tuple[RegionImplementationSelection, ...] = ()
+    state_port_events: tuple[StatePortEvent, ...] = ()

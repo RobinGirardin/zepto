@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from zepto.compose.values import Tensor
 from zepto.graph.edge import Edge
 from zepto.graph.graph import Graph
 from zepto.graph.ids import EdgeId
 from zepto.graph.node import Node
+from zepto.semantic.metadata import TensorRole
 from zepto.semantic.operations.records import EstimationContext, ResourceEvent, ResourceEventKind
 from zepto.semantic.ports import ValueKind
 from ..accounting import PrecisionPolicy
+from ..lowered import StatePortEvent
 from .context import InvocationContext
 from .region import Region
 from .role import RoleContext, resolve_for_accounting, resolve_lowered_edge
+
+if TYPE_CHECKING:
+    from zepto.analysis.horizon.state import KVCacheState
 
 
 def edge_storage_id(edge: Edge) -> str:
@@ -342,4 +347,146 @@ def build_region_estimation_context(
         parameter_tensors=parameter_tensors,
         precision=context.precision,
         state=context.state,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class KVScenario:
+    """Resolved KV cache geometry for state-aware GQA lowering."""
+
+    num_kv_heads: int
+    head_dim: int
+    cache_seq_len: int
+    dtype_itemsize: int
+    is_decode: bool
+    layer_index: int | None = None
+
+
+def kv_cache_from_state(
+    state: tuple[tuple[str, object], ...],
+) -> KVCacheState | None:
+    """Return the first KV cache snapshot in invocation state, if any."""
+    from zepto.analysis.horizon.state import KVCacheState as KVState
+
+    for _name, value in state:
+        if isinstance(value, KVState):
+            return value
+    return None
+
+
+def kv_template_from_state(
+    state: tuple[tuple[str, object], ...],
+) -> object | None:
+    """Return KV template metadata injected by StatePortRegistry."""
+    for name, value in state:
+        if name == "kv_template":
+            return value
+    return None
+
+
+def layer_index_from_module_path(module_path: tuple[str, ...]) -> int | None:
+    """Extract decoder layer index from a module path such as layers.3.attn."""
+    for index, part in enumerate(module_path):
+        if part == "layers" and index + 1 < len(module_path):
+            try:
+                return int(module_path[index + 1])
+            except ValueError:
+                return None
+    return None
+
+
+def resolve_kv_scenario(
+    *,
+    context: InvocationContext,
+    query_seq_len: int,
+    num_heads: int,
+    head_dim: int,
+    module_path: tuple[str, ...],
+) -> KVScenario | None:
+    """Resolve KV geometry when horizon state is present on the invocation."""
+    from zepto.analysis.horizon.state import KVCacheState as KVState
+
+    kv_state = kv_cache_from_state(context.state)
+    template = kv_template_from_state(context.state)
+
+    if kv_state is None and template is None:
+        return None
+
+    if kv_state is not None:
+        num_kv_heads = kv_state.num_kv_heads
+        dtype_itemsize = kv_state.dtype.itemsize or 0
+        cache_seq_len = kv_state.seq_len
+        is_decode = query_seq_len == 1 and cache_seq_len > query_seq_len
+    else:
+        num_kv_heads = template.num_kv_heads  # type: ignore[union-attr]
+        dtype_itemsize = template.dtype.itemsize or 0  # type: ignore[union-attr]
+        cache_seq_len = query_seq_len
+        is_decode = False
+
+    return KVScenario(
+        num_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        cache_seq_len=cache_seq_len,
+        dtype_itemsize=dtype_itemsize,
+        is_decode=is_decode,
+        layer_index=layer_index_from_module_path(module_path),
+    )
+
+
+def layer_kv_bytes(scenario: KVScenario, *, seq_len: int) -> int:
+    """Bytes for one layer's K+V cache at the given sequence length."""
+    return (
+        2
+        * scenario.num_kv_heads
+        * seq_len
+        * scenario.head_dim
+        * scenario.dtype_itemsize
+    )
+
+
+def kv_state_port_events(
+    *,
+    region_id: str,
+    scenario: KVScenario,
+    seq_len: int,
+) -> tuple[StatePortEvent, ResourceEvent, ResourceEvent, str]:
+    """Build state-port record and resource events for one layer's KV cache."""
+    aux_id = f"region:{region_id}:kv_cache"
+    byte_count = layer_kv_bytes(scenario, seq_len=seq_len)
+    layer = scenario.layer_index
+    port_name = f"kv_cache:{layer}" if layer is not None else aux_id
+    state_event = StatePortEvent(
+        port_name=port_name,
+        kind=ResourceEventKind.ALLOCATE,
+        bytes=byte_count,
+        layer_index=layer,
+    )
+    allocate = ResourceEvent(ResourceEventKind.ALLOCATE, aux_id)
+    persist = ResourceEvent(ResourceEventKind.PERSIST, aux_id)
+    return state_event, allocate, persist, aux_id
+
+
+def register_kv_cache_aux(
+    *,
+    aux_id: str,
+    scenario: KVScenario,
+    seq_len: int,
+    context: InvocationContext,
+    lowered_edges: dict[str, object],
+) -> None:
+    """Register a lowering-local KV cache auxiliary edge."""
+    shape = (scenario.num_kv_heads, seq_len, scenario.head_dim)
+    register_auxiliary_edge(
+        aux_id,
+        Tensor(
+            shape=shape,
+            semantic_type="kv_cache",
+            dtype=context.precision.default_dtype,
+            requires_grad=False,
+            persistent=True,
+        ),
+        role_ctx=RoleContext(explicit_role=TensorRole.AUXILIARY),
+        context=context,
+        storage_id=aux_id,
+        lowered_edges=lowered_edges,
     )

@@ -420,14 +420,16 @@ class ResourceEventSimulator:
         node: LoweredNode,
         event: ResourceEvent,
     ) -> StorageSlot["kind"]:
-        if self._followed_by_persist(edge_id, node, event):
-            return "weight_grad"
         if edge_id in self._lowered.edges:
             edge = self._lowered.edges[edge_id]
+            if edge.tensor.semantic_type == "kv_cache":
+                return "state"
             if edge.role is TensorRole.GRADIENT:
                 return "gradient_wavefront"
             if edge.role is TensorRole.WORKSPACE or edge.workspace:
                 return "workspace"
+        if self._followed_by_persist(edge_id, node, event):
+            return "weight_grad"
         return "activation"
 
     def _followed_by_persist(
@@ -464,6 +466,8 @@ class ResourceEventSimulator:
             return replace(
                 breakdown, saved_for_backward=breakdown.saved_for_backward + byte_count
             )
+        if kind == "state":
+            return replace(breakdown, state=breakdown.state + byte_count)
         return breakdown
 
     def _alias_source(self, node: LoweredNode, alias_edge_id: str) -> str:

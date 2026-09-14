@@ -151,6 +151,31 @@ def test_gqa_flash2_wins_on_non_cuda_hardware() -> None:
     assert _gqa_node(lowered).implementation == "region/gqa/flash2"
 
 
+def test_gqa_prefill_kv_template_allocates_state() -> None:
+    from zepto.analysis.horizon.state import StatePortRegistry
+    from zepto.semantic.metadata import DType
+
+    graph = _compose_gqa()
+    registry = StatePortRegistry.empty().configure_kv(
+        num_layers=1,
+        num_kv_heads=_KV_HEADS,
+        head_dim=_HEAD_DIM,
+        dtype=DType.FP32,
+    )
+    lowered = lower(graph, _flash_context(), state_ports=registry)
+    gqa = _gqa_node(lowered)
+
+    kv_allocs = [
+        ev
+        for ev in gqa.resource_events
+        if ev.kind is ResourceEventKind.ALLOCATE
+        and any("kv_cache" in aux for aux in gqa.auxiliary_edges)
+    ]
+    assert len(lowered.state_port_events) == 1
+    assert len(kv_allocs) >= 1
+    assert "kv_cache" in gqa.auxiliary_edges[0]
+
+
 def test_gqa_fused_vs_unfused_vram_delta() -> None:
     graph = _compose_gqa()
     unfused = lower(graph, reference_invocation())

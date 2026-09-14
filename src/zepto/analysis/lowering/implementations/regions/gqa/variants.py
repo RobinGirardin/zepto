@@ -15,7 +15,10 @@ from ....context import InvocationContext
 from ....helpers import (
     RegionEstimationContext,
     ensure_lowered_edge,
+    kv_state_port_events,
     register_auxiliary_edge,
+    register_kv_cache_aux,
+    resolve_kv_scenario,
 )
 from ....recipes.gqa import (
     DEFAULT_GQA_RECIPE,
@@ -138,6 +141,7 @@ class FusedGQARegionImplementation:
         *,
         estimation: RegionEstimationContext,
         lowered_edges: dict,
+        state_port_collector: list | None = None,
     ) -> LoweredNode:
         for edge_id in region.boundary_inputs:
             ensure_lowered_edge(
@@ -163,6 +167,35 @@ class FusedGQARegionImplementation:
 
         events: list[ResourceEvent] = []
         auxiliary_edges: list[str] = []
+        kv_scenario = resolve_kv_scenario(
+            context=context,
+            query_seq_len=seq_len,
+            num_heads=num_heads,
+            head_dim=head_dim,
+            module_path=region.anchor.module_path,
+        )
+        is_decode = kv_scenario is not None and kv_scenario.is_decode
+        flop_seq_len = (
+            kv_scenario.cache_seq_len if is_decode else seq_len
+        )
+
+        if kv_scenario is not None and not is_decode:
+            state_event, kv_alloc, kv_persist, kv_aux_id = kv_state_port_events(
+                region_id=region.id,
+                scenario=kv_scenario,
+                seq_len=seq_len,
+            )
+            register_kv_cache_aux(
+                aux_id=kv_aux_id,
+                scenario=kv_scenario,
+                seq_len=seq_len,
+                context=context,
+                lowered_edges=lowered_edges,
+            )
+            events.extend([kv_alloc, kv_persist])
+            auxiliary_edges.append(kv_aux_id)
+            if state_port_collector is not None:
+                state_port_collector.append(state_event)
 
         if isinstance(self.recipe, GQASDPAMathRecipe) and self.recipe.save_P:
             scores_id = f"region:{region.id}:scores"
@@ -209,15 +242,23 @@ class FusedGQARegionImplementation:
                 events.append(ResourceEvent(ResourceEventKind.SAVE, saved_stats))
                 auxiliary_edges.append(saved_stats)
 
-        forward_flops = self.recipe.forward_flops(
-            num_heads=num_heads, seq_len=seq_len, head_dim=head_dim
-        )
-        backward_flops = self.recipe.backward_flops(
-            num_heads=num_heads,
-            seq_len=seq_len,
-            head_dim=head_dim,
-            requires_grad=input_tensor.requires_grad,
-        )
+        if is_decode and isinstance(self.recipe, GQARecipe):
+            forward_flops = self.recipe.paged_forward_flops(
+                num_heads=num_heads,
+                cache_len=flop_seq_len,
+                head_dim=head_dim,
+            )
+            backward_flops = 0
+        else:
+            forward_flops = self.recipe.forward_flops(
+                num_heads=num_heads, seq_len=flop_seq_len, head_dim=head_dim
+            )
+            backward_flops = self.recipe.backward_flops(
+                num_heads=num_heads,
+                seq_len=flop_seq_len,
+                head_dim=head_dim,
+                requires_grad=input_tensor.requires_grad,
+            )
 
         if context.phase == "backward" and auxiliary_edges:
             events.append(

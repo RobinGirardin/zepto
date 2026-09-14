@@ -163,6 +163,8 @@ class StatePortRegistry:
         from ..lowering.context import InvocationContext as Ctx
 
         entries: list[tuple[str, object]] = []
+        if self.kv_template is not None and not self.kv_caches:
+            entries.append(("kv_template", self.kv_template))
         for index, kv in enumerate(self.kv_caches):
             entries.append((f"kv_cache:{index}", kv))
         if self.grad_accum is not None:
