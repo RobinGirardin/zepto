@@ -18,6 +18,7 @@ from .rmsnorm import RMSNormRecipe
 from .softmax import DEFAULT_SOFTMAX_RECIPE, SoftmaxRecipe
 from .relu import DEFAULT_RELU_RECIPE, SAVED_INPUT_RELU_RECIPE, ReLURecipe
 from .silu import DEFAULT_SILU_RECIPE, SiLURecipe
+from .squared_relu import DEFAULT_SQUARED_RELU_RECIPE, SquaredReLURecipe
 from .softplus import (
     DEFAULT_SOFTPLUS_RECIPE,
     XIELU_SCALAR_SOFTPLUS_RECIPE,
@@ -42,10 +43,12 @@ __all__ = [
     "GQASDPAMathRecipe",
     "MaskedSoftmaxRecipe",
     "DEFAULT_SILU_RECIPE",
+    "DEFAULT_SQUARED_RELU_RECIPE",
     "ReLURecipe",
     "RMSNormRecipe",
     "DEFAULT_SOFTPLUS_RECIPE",
     "SiLURecipe",
+    "SquaredReLURecipe",
     "SoftmaxRecipe",
     "SoftplusRecipe",
     "XIELU_SCALAR_SOFTPLUS_RECIPE",

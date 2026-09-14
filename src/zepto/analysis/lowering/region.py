@@ -51,6 +51,7 @@ class PatternConstraint:
         "parameter_count",
         "min_rank",
         "silu_mul_x_sigmoid_x",
+        "squared_relu_mul_relu_relu",
         "gelu_tanh_activation",
         "gelu_erf_activation",
     ]

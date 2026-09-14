@@ -221,6 +221,18 @@ class PatternRegionMatcher:
             if not sigmoid_op.input_edges or not multiply_op.input_edges:
                 return False
             return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
+        if constraint.kind == "squared_relu_mul_relu_relu":
+            if len(operation_ids) < 2:
+                return False
+            maximum_op = graph.node(operation_ids[0])
+            multiply_op = graph.node(operation_ids[1])
+            if not maximum_op.output_edges or len(multiply_op.input_edges) < 2:
+                return False
+            relu_out = maximum_op.output_edges[0]
+            return (
+                multiply_op.input_edges[0] == relu_out
+                and multiply_op.input_edges[1] == relu_out
+            )
         if constraint.kind == "gelu_tanh_activation":
             return _check_gelu_tanh_activation(graph, operation_ids)
         if constraint.kind == "gelu_erf_activation":

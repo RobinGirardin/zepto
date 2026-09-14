@@ -50,6 +50,7 @@ from .regions import (
     RELU_REGIONS,
     RMSNORM_REGIONS,
     SILU_REGIONS,
+    SQUARED_RELU_REGIONS,
     SOFTMAX_REGIONS,
     SOFTPLUS_REGIONS,
     XIELU_REGIONS,
@@ -114,6 +115,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in RELU_REGIONS:
         registry.register_region(impl)
     for impl in SILU_REGIONS:
+        registry.register_region(impl)
+    for impl in SQUARED_RELU_REGIONS:
         registry.register_region(impl)
     for impl in SOFTPLUS_REGIONS:
         registry.register_region(impl)
