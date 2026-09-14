@@ -10,8 +10,8 @@ from .lowering import InvocationContext, lower
 from .reports import CostReport, HorizonCostReport
 
 if TYPE_CHECKING:
-    from .horizon import HorizonSimulation, HorizonSpec, StatePortRegistry
-    from .horizon.simulate import ComposeFn
+    from .horizon import HorizonSimulation, HorizonSpec
+    from .horizon.simulate import InputsFn, ModuleFn
     from .lowered import LoweredGraph
 
 __all__ = [
@@ -42,24 +42,19 @@ def estimate(
 
 
 def estimate_horizon(
-    compose_fn: ComposeFn,
-    context: InvocationContext,
     horizon: HorizonSpec,
+    module_fn: ModuleFn,
+    inputs_fn: InputsFn,
+    context: InvocationContext,
     *,
     return_simulation: bool = False,
-    state: StatePortRegistry | None = None,
 ) -> HorizonCostReport | tuple[HorizonCostReport, HorizonSimulation]:
     """Simulate a horizon and return combined memory and FLOP accounting."""
     from .flops import account_flops
     from .horizon import simulate_horizon
     from .memory import account_memory
 
-    sim = simulate_horizon(
-        compose_fn,
-        horizon,
-        context,
-        state=state,
-    )
+    sim = simulate_horizon(horizon, module_fn, inputs_fn, context)
     hmem = account_memory(sim)
     hflops = account_flops(sim)
     per_step = tuple(

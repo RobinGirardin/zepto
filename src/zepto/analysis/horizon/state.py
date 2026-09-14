@@ -186,9 +186,11 @@ class StatePortRegistry:
         )
 
     def advance(self, step: HorizonStep, lowered: LoweredGraph) -> StatePortRegistry:
+        from .spec import StepKind
+
         registry = self
 
-        if step.name == "prefill" and registry.kv_template is not None:
+        if step.kind == StepKind.PREFILL and registry.kv_template is not None:
             template = registry.kv_template
             kv = KVCacheState(
                 num_layers=template.num_layers,
@@ -199,7 +201,7 @@ class StatePortRegistry:
             )
             registry = replace(registry, kv_caches=(kv,))
 
-        elif step.name.startswith("decode_") and registry.kv_caches:
+        elif step.kind == StepKind.DECODE and registry.kv_caches:
             current = registry.kv_caches[0]
             registry = replace(
                 registry,
@@ -208,7 +210,7 @@ class StatePortRegistry:
                 ),
             )
 
-        elif step.name.startswith("micro_forward_"):
+        elif step.kind == StepKind.MICRO_FORWARD:
             param_bytes = parameter_bytes(lowered)
             accum = registry.grad_accum
             if accum is None:
@@ -225,7 +227,7 @@ class StatePortRegistry:
                 ),
             )
 
-        elif step.name == "optimizer" or step.phase == "optimizer":
+        elif step.kind == StepKind.OPTIMIZER:
             param_bytes = parameter_bytes(lowered)
             policy = registry.optimizer_policy
             if policy is None:

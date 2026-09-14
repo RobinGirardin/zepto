@@ -2,8 +2,15 @@
 
 from .account import account_horizon_flops, account_horizon_memory
 from .records import HorizonSimulation, InvocationRecord
-from .simulate import simulate_horizon
-from .spec import HorizonSpec, HorizonStep
+from .simulate import InputsFn, ModuleFn, inputs_from_shape, simulate_horizon
+from .spec import (
+    HorizonSpec,
+    HorizonStep,
+    KVConfig,
+    StepKind,
+    decode_step,
+    optimizer_step,
+)
 from .state import (
     GradAccumState,
     KVCacheState,
@@ -17,12 +24,19 @@ __all__ = [
     "HorizonSimulation",
     "HorizonSpec",
     "HorizonStep",
+    "InputsFn",
     "InvocationRecord",
     "KVCacheState",
+    "KVConfig",
+    "ModuleFn",
     "OptimizerState",
     "StatePortRegistry",
     "StateSnapshot",
+    "StepKind",
     "account_horizon_flops",
     "account_horizon_memory",
+    "decode_step",
+    "inputs_from_shape",
+    "optimizer_step",
     "simulate_horizon",
 ]
