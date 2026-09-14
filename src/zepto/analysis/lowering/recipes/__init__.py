@@ -18,6 +18,11 @@ from .rmsnorm import RMSNormRecipe
 from .softmax import DEFAULT_SOFTMAX_RECIPE, SoftmaxRecipe
 from .relu import DEFAULT_RELU_RECIPE, SAVED_INPUT_RELU_RECIPE, ReLURecipe
 from .silu import DEFAULT_SILU_RECIPE, SiLURecipe
+from .softplus import (
+    DEFAULT_SOFTPLUS_RECIPE,
+    XIELU_SCALAR_SOFTPLUS_RECIPE,
+    SoftplusRecipe,
+)
 from .xielu import XIELURecipe
 
 __all__ = [
@@ -39,7 +44,10 @@ __all__ = [
     "DEFAULT_SILU_RECIPE",
     "ReLURecipe",
     "RMSNormRecipe",
+    "DEFAULT_SOFTPLUS_RECIPE",
     "SiLURecipe",
     "SoftmaxRecipe",
+    "SoftplusRecipe",
+    "XIELU_SCALAR_SOFTPLUS_RECIPE",
     "XIELURecipe",
 ]

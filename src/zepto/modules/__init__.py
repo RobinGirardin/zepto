@@ -14,6 +14,7 @@ from .qk_norm import QKNormRMSNorm
 from .rms_norm import RMSNorm
 from .relu import ReLU
 from .silu import SiLU
+from .softplus import Softplus
 from .rope_apply import RoPE, RoPEApply
 from .rope_materialize import RoPEConfig, RoPEMaterialize
 from .softmax import Softmax, attention_softmax_scale
@@ -37,6 +38,7 @@ __all__ = [
     "RMSNorm",
     "ReLU",
     "SiLU",
+    "Softplus",
     "RoPE",
     "RoPEApply",
     "RoPEConfig",

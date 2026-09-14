@@ -225,11 +225,39 @@ class PatternRegionMatcher:
             return _check_gelu_tanh_activation(graph, operation_ids)
         if constraint.kind == "gelu_erf_activation":
             return _check_gelu_erf_activation(graph, operation_ids)
+        if constraint.kind == "softplus_decomposed_chain":
+            return _check_softplus_decomposed_chain(graph, operation_ids)
         return True
 
 
 def _edge_semantic_type(graph: Graph, edge_id: object) -> str:
     return graph.edge(edge_id).tensor.semantic_type
+
+
+def _check_softplus_decomposed_chain(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 3:
+        return False
+    exp_op = graph.node(operation_ids[0])
+    add_op = graph.node(operation_ids[1])
+    log_op = graph.node(operation_ids[2])
+    if not exp_op.input_edges or len(add_op.input_edges) < 2:
+        return False
+    if not exp_op.output_edges or not add_op.output_edges:
+        return False
+    exp_out = exp_op.output_edges[0]
+    if add_op.input_edges[1] != exp_out:
+        return False
+    add_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in add_op.input_edges
+    }
+    if "one" not in add_types:
+        return False
+    if not log_op.input_edges:
+        return False
+    return log_op.input_edges[0] in add_op.output_edges
 
 
 def _check_gelu_tanh_activation(
