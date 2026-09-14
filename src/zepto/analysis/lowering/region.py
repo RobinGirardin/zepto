@@ -50,6 +50,7 @@ class PatternConstraint:
         "right_operand_is_zero",
         "parameter_count",
         "min_rank",
+        "silu_mul_x_sigmoid_x",
     ]
     max_parameters: int | None = None
     min_rank: int | None = None

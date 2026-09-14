@@ -213,6 +213,14 @@ class PatternRegionMatcher:
             minimum = constraint.min_rank or 0
             if rank < minimum:
                 return False
+        if constraint.kind == "silu_mul_x_sigmoid_x":
+            if len(operation_ids) < 2:
+                return False
+            sigmoid_op = graph.node(operation_ids[0])
+            multiply_op = graph.node(operation_ids[1])
+            if not sigmoid_op.input_edges or not multiply_op.input_edges:
+                return False
+            return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
         return True
 
 

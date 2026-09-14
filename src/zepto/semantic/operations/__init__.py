@@ -24,6 +24,7 @@ from .pow import Pow
 from .reduce_sum import ReduceSum
 from .repeat_kv import RepeatKV
 from .reshape import Reshape
+from .sigmoid import Sigmoid
 from .sin import Sin
 from .split import Split
 from .square_root import SquareRoot
@@ -83,6 +84,7 @@ __all__ = [
     "ResourceEventKind",
     "Reshape",
     "SemanticOperation",
+    "Sigmoid",
     "Sin",
     "Split",
     "SquareRoot",

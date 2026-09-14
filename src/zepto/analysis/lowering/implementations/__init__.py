@@ -27,6 +27,7 @@ from zepto.semantic.operations import (
     ReduceSum,
     RepeatKV,
     Reshape,
+    Sigmoid,
     Sin,
     Split,
     SquareRoot,
@@ -45,6 +46,7 @@ from .regions import (
     MASKED_SOFTMAX_REGIONS,
     RELU_REGIONS,
     RMSNORM_REGIONS,
+    SILU_REGIONS,
     SOFTMAX_REGIONS,
     XIELU_REGIONS,
 )
@@ -80,6 +82,7 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         Pow(),
         ReduceSum(axis=0, keepdim=True),
         RepeatKV(n_rep=1),
+        Sigmoid(),
         Sin(),
         Where(),
     ):
@@ -103,6 +106,8 @@ def register_specialized(registry: LoweringRegistry) -> None:
 def register_regions(registry: LoweringRegistry) -> None:
     """Register fused region implementations."""
     for impl in RELU_REGIONS:
+        registry.register_region(impl)
+    for impl in SILU_REGIONS:
         registry.register_region(impl)
     registry.register_region(FUSED_LINEAR_REGION)
     registry.register_region(FUSED_LAYERNORM_REGION)

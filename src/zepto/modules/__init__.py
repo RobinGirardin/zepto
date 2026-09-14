@@ -13,6 +13,7 @@ from .materialized_causal_mask import MaterializedCausalMask
 from .qk_norm import QKNormRMSNorm
 from .rms_norm import RMSNorm
 from .relu import ReLU
+from .silu import SiLU
 from .rope_apply import RoPE, RoPEApply
 from .rope_materialize import RoPEConfig, RoPEMaterialize
 from .softmax import Softmax, attention_softmax_scale
@@ -35,6 +36,7 @@ __all__ = [
     "QKNormRMSNorm",
     "RMSNorm",
     "ReLU",
+    "SiLU",
     "RoPE",
     "RoPEApply",
     "RoPEConfig",

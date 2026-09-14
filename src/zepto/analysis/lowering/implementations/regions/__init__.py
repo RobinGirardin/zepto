@@ -17,6 +17,7 @@ from .linear_ce import (
 )
 from .layernorm import FUSED_LAYERNORM_REGION
 from .relu import RELU_REGION, RELU_REGIONS, RELU_SAVED_INPUT
+from .silu import FUSED_SILU_REGION, SILU_REGIONS
 from .rmsnorm import (
     FUSED_RMSNORM_HUB_MPS,
     FUSED_RMSNORM_HUB_XPU,
@@ -76,7 +77,9 @@ __all__ = [
     "RELU_REGION",
     "RELU_REGIONS",
     "RELU_SAVED_INPUT",
+    "FUSED_SILU_REGION",
     "RMSNORM_REGIONS",
+    "SILU_REGIONS",
     "SOFTMAX_PATTERN",
     "SOFTMAX_PATTERN_SCALED",
     "SOFTMAX_PROVENANCE",
