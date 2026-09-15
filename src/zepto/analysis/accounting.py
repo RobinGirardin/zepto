@@ -1,9 +1,17 @@
 """Precision and byte accounting policies for resource events."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from zepto.compose.values import Tensor
 from zepto.semantic.metadata import DType, Shape, TensorRole
+
+_BYTES_TO_DTYPE: dict[int, DType] = {
+    2: DType.FP16,
+    4: DType.FP32,
+    8: DType.FP64,
+}
 
 from .resolved import ResolvedValue
 
@@ -47,6 +55,24 @@ class PrecisionPolicy:
             if policy_role == role:
                 return dtype
         return self.default_dtype
+
+    @classmethod
+    def from_byte_sizes(cls, *, param_bytes: int, grad_bytes: int) -> PrecisionPolicy:
+        """Build a mixed-precision policy from parameter and gradient widths."""
+        if param_bytes not in _BYTES_TO_DTYPE:
+            raise ValueError(f"unsupported param_bytes: {param_bytes}")
+        if grad_bytes not in _BYTES_TO_DTYPE:
+            raise ValueError(f"unsupported grad_bytes: {grad_bytes}")
+        param_dtype = _BYTES_TO_DTYPE[param_bytes]
+        grad_dtype = _BYTES_TO_DTYPE[grad_bytes]
+        return cls(
+            default_dtype=param_dtype,
+            by_semantic_type=(("weight", param_dtype),),
+            by_role=(
+                (TensorRole.GRADIENT, grad_dtype),
+                (TensorRole.WORKSPACE, grad_dtype),
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

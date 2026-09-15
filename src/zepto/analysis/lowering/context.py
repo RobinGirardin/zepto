@@ -26,6 +26,7 @@ class InvocationContext:
     requested_capabilities: frozenset[str] = frozenset()
     attention_backend: str = "eager"
     allow_fallback: bool = True
+    optim_prec: int | None = None
 
 
 def reference_invocation(
@@ -34,6 +35,8 @@ def reference_invocation(
     hardware: str = "generic",
     backend: str = "reference",
     default_dtype: DType = DType.FP32,
+    precision: PrecisionPolicy | None = None,
+    optim_prec: int | None = None,
     implementation_pins: Mapping[str, str] | None = None,
     module_implementation_pins: Mapping[str, str] | None = None,
     region_implementation_pins: Mapping[str, str] | None = None,
@@ -43,8 +46,8 @@ def reference_invocation(
     allow_fallback: bool = True,
 ) -> InvocationContext:
     """Build a reference lowering context with FP32 defaults."""
-    precision = PrecisionPolicy(default_dtype=default_dtype)
-    accounting = AccountingPolicy(precision=precision)
+    resolved_precision = precision or PrecisionPolicy(default_dtype=default_dtype)
+    accounting = AccountingPolicy(precision=resolved_precision)
     pins = (
         MappingProxyType(implementation_pins)
         if implementation_pins is not None
@@ -66,7 +69,7 @@ def reference_invocation(
         phase=phase,
         hardware=hardware,
         backend=backend,
-        precision=precision,
+        precision=resolved_precision,
         accounting=accounting,
         state=invocation_state,
         implementation_pins=pins,
@@ -75,4 +78,5 @@ def reference_invocation(
         requested_capabilities=capabilities,
         attention_backend=attention_backend,
         allow_fallback=allow_fallback,
+        optim_prec=optim_prec,
     )

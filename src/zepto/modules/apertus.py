@@ -118,7 +118,8 @@ class Apertus(Module):
             seq_len=seq_len,
         )
 
-    def forward(self, token_ids: Tensor) -> Tensor:
+    def forward_hidden(self, token_ids: Tensor) -> Tensor:
+        """Backbone hidden states before LM head (embed → blocks → final_norm)."""
         hidden_states = self.embedding(token_ids)
         causal_mask = self.causal_mask()
         rope_cos, rope_sin = self.rope_materialize()
@@ -131,5 +132,7 @@ class Apertus(Module):
                 rope_sin,
             )  # type: ignore[assignment]
 
-        hidden_states = self.final_norm(hidden_states)
-        return self.lm_head(hidden_states)  # type: ignore[return-value]
+        return self.final_norm(hidden_states)  # type: ignore[return-value]
+
+    def forward(self, token_ids: Tensor) -> Tensor:
+        return self.lm_head(self.forward_hidden(token_ids))  # type: ignore[return-value]

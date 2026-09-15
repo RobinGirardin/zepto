@@ -1,6 +1,7 @@
 """Reusable user-level module compositions built on Zepto operations."""
 
 from .apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
+from .apertus_for_causal_lm import ApertusForCausalLM
 from .apertus_decoder_block import ApertusDecoderBlock
 from .embedding import Embedding
 from .ffn import FFN
@@ -23,6 +24,7 @@ __all__ = [
     "APERTUS_8B",
     "Apertus",
     "ApertusConfig",
+    "ApertusForCausalLM",
     "ApertusDecoderBlock",
     "Embedding",
     "FFN",

@@ -105,6 +105,16 @@ def test_accounting_policy_raises_on_unknown_resolved_dtype() -> None:
         policy.bytes_for(resolved)
 
 
+def test_precision_policy_from_byte_sizes() -> None:
+    policy = PrecisionPolicy.from_byte_sizes(param_bytes=2, grad_bytes=4)
+    weight = Tensor(shape=(4, 8), semantic_type="weight")
+    activation = Tensor(shape=(4, 8))
+    assert policy.resolve(weight, role=TensorRole.ACTIVATION) is DType.FP16
+    assert policy.resolve(activation, role=TensorRole.GRADIENT) is DType.FP32
+    assert policy.resolve(activation, role=TensorRole.WORKSPACE) is DType.FP32
+    assert policy.resolve(activation, role=TensorRole.ACTIVATION) is DType.FP16
+
+
 def test_accounting_policy_resolve_dtype_on_tensor() -> None:
     policy = AccountingPolicy(
         PrecisionPolicy(

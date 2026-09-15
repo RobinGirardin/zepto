@@ -101,6 +101,17 @@ def snapshot_state_bytes(snapshot: StateSnapshot) -> int:
     return total
 
 
+def trainable_parameter_elements(lowered: LoweredGraph) -> int:
+    """Count trainable parameter elements in a lowered graph."""
+    from ..accounting import numel
+
+    return sum(
+        numel(param.tensor.shape)
+        for param in lowered.parameters.values()
+        if param.trainable
+    )
+
+
 def parameter_bytes(lowered: LoweredGraph) -> int:
     """Total parameter storage bytes from a lowered graph."""
     from ..resolved import ResolvedValue
@@ -185,6 +196,7 @@ class StatePortRegistry:
             requested_capabilities=base.requested_capabilities,
             attention_backend=base.attention_backend,
             allow_fallback=base.allow_fallback,
+            optim_prec=base.optim_prec,
         )
 
     def advance(self, step: HorizonStep, lowered: LoweredGraph) -> StatePortRegistry:
@@ -230,15 +242,15 @@ class StatePortRegistry:
             )
 
         elif step.kind == StepKind.OPTIMIZER:
-            param_bytes = parameter_bytes(lowered)
             policy = registry.optimizer_policy
             if policy is None:
                 from ..optimizer import AdamW
 
                 policy = AdamW
+            optim_prec = lowered.context.optim_prec or 4
+            trainable_elements = trainable_parameter_elements(lowered)
             opt_bytes = (
-                param_bytes * policy.state_bytes_per_parameter
-                + policy.workspace_bytes
+                2 * trainable_elements * optim_prec + policy.workspace_bytes
             )
             registry = replace(
                 registry,
