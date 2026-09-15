@@ -45,11 +45,18 @@ from .horizon import (
     simulate_horizon,
 )
 from .optimizer import AdamW, OptimizerPolicy, SGD
+from .runtime import (
+    CudaCublasWorkspacePolicy,
+    NullRuntimeOverheadPolicy,
+    RuntimeOverheadPolicy,
+    runtime_workspace_bytes,
+)
 
 __all__ = [
     "AccountingPolicy",
     "AdamW",
     "CostReport",
+    "CudaCublasWorkspacePolicy",
     "DEFAULT_REGISTRY",
     "FlopReport",
     "HorizonCostReport",
@@ -73,12 +80,14 @@ __all__ = [
     "LoweringError",
     "LoweringRegistry",
     "MemoryReport",
+    "NullRuntimeOverheadPolicy",
     "OptimizerPolicy",
     "PrecisionPolicy",
     "RegionImplementationDescriptor",
     "RegionImplementationSelection",
     "ResolvedValue",
     "RoleContext",
+    "RuntimeOverheadPolicy",
     "Region",
     "SGD",
     "account_flops",
@@ -89,6 +98,7 @@ __all__ = [
     "infer_accounting_role",
     "lower",
     "reference_invocation",
+    "runtime_workspace_bytes",
     "select_implementation",
     "select_region_implementation",
     "inputs_from_shape",

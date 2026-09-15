@@ -18,7 +18,12 @@ GOLDEN = dict(
 )
 
 
-def golden_apertus_ctx(*, phase: str = "forward", fused: bool = True):
+def golden_apertus_ctx(
+    *,
+    phase: str = "forward",
+    fused: bool = True,
+    cuda_capability: tuple[int, int] | None = (8, 0),
+):
     """Mixed-precision context: fp16 params, fp32 grads, fp32 Adam state."""
     kwargs: dict = {
         "phase": phase,
@@ -27,6 +32,8 @@ def golden_apertus_ctx(*, phase: str = "forward", fused: bool = True):
         "attention_backend": "eager",
         "hardware": "cuda",
     }
+    if cuda_capability is not None:
+        kwargs["compute_capability"] = cuda_capability
     if fused:
         kwargs["requested_capabilities"] = frozenset({"fused", "flash"})
     return reference_invocation(**kwargs)

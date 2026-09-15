@@ -137,6 +137,21 @@ def test_simulate_horizon_advances_kv_and_grad_state() -> None:
     assert len(hflops.per_step) == 6
 
 
+def test_training_horizon_backward_step_includes_double_cublas() -> None:
+    ctx = reference_invocation(
+        hardware="cuda",
+        compute_capability=(8, 0),
+    )
+    spec = HorizonSpec.training(seq_len=128, micro_batches=1, optimizer=AdamW)
+    report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    micro_step = report.per_step[0]
+    backward_step = report.per_step[1]
+    optimizer_step = report.per_step[2]
+    assert micro_step.memory.breakdown.runtime_workspace == 8_519_680
+    assert backward_step.memory.breakdown.runtime_workspace == 2 * 8_519_680
+    assert optimizer_step.memory.breakdown.runtime_workspace == 0
+
+
 def test_inputs_from_shape_helper() -> None:
     ctx = reference_invocation()
     spec = HorizonSpec.repeat(1, seq_len=128)

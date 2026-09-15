@@ -14,6 +14,7 @@ class MemoryBreakdown:
     activations: int = 0
     parameters: int = 0
     workspace: int = 0
+    runtime_workspace: int = 0
     saved_for_backward: int = 0
     persistent_inputs: int = 0
     gradients: int = 0

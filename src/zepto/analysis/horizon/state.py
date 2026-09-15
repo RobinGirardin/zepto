@@ -197,6 +197,8 @@ class StatePortRegistry:
             attention_backend=base.attention_backend,
             allow_fallback=base.allow_fallback,
             optim_prec=base.optim_prec,
+            compute_capability=base.compute_capability,
+            runtime_policy=base.runtime_policy,
         )
 
     def advance(self, step: HorizonStep, lowered: LoweredGraph) -> StatePortRegistry:

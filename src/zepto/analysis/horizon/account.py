@@ -9,6 +9,7 @@ from zepto.analysis.reports.memory import MemoryBreakdown, MemoryReport
 
 from ..memory.simulator import ResourceEventSimulator
 from ..reports.horizon import HorizonFlopReport, HorizonMemoryReport
+from ..runtime import runtime_workspace_bytes
 from .records import HorizonSimulation
 from .state import snapshot_state_bytes
 
@@ -25,11 +26,17 @@ class HorizonMemoryReducer:
         carry_state = snapshot_state_bytes(sim.state_initial)
 
         for index, record in enumerate(sim.timeline):
+            step_kind = record.step.kind
             result = ResourceEventSimulator(record.lowered).run()
+            runtime_ws = runtime_workspace_bytes(
+                record.lowered.context, step_kind=step_kind
+            )
+            breakdown = replace(result.breakdown, runtime_workspace=runtime_ws)
+            peak_with_runtime = result.peak_live_bytes + runtime_ws
             report = MemoryReport(
-                sum_all_bytes=result.sum_all_bytes,
-                peak_live_bytes=result.peak_live_bytes,
-                breakdown=result.breakdown,
+                sum_all_bytes=result.sum_all_bytes + runtime_ws,
+                peak_live_bytes=peak_with_runtime,
+                breakdown=breakdown,
                 by_module=result.by_module,
                 by_region=result.by_region,
                 by_implementation=result.by_implementation,
@@ -42,26 +49,24 @@ class HorizonMemoryReducer:
                 param_bytes = step_params
 
             step_state = result.breakdown.state
-            transient_peak = (
-                result.peak_live_bytes - step_params - step_state
-            )
+            transient_peak = peak_with_runtime - step_params - step_state
             step_peak = (param_bytes or 0) + carry_state + max(transient_peak, 0)
             after_state = snapshot_state_bytes(record.state_after)
             boundary_peak = (param_bytes or 0) + after_state
             merged_peak = max(merged_peak, step_peak, boundary_peak)
 
             if index == 0:
-                sum_all += result.sum_all_bytes
-                merged_breakdown = result.breakdown
+                sum_all += report.sum_all_bytes
+                merged_breakdown = breakdown
             else:
-                sum_all += result.sum_all_bytes - step_params
+                sum_all += report.sum_all_bytes - step_params
                 if step_state > 0:
                     prev_state = snapshot_state_bytes(
                         sim.timeline[index - 1].state_after
                     )
                     sum_all -= prev_state
                 merged_breakdown = _merge_breakdowns(
-                    merged_breakdown, result.breakdown, step_params, step_state
+                    merged_breakdown, breakdown, step_params, step_state
                 )
 
             carry_state = snapshot_state_bytes(record.state_after)
@@ -121,6 +126,7 @@ def _merge_breakdowns(
         activations=left.activations + right.activations,
         parameters=left.parameters,
         workspace=left.workspace + right.workspace,
+        runtime_workspace=left.runtime_workspace + right.runtime_workspace,
         saved_for_backward=left.saved_for_backward + right.saved_for_backward,
         persistent_inputs=left.persistent_inputs + right.persistent_inputs,
         gradients=left.gradients + right.gradients,

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from ..accounting import AccountingPolicy, PrecisionPolicy
 from zepto.semantic.metadata import DType
+
+if TYPE_CHECKING:
+    from ..runtime.policy import RuntimeOverheadPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +30,8 @@ class InvocationContext:
     attention_backend: str = "eager"
     allow_fallback: bool = True
     optim_prec: int | None = None
+    compute_capability: tuple[int, int] | None = None
+    runtime_policy: RuntimeOverheadPolicy | None = None
 
 
 def reference_invocation(
@@ -37,6 +42,8 @@ def reference_invocation(
     default_dtype: DType = DType.FP32,
     precision: PrecisionPolicy | None = None,
     optim_prec: int | None = None,
+    compute_capability: tuple[int, int] | None = None,
+    runtime_policy: RuntimeOverheadPolicy | None = None,
     implementation_pins: Mapping[str, str] | None = None,
     module_implementation_pins: Mapping[str, str] | None = None,
     region_implementation_pins: Mapping[str, str] | None = None,
@@ -79,4 +86,6 @@ def reference_invocation(
         attention_backend=attention_backend,
         allow_fallback=allow_fallback,
         optim_prec=optim_prec,
+        compute_capability=compute_capability,
+        runtime_policy=runtime_policy,
     )

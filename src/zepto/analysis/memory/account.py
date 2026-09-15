@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from zepto.analysis.horizon.records import HorizonSimulation
 from zepto.analysis.lowered import LoweredGraph
 from zepto.analysis.reports.horizon import HorizonMemoryReport
 from zepto.analysis.reports.memory import MemoryReport
+from zepto.analysis.runtime import runtime_workspace_bytes
 
 from .simulator import ResourceEventSimulator
 
@@ -23,10 +26,13 @@ def account_memory(
 
 def _account_single_memory(lowered: LoweredGraph) -> MemoryReport:
     result = ResourceEventSimulator(lowered).run()
+    runtime_ws = runtime_workspace_bytes(lowered.context)
+    breakdown = replace(result.breakdown, runtime_workspace=runtime_ws)
+    peak = result.peak_live_bytes + runtime_ws
     return MemoryReport(
-        sum_all_bytes=result.sum_all_bytes,
-        peak_live_bytes=result.peak_live_bytes,
-        breakdown=result.breakdown,
+        sum_all_bytes=result.sum_all_bytes + runtime_ws,
+        peak_live_bytes=peak,
+        breakdown=breakdown,
         by_module=result.by_module,
         by_region=result.by_region,
         by_implementation=result.by_implementation,
