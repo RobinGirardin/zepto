@@ -53,6 +53,7 @@ from .regions import (
     SQUARED_RELU_REGIONS,
     SOFTMAX_REGIONS,
     SOFTPLUS_REGIONS,
+    SWIGLU_REGIONS,
     XIELU_REGIONS,
 )
 
@@ -135,6 +136,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in MASKED_SOFTMAX_REGIONS:
         registry.register_region(impl)
     for impl in GQA_REGIONS:
+        registry.register_region(impl)
+    for impl in SWIGLU_REGIONS:
         registry.register_region(impl)
 
 

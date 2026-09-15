@@ -239,11 +239,67 @@ class PatternRegionMatcher:
             return _check_gelu_erf_activation(graph, operation_ids)
         if constraint.kind == "softplus_decomposed_chain":
             return _check_softplus_decomposed_chain(graph, operation_ids)
+        if constraint.kind == "swiglu_silu_branch":
+            return _check_swiglu_silu_branch(graph, operation_ids)
+        if constraint.kind == "swiglu_shared_gate_up_input":
+            return _check_swiglu_shared_gate_up_input(graph, operation_ids)
+        if constraint.kind == "swiglu_gate_act_mul_up":
+            return _check_swiglu_gate_act_mul_up(graph, operation_ids)
         return True
 
 
 def _edge_semantic_type(graph: Graph, edge_id: object) -> str:
     return graph.edge(edge_id).tensor.semantic_type
+
+
+def _check_swiglu_silu_branch(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 4:
+        return False
+    sigmoid_op = graph.node(operation_ids[2])
+    multiply_op = graph.node(operation_ids[3])
+    if not sigmoid_op.input_edges or not multiply_op.input_edges:
+        return False
+    return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
+
+
+def _check_swiglu_shared_gate_up_input(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 2:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    up_op = graph.node(operation_ids[1])
+    if not gate_op.input_edges or not up_op.input_edges:
+        return False
+    return gate_op.input_edges[0] == up_op.input_edges[0]
+
+
+def _check_swiglu_gate_act_mul_up(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 5:
+        return False
+    up_op = graph.node(operation_ids[1])
+    silu_mul_op = graph.node(operation_ids[3])
+    gate_mul_op = graph.node(operation_ids[4])
+    if (
+        not up_op.output_edges
+        or not silu_mul_op.output_edges
+        or len(gate_mul_op.input_edges) < 2
+    ):
+        return False
+    silu_out = silu_mul_op.output_edges[0]
+    up_out = up_op.output_edges[0]
+    return (
+        gate_mul_op.input_edges[0] == silu_out
+        and gate_mul_op.input_edges[1] == up_out
+        and gate_mul_op.input_edges[0] != gate_mul_op.input_edges[1]
+    )
 
 
 def _check_softplus_decomposed_chain(

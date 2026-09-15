@@ -18,6 +18,7 @@ from .softplus import Softplus
 from .rope_apply import RoPE, RoPEApply
 from .rope_materialize import RoPEConfig, RoPEMaterialize
 from .softmax import Softmax, attention_softmax_scale
+from .swiglu import SwiGLU
 from .xielu import XIELU
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "RoPEConfig",
     "RoPEMaterialize",
     "Softmax",
+    "SwiGLU",
     "XIELU",
     "attention_softmax_scale",
 ]

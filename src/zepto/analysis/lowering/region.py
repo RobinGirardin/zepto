@@ -54,6 +54,10 @@ class PatternConstraint:
         "squared_relu_mul_relu_relu",
         "gelu_tanh_activation",
         "gelu_erf_activation",
+        "softplus_decomposed_chain",
+        "swiglu_silu_branch",
+        "swiglu_shared_gate_up_input",
+        "swiglu_gate_act_mul_up",
     ]
     max_parameters: int | None = None
     min_rank: int | None = None

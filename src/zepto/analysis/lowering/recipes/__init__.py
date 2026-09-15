@@ -24,6 +24,12 @@ from .softplus import (
     XIELU_SCALAR_SOFTPLUS_RECIPE,
     SoftplusRecipe,
 )
+from .swiglu import (
+    DEFAULT_SWIGLU_RECIPE,
+    LIGER_FUSED_GATE_UP_SWIGLU_RECIPE,
+    LIGER_SWIGLU_RECIPE,
+    SwiGLURecipe,
+)
 from .xielu import XIELURecipe
 
 __all__ = [
@@ -51,6 +57,10 @@ __all__ = [
     "SquaredReLURecipe",
     "SoftmaxRecipe",
     "SoftplusRecipe",
+    "DEFAULT_SWIGLU_RECIPE",
+    "LIGER_FUSED_GATE_UP_SWIGLU_RECIPE",
+    "LIGER_SWIGLU_RECIPE",
+    "SwiGLURecipe",
     "XIELU_SCALAR_SOFTPLUS_RECIPE",
     "XIELURecipe",
 ]
