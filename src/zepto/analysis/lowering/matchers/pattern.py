@@ -245,6 +245,12 @@ class PatternRegionMatcher:
             return _check_swiglu_shared_gate_up_input(graph, operation_ids)
         if constraint.kind == "swiglu_gate_act_mul_up":
             return _check_swiglu_gate_act_mul_up(graph, operation_ids)
+        if constraint.kind == "geglu_shared_gate_up_input":
+            return _check_geglu_shared_gate_up_input(graph, operation_ids)
+        if constraint.kind == "geglu_gelu_on_gate_branch":
+            return _check_geglu_gelu_on_gate_branch(graph, operation_ids)
+        if constraint.kind == "geglu_gate_act_mul_up":
+            return _check_geglu_gate_act_mul_up(graph, operation_ids)
         return True
 
 
@@ -297,6 +303,56 @@ def _check_swiglu_gate_act_mul_up(
     up_out = up_op.output_edges[0]
     return (
         gate_mul_op.input_edges[0] == silu_out
+        and gate_mul_op.input_edges[1] == up_out
+        and gate_mul_op.input_edges[0] != gate_mul_op.input_edges[1]
+    )
+
+
+def _check_geglu_shared_gate_up_input(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 2:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    up_op = graph.node(operation_ids[1])
+    if not gate_op.input_edges or not up_op.input_edges:
+        return False
+    return gate_op.input_edges[0] == up_op.input_edges[0]
+
+
+def _check_geglu_gelu_on_gate_branch(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 3:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    gelu_op = graph.node(operation_ids[2])
+    if not gate_op.output_edges or not gelu_op.input_edges:
+        return False
+    return gelu_op.input_edges[0] == gate_op.output_edges[0]
+
+
+def _check_geglu_gate_act_mul_up(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 4:
+        return False
+    up_op = graph.node(operation_ids[1])
+    gelu_op = graph.node(operation_ids[2])
+    gate_mul_op = graph.node(operation_ids[3])
+    if (
+        not up_op.output_edges
+        or not gelu_op.output_edges
+        or len(gate_mul_op.input_edges) < 2
+    ):
+        return False
+    gelu_out = gelu_op.output_edges[0]
+    up_out = up_op.output_edges[0]
+    return (
+        gate_mul_op.input_edges[0] == gelu_out
         and gate_mul_op.input_edges[1] == up_out
         and gate_mul_op.input_edges[0] != gate_mul_op.input_edges[1]
     )

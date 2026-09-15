@@ -13,6 +13,8 @@ from zepto.semantic.operations import (
     Erf,
     Exp,
     Gather,
+    GeluErfGate,
+    GeluTanhGate,
     GreaterThan,
     Identity,
     LinearMatMul,
@@ -53,6 +55,7 @@ from .regions import (
     SQUARED_RELU_REGIONS,
     SOFTMAX_REGIONS,
     SOFTPLUS_REGIONS,
+    GEGLU_REGIONS,
     SWIGLU_REGIONS,
     XIELU_REGIONS,
 )
@@ -92,6 +95,8 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         Sin(),
         Tanh(),
         Erf(),
+        GeluTanhGate(),
+        GeluErfGate(),
         Where(),
     ):
         registry.register(
@@ -138,6 +143,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in GQA_REGIONS:
         registry.register_region(impl)
     for impl in SWIGLU_REGIONS:
+        registry.register_region(impl)
+    for impl in GEGLU_REGIONS:
         registry.register_region(impl)
 
 

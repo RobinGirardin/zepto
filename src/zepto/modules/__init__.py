@@ -4,6 +4,7 @@ from .apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
 from .apertus_decoder_block import ApertusDecoderBlock
 from .embedding import Embedding
 from .ffn import FFN
+from .geglu import GeGLU
 from .fused_linear_cross_entropy import FusedLinearCrossEntropy
 from .gqa import GroupedQueryAttention
 from .layer_norm import LayerNorm
@@ -29,6 +30,7 @@ __all__ = [
     "ApertusDecoderBlock",
     "Embedding",
     "FFN",
+    "GeGLU",
     "FusedLinearCrossEntropy",
     "GroupedQueryAttention",
     "LayerNorm",

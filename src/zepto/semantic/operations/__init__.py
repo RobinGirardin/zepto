@@ -10,6 +10,7 @@ from .embedding_lookup import EmbeddingLookup
 from .erf import Erf
 from .exp import Exp
 from .gather import Gather
+from .gelu_gate import GeluErfGate, GeluTanhGate
 from .greater_than import GreaterThan
 from .identity import Identity
 from .linear_matmul import LinearMatMul
@@ -62,6 +63,8 @@ __all__ = [
     "EstimationOperation",
     "Exp",
     "Gather",
+    "GeluErfGate",
+    "GeluTanhGate",
     "GreaterThan",
     "Identity",
     "IncompleteOperationError",

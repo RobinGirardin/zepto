@@ -1,5 +1,11 @@
 """Closed-form cost recipes for fused region implementations."""
 
+from .geglu import (
+    DEFAULT_GEGLU_RECIPE,
+    GEGLU_ERF_RECIPE,
+    LIGER_GEGLU_RECIPE,
+    GeGLURecipe,
+)
 from .gelu import (
     GELU_ERF_RECIPE,
     GELU_QUICK_RECIPE,
@@ -39,6 +45,10 @@ __all__ = [
     "GELU_QUICK_RECIPE",
     "GELU_TANH_RECIPE",
     "GeluRecipe",
+    "DEFAULT_GEGLU_RECIPE",
+    "GEGLU_ERF_RECIPE",
+    "LIGER_GEGLU_RECIPE",
+    "GeGLURecipe",
     "DEFAULT_GQA_RECIPE",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",

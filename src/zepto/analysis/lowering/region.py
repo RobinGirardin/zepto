@@ -58,6 +58,9 @@ class PatternConstraint:
         "swiglu_silu_branch",
         "swiglu_shared_gate_up_input",
         "swiglu_gate_act_mul_up",
+        "geglu_shared_gate_up_input",
+        "geglu_gelu_on_gate_branch",
+        "geglu_gate_act_mul_up",
     ]
     max_parameters: int | None = None
     min_rank: int | None = None
