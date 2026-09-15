@@ -100,7 +100,9 @@ def test_apertus_train_horizon_produces_positive_peak_with_optimizer() -> None:
 
     report = estimate_horizon(spec, _training_module, _training_inputs, ctx)
 
+    assert len(report.per_step) == 2
     assert report.total_flops > 0
+    assert report.total_flops < 1_230_000
     assert report.peak_vram > 0
     assert report.state_final.optimizer is not None
     assert report.state_final.optimizer.bytes > 0
@@ -116,6 +118,7 @@ def test_apertus_train_includes_cublas_runtime_workspace() -> None:
     ctx = golden_apertus_ctx()
     spec = HorizonSpec.training(seq_len=_S, micro_batches=1, optimizer=AdamW)
     report = estimate_horizon(spec, _training_module, _training_inputs, ctx)
+    assert len(report.per_step) == 2
     assert report.memory.breakdown.runtime_workspace > 0
     max_step_runtime = max(
         step.memory.breakdown.runtime_workspace for step in report.per_step

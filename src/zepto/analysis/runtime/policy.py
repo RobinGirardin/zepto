@@ -59,8 +59,6 @@ class NullRuntimeOverheadPolicy(RuntimeOverheadPolicy):
 
 def _cublas_handle_count(phase: str, *, step_kind: StepKind | None) -> int:
     """Map Zepto phase / horizon step to cuBLAS handle count."""
-    if step_kind == StepKind.OPTIMIZER:
-        return 0
     if phase in ("backward", "full"):
         return 2
     if step_kind == StepKind.BACKWARD:

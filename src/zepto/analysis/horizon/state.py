@@ -170,6 +170,16 @@ class StatePortRegistry:
             custom=self.custom,
         )
 
+    def with_optimizer_state(
+        self, policy: OptimizerPolicy, bytes: int
+    ) -> StatePortRegistry:
+        """Apply optimizer boundary: persist moments and clear grad accum."""
+        return replace(
+            self,
+            optimizer=OptimizerState(policy=policy, bytes=bytes),
+            grad_accum=None,
+        )
+
     def bind_to_context(self, base: InvocationContext) -> InvocationContext:
         from ..lowering.context import InvocationContext as Ctx
 
@@ -241,23 +251,6 @@ class StatePortRegistry:
                     parameter_bytes=param_bytes,
                     micro_batches_seen=accum.micro_batches_seen + 1,
                 ),
-            )
-
-        elif step.kind == StepKind.OPTIMIZER:
-            policy = registry.optimizer_policy
-            if policy is None:
-                from ..optimizer import AdamW
-
-                policy = AdamW
-            optim_prec = lowered.context.optim_prec or 4
-            trainable_elements = trainable_parameter_elements(lowered)
-            opt_bytes = (
-                2 * trainable_elements * optim_prec + policy.workspace_bytes
-            )
-            registry = replace(
-                registry,
-                optimizer=OptimizerState(policy=policy, bytes=opt_bytes),
-                grad_accum=None,
             )
 
         return registry

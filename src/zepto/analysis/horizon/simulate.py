@@ -13,6 +13,8 @@ from zepto.compose.values import Tensor
 from ..lowering import lower
 from .records import HorizonSimulation, InvocationRecord
 from .spec import HorizonSpec, HorizonStep, StepKind
+from .state import trainable_parameter_elements
+from .training_boundary import training_boundary_cost
 
 if TYPE_CHECKING:
     from ..lowering.context import InvocationContext
@@ -64,6 +66,16 @@ def simulate_horizon(
         graph = compose_graph(module_fn, inputs)
         lowered = lower(graph, ctx, registry=registry)
         port_registry = port_registry.advance(step, lowered)
+        if step.kind == StepKind.BACKWARD and spec.optimizer_policy is not None:
+            trainable = trainable_parameter_elements(lowered)
+            cost = training_boundary_cost(
+                policy=spec.optimizer_policy,
+                trainable_elements=trainable,
+                context=ctx,
+            )
+            port_registry = port_registry.with_optimizer_state(
+                spec.optimizer_policy, cost.optimizer_state_bytes
+            )
         timeline.append(
             InvocationRecord(
                 step=step,

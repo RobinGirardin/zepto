@@ -75,7 +75,13 @@ def decode_step(
 
 
 def optimizer_step(*, seq_len: int, batch: int = 1) -> HorizonStep:
-    """Build one optimizer boundary step."""
+    """Build one optimizer boundary step.
+
+    .. deprecated::
+        Optimizer costs are applied at the training boundary in reducers,
+        not as a simulated horizon step. Prefer ``HorizonSpec.training()``
+        without an explicit optimizer step.
+    """
     return HorizonStep(
         kind=StepKind.OPTIMIZER,
         seq_len=seq_len,
@@ -123,12 +129,10 @@ class HorizonSpec:
         batch: int = 1,
         optimizer: OptimizerPolicy | None = AdamW,
     ) -> HorizonSpec:
-        """One training step: micro-batch forwards, backward, optimizer."""
+        """One training cycle: micro-batch forwards + backward (+ optimizer at reducer boundary)."""
         spec = cls(optimizer_policy=optimizer)
         spec.grad_accum(micro_batches, seq_len, batch=batch)
         spec.backward_step(seq_len, batch=batch)
-        if optimizer is not None:
-            spec.steps.append(optimizer_step(seq_len=seq_len, batch=batch))
         return spec
 
     @classmethod
@@ -234,5 +238,4 @@ class HorizonSpec:
         self.backward_step(seq_len, batch=batch)
         if optimizer is not None:
             self.optimizer_policy = optimizer
-            self.steps.append(optimizer_step(seq_len=seq_len, batch=batch))
         return self

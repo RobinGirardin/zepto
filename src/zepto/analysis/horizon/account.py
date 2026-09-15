@@ -11,7 +11,9 @@ from ..memory.simulator import ResourceEventSimulator
 from ..reports.horizon import HorizonFlopReport, HorizonMemoryReport
 from ..runtime import runtime_workspace_bytes
 from .records import HorizonSimulation
-from .state import snapshot_state_bytes
+from .spec import StepKind
+from .state import snapshot_state_bytes, trainable_parameter_elements
+from .training_boundary import training_boundary_cost
 
 
 class HorizonMemoryReducer:
@@ -53,6 +55,20 @@ class HorizonMemoryReducer:
             step_peak = (param_bytes or 0) + carry_state + max(transient_peak, 0)
             after_state = snapshot_state_bytes(record.state_after)
             boundary_peak = (param_bytes or 0) + after_state
+            if (
+                record.step.kind == StepKind.BACKWARD
+                and sim.spec.optimizer_policy is not None
+            ):
+                trainable = trainable_parameter_elements(record.lowered)
+                boundary = training_boundary_cost(
+                    policy=sim.spec.optimizer_policy,
+                    trainable_elements=trainable,
+                    context=record.lowered.context,
+                )
+                boundary_peak = max(
+                    boundary_peak,
+                    (param_bytes or 0) + after_state + boundary.optimizer_workspace_bytes,
+                )
             merged_peak = max(merged_peak, step_peak, boundary_peak)
 
             if index == 0:
@@ -100,6 +116,7 @@ class HorizonFlopReducer:
         total_forward = sum(report.forward_flops for report in per_step)
         total_backward = sum(report.backward_flops for report in per_step)
         total = sum(report.total_flops for report in per_step)
+        total += _optimizer_boundary_flops(sim)
         return HorizonFlopReport(
             total_forward_flops=total_forward,
             total_backward_flops=total_backward,
@@ -114,6 +131,22 @@ def account_horizon_memory(sim: HorizonSimulation) -> HorizonMemoryReport:
 
 def account_horizon_flops(sim: HorizonSimulation) -> HorizonFlopReport:
     return HorizonFlopReducer().reduce(sim)
+
+
+def _optimizer_boundary_flops(sim: HorizonSimulation) -> int:
+    """Sum optimizer update FLOPs once per backward when a policy is set."""
+    if sim.spec.optimizer_policy is None:
+        return 0
+    total = 0
+    for record in sim.timeline:
+        if record.step.kind != StepKind.BACKWARD:
+            continue
+        trainable = trainable_parameter_elements(record.lowered)
+        total += sim.spec.optimizer_policy.update_flops(
+            trainable_elements=trainable,
+            context=record.lowered.context,
+        )
+    return total
 
 
 def _merge_breakdowns(
