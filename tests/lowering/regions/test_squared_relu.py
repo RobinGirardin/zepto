@@ -92,6 +92,8 @@ def test_squared_relu_unfused_identity_baseline() -> None:
     )
     assert unfused_allocs == 2
     assert fused_allocs == 1
+    unfused_forward = sum(n.forward_flops for n in unfused.nodes)
+    assert unfused_forward == 4 * 8
 
 
 def test_squared_relu_no_backward_without_grad() -> None:

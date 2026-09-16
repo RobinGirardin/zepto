@@ -1,4 +1,4 @@
-"""Elementwise greater-than comparison operation declaration."""
+"""Elementwise equality comparison (torch.eq semantics)."""
 
 from zepto.compose.values import Tensor
 from ..ports import Port
@@ -7,12 +7,12 @@ from .helpers import allocate, broadcast_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
-class GreaterThan(Operation):
-    """Return an elementwise boolean mask where ``left > right``."""
+class Equal(Operation):
+    """Return an elementwise boolean mask where ``left == right``."""
 
     @property
     def family(self) -> str:
-        return "greater_than"
+        return "equal"
 
     @property
     def input_ports(self) -> tuple[Port, ...]:
@@ -40,7 +40,7 @@ class GreaterThan(Operation):
         return (
             Tensor(
                 shape=output.shape,
-                semantic_type=output.semantic_type,
+                semantic_type="comparison_mask",
                 requires_grad=False,
             ),
         )
@@ -65,4 +65,4 @@ class GreaterThan(Operation):
         return tuple(allocate(len(self.output_ports)))
 
 
-__all__ = ["GreaterThan"]
+__all__ = ["Equal"]

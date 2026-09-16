@@ -8,6 +8,7 @@ from .concat import Concat
 from .cos import Cos
 from .divide import Divide
 from .embedding_lookup import EmbeddingLookup
+from .equal import Equal
 from .erf import Erf
 from .exp import Exp
 from .gather import Gather
@@ -31,12 +32,14 @@ from .pow import Pow
 from .reduce_sum import ReduceSum
 from .repeat_kv import RepeatKV
 from .reshape import Reshape
+from .scatter_add import ScatterAdd
 from .sigmoid import Sigmoid
 from .sin import Sin
 from .split import Split
 from .square_root import SquareRoot
 from .subtract import Subtract
 from .tanh import Tanh
+from .topk import TopK
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -65,6 +68,7 @@ __all__ = [
     "DeclarationValidator",
     "Divide",
     "EmbeddingLookup",
+    "Equal",
     "Erf",
     "EstimationContext",
     "EstimationOperation",
@@ -97,6 +101,7 @@ __all__ = [
     "ResourceEvent",
     "ResourceEventKind",
     "Reshape",
+    "ScatterAdd",
     "SemanticOperation",
     "Sigmoid",
     "Sin",
@@ -104,6 +109,7 @@ __all__ = [
     "SquareRoot",
     "Subtract",
     "Tanh",
+    "TopK",
     "Transpose",
     "Where",
 ]

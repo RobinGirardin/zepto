@@ -18,7 +18,7 @@ def _identity_registry() -> LoweringRegistry:
 
 def test_compose_gelu_tanh_discovers_region() -> None:
     graph = compose_graph(
-        lambda ctx: GELUTanh(),
+        lambda _ctx: GELUTanh(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     registry = LoweringRegistry()
@@ -32,7 +32,7 @@ def test_compose_gelu_tanh_discovers_region() -> None:
 
 def test_compose_gelu_erf_discovers_region() -> None:
     graph = compose_graph(
-        lambda ctx: GELUErf(),
+        lambda _ctx: GELUErf(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     registry = LoweringRegistry()
@@ -46,7 +46,7 @@ def test_compose_gelu_erf_discovers_region() -> None:
 
 def test_gelu_tanh_fused_lowering_flops_and_allocs() -> None:
     graph = compose_graph(
-        lambda ctx: GELUTanh(),
+        lambda _ctx: GELUTanh(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     lowered = lower(graph, reference_invocation())
@@ -64,7 +64,7 @@ def test_gelu_tanh_fused_lowering_flops_and_allocs() -> None:
 
 def test_gelu_erf_fused_lowering_flops_and_allocs() -> None:
     graph = compose_graph(
-        lambda ctx: GELUErf(),
+        lambda _ctx: GELUErf(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     lowered = lower(graph, reference_invocation())
@@ -82,7 +82,7 @@ def test_gelu_erf_fused_lowering_flops_and_allocs() -> None:
 
 def test_gelu_tanh_fusion_map_absorbs_all_ops() -> None:
     graph = compose_graph(
-        lambda ctx: GELUTanh(),
+        lambda _ctx: GELUTanh(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     lowered = lower(graph, reference_invocation())
@@ -93,7 +93,7 @@ def test_gelu_tanh_fusion_map_absorbs_all_ops() -> None:
 
 def test_gelu_erf_fusion_map_absorbs_all_ops() -> None:
     graph = compose_graph(
-        lambda ctx: GELUErf(),
+        lambda _ctx: GELUErf(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     lowered = lower(graph, reference_invocation())
@@ -104,7 +104,7 @@ def test_gelu_erf_fusion_map_absorbs_all_ops() -> None:
 
 def test_gelu_tanh_unfused_identity_baseline() -> None:
     graph = compose_graph(
-        lambda ctx: GELUTanh(),
+        lambda _ctx: GELUTanh(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     registry = _identity_registry()
@@ -135,7 +135,7 @@ def test_gelu_tanh_unfused_identity_baseline() -> None:
 
 def test_gelu_erf_unfused_identity_baseline() -> None:
     graph = compose_graph(
-        lambda ctx: GELUErf(),
+        lambda _ctx: GELUErf(),
         (Tensor(shape=(4, 8), requires_grad=True),),
     )
     registry = _identity_registry()
@@ -167,7 +167,7 @@ def test_gelu_erf_unfused_identity_baseline() -> None:
 def test_gelu_no_backward_without_grad() -> None:
     for module_factory in (GELUTanh, GELUErf):
         graph = compose_graph(
-            module_factory,
+            lambda _ctx, factory=module_factory: factory(),
             (Tensor(shape=(4, 8), requires_grad=False),),
         )
         lowered = lower(graph, reference_invocation())

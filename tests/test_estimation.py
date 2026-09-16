@@ -53,7 +53,7 @@ def test_estimate_return_lowered() -> None:
 
     assert report.memory.peak_live_bytes >= 0
     assert len(lowered.nodes) == 1
-    assert report.flops.total_flops > 0
+    assert report.flops.total_flops == 0
 
 
 def test_estimate_identity_graph() -> None:

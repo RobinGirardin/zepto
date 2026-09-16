@@ -115,11 +115,8 @@ class Maximum(Operation):
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
-        """Return one comparison per output element."""
-        output = context.tensor_for("output")
-        if output is None:
-            raise ValueError("Estimation context must provide an 'output' port")
-        return numel(output)
+        """Comparisons are not billed as arithmetic FLOPs."""
+        return 0
 
     def backward_flops(self, context: EstimationContext) -> int:
         """Return masked multiply and broadcast reduction FLOPs."""
