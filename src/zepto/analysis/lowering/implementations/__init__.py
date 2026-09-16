@@ -6,6 +6,7 @@ from zepto.semantic.metadata import DType
 from zepto.semantic.operations import (
     Add,
     AttentionSoftmaxWithSink,
+    BilinearResize2D,
     Cast,
     Concat,
     Cos,
@@ -92,6 +93,7 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         MaterializedCausalMask(seq_len=1),
         MaterializedSlidingWindowCausalMask(seq_len=1, window_size=1),
         AttentionSoftmaxWithSink(),
+        BilinearResize2D(out_h=1, out_w=1),
         ParameterBias(),
         ParameterScale(),
         Pow(),

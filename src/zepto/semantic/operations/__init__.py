@@ -2,6 +2,7 @@
 
 from .base import EstimationOperation, Operation, SemanticOperation
 from .add import Add
+from .bilinear_resize_2d import BilinearResize2D
 from .cast import Cast
 from .concat import Concat
 from .cos import Cos
@@ -57,6 +58,7 @@ __all__ = [
     "AttentionSoftmaxWithSink",
     "AliasSpec",
     "BackwardSpec",
+    "BilinearResize2D",
     "Cast",
     "Concat",
     "Cos",

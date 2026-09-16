@@ -32,8 +32,29 @@ from .rms_norm import RMSNorm
 from .relu import ReLU
 from .silu import SiLU
 from .softplus import Softplus
+from .axial_rope_materialize import AxialRoPEMaterialize
+from .interpolated_position_grid import InterpolatedPositionGrid
+from .learned_position_embedding_2d import LearnedPositionEmbedding2D
+from .multimodal_rope_materialize import MultimodalRoPEMaterialize
 from .rope_apply import RoPE, RoPEApply
-from .rope_materialize import RoPEConfig, RoPEMaterialize
+from .rope_config import (
+    LayerRoPEBinding,
+    RoPEConfig,
+    apertus_rope,
+    bind_rope,
+    gemma4_layer_binding,
+    gemma4_rope_layer,
+    gpt_oss_layer_binding,
+    gpt_oss_rope,
+    granite_rope,
+    laguna_layer_binding,
+    laguna_rope_layer,
+    llama_rope,
+    muse_glimmer_layer_binding,
+    muse_glimmer_rope_layer,
+    qwen3_vl_mrope,
+)
+from .rope_materialize import RoPEMaterialize
 from .softmax import Softmax, attention_softmax_scale
 from .swiglu import SwiGLU
 from .xielu import XIELU
@@ -48,13 +69,31 @@ __all__ = [
     "AttentionConfig",
     "AttentionLayerTemplate",
     "AttentionSoftmaxWithSink",
+    "AxialRoPEMaterialize",
     "Embedding",
     "FlexibleAttention",
     "FFN",
     "GeGLU",
     "FusedLinearCrossEntropy",
     "GroupedQueryAttention",
+    "InterpolatedPositionGrid",
+    "LayerRoPEBinding",
+    "LearnedPositionEmbedding2D",
+    "MultimodalRoPEMaterialize",
     "SlidingWindowCausalMask",
+    "apertus_rope",
+    "bind_rope",
+    "gemma4_layer_binding",
+    "gemma4_rope_layer",
+    "gpt_oss_layer_binding",
+    "gpt_oss_rope",
+    "granite_rope",
+    "laguna_layer_binding",
+    "laguna_rope_layer",
+    "llama_rope",
+    "muse_glimmer_layer_binding",
+    "muse_glimmer_rope_layer",
+    "qwen3_vl_mrope",
     "gated_gqa",
     "gemma4_text_attention_layer",
     "gpt_oss_attention_layer",
