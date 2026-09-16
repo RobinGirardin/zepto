@@ -16,7 +16,11 @@ from .identity import Identity
 from .linear_matmul import LinearMatMul
 from .log import Log
 from .matmul import MatMul
+from .attention_softmax_with_sink import AttentionSoftmaxWithSink
 from .materialized_causal_mask import MaterializedCausalMask
+from .materialized_sliding_window_causal_mask import (
+    MaterializedSlidingWindowCausalMask,
+)
 from .maximum import Maximum
 from .minimum import Minimum
 from .multiply import Multiply
@@ -50,6 +54,7 @@ from .where import Where
 
 __all__ = [
     "Add",
+    "AttentionSoftmaxWithSink",
     "AliasSpec",
     "BackwardSpec",
     "Cast",
@@ -75,6 +80,7 @@ __all__ = [
     "MatMul",
     "Materialization",
     "MaterializedCausalMask",
+    "MaterializedSlidingWindowCausalMask",
     "Maximum",
     "Minimum",
     "Multiply",

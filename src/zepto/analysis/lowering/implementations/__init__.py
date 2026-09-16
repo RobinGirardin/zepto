@@ -5,6 +5,7 @@ from __future__ import annotations
 from zepto.semantic.metadata import DType
 from zepto.semantic.operations import (
     Add,
+    AttentionSoftmaxWithSink,
     Cast,
     Concat,
     Cos,
@@ -21,6 +22,7 @@ from zepto.semantic.operations import (
     Log,
     MatMul,
     MaterializedCausalMask,
+    MaterializedSlidingWindowCausalMask,
     Maximum,
     Minimum,
     Multiply,
@@ -47,12 +49,14 @@ from .regions import (
     FUSED_LINEAR_REGION,
     GELU_REGIONS,
     GQA_REGIONS,
+    GQA_SINK_REGIONS,
     LINEAR_CE_REGIONS,
     MASKED_SOFTMAX_REGIONS,
     RELU_REGIONS,
     RMSNORM_REGIONS,
     SILU_REGIONS,
     SQUARED_RELU_REGIONS,
+    SOFTMAX_ONE_REGIONS,
     SOFTMAX_REGIONS,
     SOFTPLUS_REGIONS,
     GEGLU_REGIONS,
@@ -86,6 +90,8 @@ def register_identity_defaults(registry: LoweringRegistry) -> None:
         GreaterThan(),
         Log(),
         MaterializedCausalMask(seq_len=1),
+        MaterializedSlidingWindowCausalMask(seq_len=1, window_size=1),
+        AttentionSoftmaxWithSink(),
         ParameterBias(),
         ParameterScale(),
         Pow(),
@@ -136,11 +142,15 @@ def register_regions(registry: LoweringRegistry) -> None:
         registry.register_region(impl)
     for impl in SOFTMAX_REGIONS:
         registry.register_region(impl)
+    for impl in SOFTMAX_ONE_REGIONS:
+        registry.register_region(impl)
     for impl in LINEAR_CE_REGIONS:
         registry.register_region(impl)
     for impl in MASKED_SOFTMAX_REGIONS:
         registry.register_region(impl)
     for impl in GQA_REGIONS:
+        registry.register_region(impl)
+    for impl in GQA_SINK_REGIONS:
         registry.register_region(impl)
     for impl in SWIGLU_REGIONS:
         registry.register_region(impl)

@@ -19,7 +19,17 @@ from .gqa import (
     GQASDPAMathRecipe,
 )
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
-from .masked_softmax import DEFAULT_MASKED_SOFTMAX_RECIPE, MaskedSoftmaxRecipe
+from .masked_softmax import (
+    DEFAULT_MASKED_SOFTMAX_RECIPE,
+    DEFAULT_MASKED_SOFTMAX_SINK_RECIPE,
+    MaskedSoftmaxRecipe,
+    MaskedSoftmaxSinkRecipe,
+)
+from .softmax_one import (
+    DEFAULT_SOFTMAX_ONE_RECIPE,
+    MEGATRON_SOFTMAX_ONE_RECIPE,
+    SoftmaxOneRecipe,
+)
 from .rmsnorm import RMSNormRecipe
 from .softmax import DEFAULT_SOFTMAX_RECIPE, SoftmaxRecipe
 from .relu import DEFAULT_RELU_RECIPE, SAVED_INPUT_RELU_RECIPE, ReLURecipe
@@ -53,11 +63,16 @@ __all__ = [
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",
+    "DEFAULT_MASKED_SOFTMAX_SINK_RECIPE",
+    "DEFAULT_SOFTMAX_ONE_RECIPE",
+    "MEGATRON_SOFTMAX_ONE_RECIPE",
     "DEFAULT_SDPA_MATH_RECIPE",
     "DEFAULT_SOFTMAX_RECIPE",
     "GQARecipe",
     "GQASDPAMathRecipe",
     "MaskedSoftmaxRecipe",
+    "MaskedSoftmaxSinkRecipe",
+    "SoftmaxOneRecipe",
     "DEFAULT_SILU_RECIPE",
     "DEFAULT_SQUARED_RELU_RECIPE",
     "ReLURecipe",

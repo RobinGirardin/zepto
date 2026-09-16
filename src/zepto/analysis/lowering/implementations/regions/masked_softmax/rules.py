@@ -25,3 +25,15 @@ MASKED_SOFTMAX_PROVENANCE = ProvenanceMatchRule(
     component_type="GroupedQueryAttention",
     require_contiguous_in_graph_order=True,
 )
+
+MASKED_SOFTMAX_SINK_PATTERN = PatternMatchRule(
+    id="pat-masked-softmax-sink-gqa-score",
+    kind="region/masked_softmax",
+    priority=7,
+    op_families=("add", "multiply", "attention_softmax_with_sink"),
+)
+
+MASKED_SOFTMAX_SINK_OP_SEQUENCES: tuple[tuple[str, ...], ...] = (
+    MASKED_SOFTMAX_SINK_PATTERN.op_families,
+    ("add", "attention_softmax_with_sink"),
+)

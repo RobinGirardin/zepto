@@ -22,7 +22,8 @@ from .helpers import (
     build_region_estimation_context,
     ensure_lowered_edge,
 )
-from .plan import build_lowering_plan
+from .mask_elision import apply_mask_elision
+from .plan import build_lowering_plan, resolve_overlaps
 from .registry import (
     ImplementationSelection,
     LoweringRegistry,
@@ -81,6 +82,7 @@ def lower(
     _register_parameters(graph, context, state)
 
     regions = discover_regions(graph, context, active_registry)
+    winning_regions = resolve_overlaps(graph, regions, context, active_registry)
     plan = build_lowering_plan(graph, regions, context, active_registry)
 
     for step in plan.steps:
@@ -92,6 +94,13 @@ def lower(
             lower_operation(
                 step.operation_id, graph, context, active_registry, state
             )
+
+    apply_mask_elision(
+        graph,
+        winning_regions,
+        nodes=state.nodes,
+        node_map=state.node_map,
+    )
 
     output_edge_ids = tuple(
         state.edge_map[output_id] for output_id in graph.outputs
@@ -209,7 +218,7 @@ def lower_region(
         "estimation": estimation,
         "lowered_edges": state.lowered_edges,
     }
-    if region.kind == "region/gqa":
+    if region.kind in ("region/gqa", "region/gqa-sink"):
         lower_kwargs["state_port_collector"] = state.state_port_events
     lowered_node = impl.lower(
         region,

@@ -40,7 +40,9 @@ if TYPE_CHECKING:
         Log,
         MatMul,
         Materialization,
+        AttentionSoftmaxWithSink,
         MaterializedCausalMask,
+        MaterializedSlidingWindowCausalMask,
         Maximum,
         Minimum,
         Multiply,
@@ -69,6 +71,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Add",
+    "AttentionSoftmaxWithSink",
     "AliasSpec",
     "BackwardSpec",
     "Cast",
@@ -96,6 +99,7 @@ __all__ = [
     "MatMul",
     "Materialization",
     "MaterializedCausalMask",
+    "MaterializedSlidingWindowCausalMask",
     "Maximum",
     "Minimum",
     "Multiply",
