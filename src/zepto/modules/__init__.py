@@ -23,7 +23,19 @@ from .gated_delta_net import GatedDeltaNet
 from .gated_delta_scan import GatedDeltaScan
 from .gated_grouped_rms_norm import GatedGroupedRMSNorm
 from .gated_rms_norm import GatedRMSNorm
+from .attention_moe_decoder_block import AttentionMoEDecoderBlock
+from .decoder_attention_context import DecoderAttentionContext, LayerAttentionInputs
+from .gemma4 import GEMMA4_31B_IT, Gemma4, Gemma4Config
+from .gpt_oss import GPT_OSS_20B, GptOss, GptOssConfig
+from .granite import GRANITE_42_30B, Granite, GraniteConfig
 from .hybrid_decoder_block import HybridDecoderBlock
+from .laguna_decoder_block import LagunaDecoderBlock
+from .laguna_xs import LAGUNA_XS_21, LagunaXs, LagunaXsConfig
+from .multimodal_language_model import embed_multimodal_sequence
+from .muse_glimmer import MUSE_GLIMMER_30B, MuseGlimmer, MuseGlimmerConfig
+from .nemotron_h import NEMOTRON_H_30B_A3B, NemotronH, NemotronHConfig
+from .qwen38 import QWEN38_27B, Qwen38, Qwen38Config
+from .swiglu_decoder_block import SwiGLUDecoderBlock
 from .l2_normalize import L2Normalize
 from .layer_spec import LayerSpec, MixerKind
 from .mamba2_mixer import Mamba2Mixer
@@ -153,7 +165,34 @@ __all__ = [
     "GatedDeltaScan",
     "GatedGroupedRMSNorm",
     "GatedRMSNorm",
+    "AttentionMoEDecoderBlock",
+    "DecoderAttentionContext",
+    "GEMMA4_31B_IT",
+    "GPT_OSS_20B",
+    "GRANITE_42_30B",
+    "Gemma4",
+    "Gemma4Config",
+    "GptOss",
+    "GptOssConfig",
+    "Granite",
+    "GraniteConfig",
     "HybridDecoderBlock",
+    "LAGUNA_XS_21",
+    "LagunaDecoderBlock",
+    "LagunaXs",
+    "LagunaXsConfig",
+    "LayerAttentionInputs",
+    "MUSE_GLIMMER_30B",
+    "MuseGlimmer",
+    "MuseGlimmerConfig",
+    "NEMOTRON_H_30B_A3B",
+    "NemotronH",
+    "NemotronHConfig",
+    "QWEN38_27B",
+    "Qwen38",
+    "Qwen38Config",
+    "SwiGLUDecoderBlock",
+    "embed_multimodal_sequence",
     "L2Normalize",
     "LayerSpec",
     "Mamba2Mixer",

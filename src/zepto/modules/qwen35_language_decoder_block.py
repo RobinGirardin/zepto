@@ -8,7 +8,9 @@ from zepto.semantic import Add
 from .attention import FlexibleAttention
 from .gated_delta_net import GatedDeltaNet
 from .layer_spec import LayerSpec
+from .qk_norm import QKNormRMSNorm
 from .rms_norm import RMSNorm
+from .rope_apply import RoPEApply
 from .swiglu import SwiGLU
 
 
@@ -35,7 +37,14 @@ class Qwen35LanguageDecoderBlock(Module):
             self.mixer = GatedDeltaNet(spec.gated_delta)
         else:
             assert spec.attention is not None
-            self.mixer = FlexibleAttention(spec.attention)
+            qk = QKNormRMSNorm(spec.attention.head_dim)
+            rope = RoPEApply(
+                spec.attention.head_dim,
+                rotary_dim=64,
+            )
+            self.mixer = FlexibleAttention(
+                spec.attention, qk_norm=qk, rope=rope
+            )
         self.ffn = SwiGLU(hidden, spec.swiglu_intermediate)
         self._mixer_kind = spec.mixer
 
