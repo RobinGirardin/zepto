@@ -120,13 +120,7 @@ def test_gated_rms_norm_pin_reference() -> None:
     assert lowered.nodes[0].implementation == "region/gated_rms_norm/reference"
 
 
-@pytest.mark.skip(
-    reason=(
-        "GatedDeltaNet calls out_norm per head; one provenance envelope spans all "
-        "heads with parent reshape gaps — contiguous hybrid discovery is TBD"
-    )
-)
-def test_gated_delta_net_stack_includes_gated_rms_norm_leaf() -> None:
+def test_gated_delta_net_stack_subsumed_by_block_region() -> None:
     cfg = GatedDeltaNetConfig(
         hidden_size=32,
         num_qk_heads=2,
@@ -139,7 +133,6 @@ def test_gated_delta_net_stack_includes_gated_rms_norm_leaf() -> None:
     )
     registry = LoweringRegistry()
     register_defaults(registry)
-    regions = discover_regions(graph, _fused_context(), registry)
-    kinds = {r.kind for r in regions}
-    assert "region/gated_rms_norm" in kinds
-    assert "region/gated_delta_scan" in kinds
+    lowered = lower(graph, _fused_context())
+    assert len(lowered.nodes) == 1
+    assert lowered.nodes[0].implementation.startswith("region/gated_delta_net/")

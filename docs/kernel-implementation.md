@@ -296,7 +296,7 @@ Apertus-8B, \(S{=}8192\), one hidden RMSNorm: \(S d e = 64\,\mathrm{MiB}\) bf16.
 
 ### L2-normalize (last-dim, no γ)
 
-Registered: `region/l2_normalize/reference`, `region/l2_normalize/fla` (default on generic hardware). Un-averaged sum-of-squares + ε with fp32 reduction — module spec in [`docs/plans/step5-stateful-mixers.md`](plans/step5-stateful-mixers.md) §7.6; full kernel research in [`docs/kernel/l2-normalize.md`](kernel/l2-normalize.md). Fused leaf: **\(3n\)** forward, **\(4n\)** backward, **`SAVE rstd`** when training. `GatedDeltaNet` bills two standalone leaves (Q, K) unless a future `region/gated_delta_scan` in-kernel norm subsumes them (composition rule TBD).
+Registered: `region/l2_normalize/reference`, `region/l2_normalize/fla` (default on generic hardware). Un-averaged sum-of-squares + ε with fp32 reduction — module spec in [`docs/plans/step5-stateful-mixers.md`](plans/step5-stateful-mixers.md) §7.6; full kernel research in [`docs/kernel/l2-normalize.md`](kernel/l2-normalize.md). Fused leaf: **\(3n\)** forward, **\(4n\)** backward, **`SAVE rstd`** when training. When `region/gated_delta_net` wins overlap resolution, standalone Q/K L2 leaves on the same module instance are **subsumed** (block envelope bills the pair once); `region/gated_delta_net/fla_layer_parity` excludes L2 FLOPs when `use_qk_l2norm_in_kernel=True`.
 
 ### Depthwise causal Conv1D (+ optional SiLU)
 
@@ -304,7 +304,11 @@ Registered: `region/depthwise_causal_conv1d/decomposed` (default on non-CUDA har
 
 ### Gated delta scan (Gated DeltaNet recurrence)
 
-Registered: `region/gated_delta_scan/reference` (default on non-CUDA hardware), `region/gated_delta_scan` (FLA chunk prefill on CUDA), `region/gated_delta_scan/decode` (single-step recurrent decode when `S=1` and `scan_state_in` / horizon recurrent port). Identity module `GatedDeltaScan` remains the S-unrolled reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(S h (8 d_k d_v + 2 d_v + 1)\)** forward, **\(S h (16 d_k d_v + 4 d_v + 4)\)** backward when training; elides per-step `decayed` / `prediction` / `delta` / `outer` temps; **`SAVE state_checkpoint`** `[S,h,d_k,d_v]` fp32 when training. Default `GatedDeltaNet` stack keeps **two** standalone `region/l2_normalize` leaves on Q/K — scan leaf does **not** include L2 FLOPs unless a future in-kernel L2 variant subsumes them. Full research: [`docs/kernel/gated-delta-scan.md`](kernel/gated-delta-scan.md).
+Registered: `region/gated_delta_scan/reference` (default on non-CUDA hardware), `region/gated_delta_scan` (FLA chunk prefill on CUDA), `region/gated_delta_scan/decode` (single-step recurrent decode when `S=1` and `scan_state_in` / horizon recurrent port). Identity module `GatedDeltaScan` remains the S-unrolled reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(S h (8 d_k d_v + 2 d_v + 1)\)** forward, **\(S h (16 d_k d_v + 4 d_v + 4)\)** backward when training; elides per-step `decayed` / `prediction` / `delta` / `outer` temps; **`SAVE state_checkpoint`** `[S,h,d_k,d_v]` fp32 when training. On a full `GatedDeltaNet` graph with `requested_capabilities={'fused'}`, prefer **`region/gated_delta_net/composed_tier_a`** (prefix envelope, priority 10) so child scan/L2/conv/norm regions do not double-bill; scan leaf does **not** include L2 FLOPs. Full research: [`docs/kernel/gated-delta-scan.md`](kernel/gated-delta-scan.md).
+
+### Gated DeltaNet block envelope
+
+Registered: `region/gated_delta_net/composed_tier_a` (default Tier-A sum on any hardware), `region/gated_delta_net/fla_layer_parity` (CUDA; in-kernel Q/K L2 parity flags), `region/gated_delta_net/decode` (\(S=1\) + conv/scan state ports). Requires `requested_capabilities={'fused'}` plus `conv_state_port` / `recurrent_state_port`. Default block forward/backward equals the kernel-accurate sum in research §4.2 / §5 (three linear GEMMs, conv+SiLU, L2×2, gate glue, scan, gated RMSNorm, o_proj) with **mutual exclusion** vs overlapping Tier-A leaves. **`PERSIST`** conv and scan state outputs once at block boundary (G3). Pin: `module_implementation_pins={"GatedDeltaNet": "region/gated_delta_net/composed_tier_a"}`. Full research: [`docs/kernel/gated-delta-net.md`](kernel/gated-delta-net.md).
 
 ### Mamba-2 selective SSM scan
 

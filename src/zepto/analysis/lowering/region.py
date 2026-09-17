@@ -39,6 +39,7 @@ class ProvenanceMatchRule(RegionMatchRule):
 
     component_type: str | None = None
     module_path_suffix: tuple[str, ...] = ()
+    module_path_envelope: bool = False
     require_contiguous_in_graph_order: bool = True
 
 

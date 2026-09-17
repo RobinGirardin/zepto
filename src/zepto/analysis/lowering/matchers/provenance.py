@@ -35,6 +35,9 @@ class ProvenanceRegionMatcher:
 
         regions: list[Region] = []
         for rule in self._rules:
+            if rule.module_path_envelope:
+                regions.extend(self._find_envelope_regions(graph, rule))
+                continue
             for (module_path, component_type), operation_ids in groups.items():
                 if not self._matches_rule(rule, module_path, component_type):
                     continue
@@ -60,6 +63,54 @@ class ProvenanceRegionMatcher:
                     )
                 )
         return tuple(regions)
+
+    def _find_envelope_regions(
+        self,
+        graph: Graph,
+        rule: ProvenanceMatchRule,
+    ) -> list[Region]:
+        """Gather all ops under each matched module invocation prefix."""
+        envelope_roots: set[tuple[str, ...]] = set()
+        for operation_id in graph.node_order:
+            op = graph.node(operation_id)
+            module_path = op.provenance.module_path
+            component_type = op.provenance.component_type
+            if not self._matches_rule(rule, module_path, component_type):
+                continue
+            envelope_roots.add(module_path)
+
+        regions: list[Region] = []
+        for root in sorted(envelope_roots):
+            op_ids = [
+                operation_id
+                for operation_id in graph.node_order
+                if graph.node(operation_id).provenance.module_path[: len(root)]
+                == root
+            ]
+            if not op_ids:
+                continue
+            op_tuple = tuple(op_ids)
+            if rule.require_contiguous_in_graph_order and not (
+                operations_contiguous_in_graph(graph, op_tuple)
+            ):
+                continue
+            anchor = graph.node(op_tuple[0]).provenance
+            boundary_inputs, boundary_outputs, parameter_ids = (
+                compute_region_boundaries(graph, op_tuple)
+            )
+            regions.append(
+                Region(
+                    id=make_region_id(rule.kind, anchor, op_tuple[0]),
+                    kind=rule.kind,
+                    anchor=anchor,
+                    operation_ids=op_tuple,
+                    boundary_inputs=boundary_inputs,
+                    boundary_outputs=boundary_outputs,
+                    parameter_ids=parameter_ids,
+                    matcher_id=rule.id,
+                )
+            )
+        return regions
 
     @staticmethod
     def _matches_rule(
