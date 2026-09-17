@@ -643,6 +643,7 @@ At \(S{=}4096\), \(B{=}4\): one batched \((B,h,S,S)\) buffer is \(4 \times 32 \t
 | `region/gqa-sink` | GPT-OSS sink softmax (boundary C) | [`gqa-sink-softmax.md`](kernel/gqa-sink-softmax.md) | same as `region/gqa` flash; do not stack with A′/B′ on same layer |
 | `region/gqa/paged` | Decode / paged KV | §11.9 | no \(S\times S\); softmax over \(S_{\mathrm{cache}}\) |
 | `region/linear_ce` | LM-head training CE (boundary D) | \(2 S d V + 3 S V\) | chunk logits, **not** 0; §14 |
+| `region/linear_ce_softcap` | LM-head training CE + tanh cap (boundary D) | \(2 S d V + 10 S V\) | same chunk as §14; [`linear-ce-softcap.md`](kernel/linear-ce-softcap.md) |
 
 Tag `numerics="stable_fp32"` on HF-comparable estimates without inserting Cast ops unless comparing byte-for-byte to eager Transformers. **Implementation order** (gap G4): `region/rmsnorm` → `region/softmax` + `region/masked_softmax` → golden vs Atto at \(S \in \{8192, 65536\}\) → `region/gqa` backend variants (§11.8–§11.11) → `region/linear_ce`.
 
@@ -1328,6 +1329,17 @@ Same training problem as Liger FLCE ([Hub card](https://huggingface.co/trl-lib/f
 | **Backend** | CUDA / ROCm Triton | CUDA-only wheels today |
 
 Both are `region/linear_ce` variants. Neither is attention masked softmax. Prefer Liger’s closed form when costing `use_liger_kernel=True`; use the vocab-tile formula when costing the Hub kernel.
+
+### 14.2 Capped FLCE (`region/linear_ce_softcap`)
+
+Muse Glimmer / Gemma 4 training applies \(c \cdot \tanh(z/c)\) (and optional output scale) **before** vocab softmax + CE. Zepto module `CappedFusedLinearCrossEntropy` decomposes to 12 ops; fused leaf `region/linear_ce_softcap/*` bills one Liger-style path:
+
+\[
+\mathrm{FLOPs}_{\mathrm{fwd}} = 2 S d V + 10 S V + 2 S,\qquad
+\mathrm{FLOPs}_{\mathrm{bwd}} \approx 6 S d V + 19 S V.
+\]
+
+**Delta vs uncapped `region/linear_ce`:** **\(+7 S V\)** forward on the vocab axis (fused cap leaf). Peak logits VRAM uses the same \(\min(SVe,\, C S d e)\) chunk formula with \(C{=}16\) — cap does not add HBM logits beyond the uncapped FLCE tile. Do **not** sum `region/linear_ce` + `region/logit_softcap` backward leaves (\(15 S V\)) when the parent region matches; use the unified recipe in [`linear-ce-softcap.md`](kernel/linear-ce-softcap.md). Variants: `reference`, `liger` (exclude XPU/MPS), `hub-trl` (CUDA-only; softcap API unverified on Hub).
 
 ---
 

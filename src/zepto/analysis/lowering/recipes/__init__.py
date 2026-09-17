@@ -55,6 +55,10 @@ from .gated_rms_norm import (
 )
 from .l2_normalize import DEFAULT_L2_NORMALIZE_RECIPE, L2NormalizeRecipe
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
+from .linear_ce_softcap import (
+    DEFAULT_LINEAR_CE_SOFTCAP_RECIPE,
+    LinearCESoftcapRecipe,
+)
 from .masked_softmax import (
     DEFAULT_MASKED_SOFTMAX_RECIPE,
     DEFAULT_MASKED_SOFTMAX_SINK_RECIPE,
@@ -119,7 +123,9 @@ __all__ = [
     "DEFAULT_GATED_RMS_NORM_RECIPE",
     "GatedRMSNormRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",
+    "DEFAULT_LINEAR_CE_SOFTCAP_RECIPE",
     "LinearCERecipe",
+    "LinearCESoftcapRecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",
     "DEFAULT_MASKED_SOFTMAX_SINK_RECIPE",
     "DEFAULT_SOFTMAX_ONE_RECIPE",

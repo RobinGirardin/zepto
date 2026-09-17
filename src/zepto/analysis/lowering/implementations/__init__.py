@@ -68,6 +68,7 @@ from .regions import (
     L2_NORMALIZE_REGIONS,
     LOGIT_SOFT_CAP_REGIONS,
     LINEAR_CE_REGIONS,
+    LINEAR_CE_SOFTCAP_REGIONS,
     MASKED_SOFTMAX_REGIONS,
     RELU_REGIONS,
     RMSNORM_REGIONS,
@@ -198,6 +199,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in GATED_RMS_NORM_REGIONS:
         registry.register_region(impl)
     for impl in LINEAR_CE_REGIONS:
+        registry.register_region(impl)
+    for impl in LINEAR_CE_SOFTCAP_REGIONS:
         registry.register_region(impl)
     for impl in MASKED_SOFTMAX_REGIONS:
         registry.register_region(impl)
