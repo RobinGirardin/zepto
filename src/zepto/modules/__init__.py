@@ -17,7 +17,20 @@ from .attention_config import (
     repeat_pattern,
 )
 from .attention_softmax_with_sink import AttentionSoftmaxWithSink
+from .depthwise_causal_conv1d import DepthwiseCausalConv1d
 from .embedding import Embedding
+from .gated_delta_net import GatedDeltaNet
+from .gated_delta_scan import GatedDeltaScan
+from .gated_grouped_rms_norm import GatedGroupedRMSNorm
+from .gated_rms_norm import GatedRMSNorm
+from .hybrid_decoder_block import HybridDecoderBlock
+from .l2_normalize import L2Normalize
+from .layer_spec import LayerSpec, MixerKind
+from .mamba2_mixer import Mamba2Mixer
+from .mixer_config import GatedDeltaNetConfig, Mamba2MixerConfig
+from .mixer_presets import nemotron_h_layer_specs, qwen35_language_layer_specs
+from .qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
+from .selective_ssm_scan import SelectiveSSMScan
 from .ffn import FFN
 from .geglu import GeGLU
 from .gpt_oss_expert import GptOssExpert
@@ -84,8 +97,24 @@ __all__ = [
     "AttentionLayerTemplate",
     "AttentionSoftmaxWithSink",
     "AxialRoPEMaterialize",
+    "DepthwiseCausalConv1d",
     "Embedding",
     "FlexibleAttention",
+    "GatedDeltaNet",
+    "GatedDeltaNetConfig",
+    "GatedDeltaScan",
+    "GatedGroupedRMSNorm",
+    "GatedRMSNorm",
+    "HybridDecoderBlock",
+    "L2Normalize",
+    "LayerSpec",
+    "Mamba2Mixer",
+    "Mamba2MixerConfig",
+    "MixerKind",
+    "Qwen35LanguageDecoderBlock",
+    "SelectiveSSMScan",
+    "nemotron_h_layer_specs",
+    "qwen35_language_layer_specs",
     "FFN",
     "GeGLU",
     "GptOssExpert",

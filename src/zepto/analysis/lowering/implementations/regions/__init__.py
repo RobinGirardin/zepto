@@ -99,6 +99,7 @@ from .xielu import (
     FUSED_XIELU_REFERENCE,
     XIELU_REGIONS,
 )
+from .mixer_stub import MIXER_STUB_REGIONS
 
 __all__ = [
     "FUSED_GEGLU_DECOMPOSED",
@@ -177,4 +178,5 @@ __all__ = [
     "SOFTPLUS_REGIONS",
     "SOFTMAX_REGIONS",
     "XIELU_REGIONS",
+    "MIXER_STUB_REGIONS",
 ]

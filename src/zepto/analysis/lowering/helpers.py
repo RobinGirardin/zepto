@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING, Literal, Mapping
 
 from zepto.compose.values import Tensor
 from zepto.graph.edge import Edge
@@ -490,3 +490,181 @@ def register_kv_cache_aux(
         storage_id=aux_id,
         lowered_edges=lowered_edges,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ConvScenario:
+    """Resolved depthwise conv buffer geometry for state-aware lowering."""
+
+    layer_index: int | None
+    channels: int
+    kernel_size: int
+    dtype_itemsize: int
+
+
+@dataclass(frozen=True, slots=True)
+class RecurrentScenario:
+    """Resolved recurrent scan state geometry for state-aware lowering."""
+
+    layer_index: int | None
+    kind: Literal["gated_delta", "mamba2"]
+    num_heads: int
+    head_dim: int
+    state_dim: int
+    dtype_itemsize: int
+
+
+def _conv_state_from_context(
+    state: tuple[tuple[str, object], ...],
+    layer_index: int | None,
+) -> object | None:
+    from zepto.analysis.horizon.state import Conv1DState
+
+    if layer_index is not None:
+        key = f"conv_state:{layer_index}"
+        for name, value in state:
+            if name == key and isinstance(value, Conv1DState):
+                return value
+    for _name, value in state:
+        if isinstance(value, Conv1DState):
+            return value
+    return None
+
+
+def _scan_state_from_context(
+    state: tuple[tuple[str, object], ...],
+    layer_index: int | None,
+) -> object | None:
+    from zepto.analysis.horizon.state import RecurrentScanState
+
+    if layer_index is not None:
+        key = f"scan_state:{layer_index}"
+        for name, value in state:
+            if name == key and isinstance(value, RecurrentScanState):
+                return value
+    for _name, value in state:
+        if isinstance(value, RecurrentScanState):
+            return value
+    return None
+
+
+def resolve_conv_scenario(
+    context: InvocationContext,
+    module_path: tuple[str, ...],
+) -> ConvScenario | None:
+    """Resolve conv buffer geometry when horizon state is present."""
+    from zepto.analysis.horizon.state import Conv1DState, _ConvTemplate
+
+    layer = layer_index_from_module_path(module_path)
+    conv_state = _conv_state_from_context(context.state, layer)
+    template: _ConvTemplate | None = None
+    for name, value in context.state:
+        if name == "conv_template":
+            template = value  # type: ignore[assignment]
+            break
+
+    if conv_state is None and template is None:
+        return None
+
+    if isinstance(conv_state, Conv1DState):
+        return ConvScenario(
+            layer_index=conv_state.layer_index,
+            channels=conv_state.channels,
+            kernel_size=conv_state.kernel_size,
+            dtype_itemsize=conv_state.dtype.itemsize or 0,
+        )
+    assert template is not None
+    return ConvScenario(
+        layer_index=layer,
+        channels=template.channels,
+        kernel_size=template.kernel_size,
+        dtype_itemsize=template.dtype.itemsize or 0,
+    )
+
+
+def resolve_recurrent_scenario(
+    context: InvocationContext,
+    module_path: tuple[str, ...],
+) -> RecurrentScenario | None:
+    """Resolve recurrent scan geometry when horizon state is present."""
+    from zepto.analysis.horizon.state import RecurrentScanState, _RecurrentTemplate
+
+    layer = layer_index_from_module_path(module_path)
+    scan_state = _scan_state_from_context(context.state, layer)
+    template: _RecurrentTemplate | None = None
+    for name, value in context.state:
+        if name == "recurrent_template":
+            template = value  # type: ignore[assignment]
+            break
+
+    if scan_state is None and template is None:
+        return None
+
+    if isinstance(scan_state, RecurrentScanState):
+        return RecurrentScenario(
+            layer_index=scan_state.layer_index,
+            kind=scan_state.kind,
+            num_heads=scan_state.num_heads,
+            head_dim=scan_state.head_dim,
+            state_dim=scan_state.state_dim,
+            dtype_itemsize=scan_state.dtype.itemsize or 0,
+        )
+    assert template is not None
+    for spec in template.layers:
+        if layer is None or spec[0] == layer:
+            return RecurrentScenario(
+                layer_index=spec[0],
+                kind="gated_delta" if spec[1] == "gated_delta" else "mamba2",
+                num_heads=spec[2],
+                head_dim=spec[3],
+                state_dim=spec[4],
+                dtype_itemsize=template.dtype.itemsize or 0,
+            )
+    return None
+
+
+def conv_state_port_events(
+    *,
+    region_id: str,
+    scenario: ConvScenario,
+) -> tuple[StatePortEvent, ResourceEvent, ResourceEvent, str]:
+    """Build state-port and resource events for one layer's conv buffer."""
+    aux_id = f"region:{region_id}:conv_state"
+    byte_count = scenario.channels * scenario.kernel_size * scenario.dtype_itemsize
+    layer = scenario.layer_index
+    port_name = f"conv_state:{layer}" if layer is not None else aux_id
+    state_event = StatePortEvent(
+        port_name=port_name,
+        kind=ResourceEventKind.ALLOCATE,
+        bytes=byte_count,
+        layer_index=layer,
+    )
+    allocate = ResourceEvent(ResourceEventKind.ALLOCATE, aux_id)
+    persist = ResourceEvent(ResourceEventKind.PERSIST, aux_id)
+    return state_event, allocate, persist, aux_id
+
+
+def recurrent_state_port_events(
+    *,
+    region_id: str,
+    scenario: RecurrentScenario,
+) -> tuple[StatePortEvent, ResourceEvent, ResourceEvent, str]:
+    """Build state-port and resource events for one layer's scan state."""
+    aux_id = f"region:{region_id}:scan_state"
+    byte_count = (
+        scenario.num_heads
+        * scenario.head_dim
+        * scenario.state_dim
+        * scenario.dtype_itemsize
+    )
+    layer = scenario.layer_index
+    port_name = f"scan_state:{layer}" if layer is not None else aux_id
+    state_event = StatePortEvent(
+        port_name=port_name,
+        kind=ResourceEventKind.ALLOCATE,
+        bytes=byte_count,
+        layer_index=layer,
+    )
+    allocate = ResourceEvent(ResourceEventKind.ALLOCATE, aux_id)
+    persist = ResourceEvent(ResourceEventKind.PERSIST, aux_id)
+    return state_event, allocate, persist, aux_id
