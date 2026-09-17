@@ -223,6 +223,8 @@ def lower_region(
         "region/gqa-sink",
         "region/depthwise_causal_conv1d",
         "region/gated_delta_scan",
+        "region/gated_delta_net",
+        "region/mamba2_mixer",
         "region/mamba2_scan",
     ):
         lower_kwargs["state_port_collector"] = state.state_port_events

@@ -73,7 +73,7 @@ from .regions import (
     GEGLU_REGIONS,
     SWIGLU_REGIONS,
     XIELU_REGIONS,
-    MIXER_STUB_REGIONS,
+    MAMBA2_MIXER_REGIONS,
 )
 
 
@@ -186,7 +186,7 @@ def register_regions(registry: LoweringRegistry) -> None:
         registry.register_region(impl)
     for impl in GEGLU_REGIONS:
         registry.register_region(impl)
-    for impl in MIXER_STUB_REGIONS:
+    for impl in MAMBA2_MIXER_REGIONS:
         registry.register_region(impl)
 
 

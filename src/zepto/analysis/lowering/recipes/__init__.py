@@ -33,6 +33,12 @@ from .gated_delta_scan import (
     DEFAULT_GATED_DELTA_SCAN_RECIPE,
     GatedDeltaScanRecipe,
 )
+from .mamba2_mixer import (
+    DECODE_MAMBA2_MIXER_RECIPE,
+    DEFAULT_MAMBA2_MIXER_RECIPE,
+    HUB_MEGA_MAMBA2_MIXER_RECIPE,
+    Mamba2MixerRecipe,
+)
 from .mamba2_scan import (
     DECODE_MAMBA2_SCAN_RECIPE,
     DEFAULT_MAMBA2_SCAN_RECIPE,
@@ -100,6 +106,10 @@ __all__ = [
     "DEFAULT_L2_NORMALIZE_RECIPE",
     "DepthwiseCausalConv1dRecipe",
     "GatedDeltaScanRecipe",
+    "DECODE_MAMBA2_MIXER_RECIPE",
+    "DEFAULT_MAMBA2_MIXER_RECIPE",
+    "HUB_MEGA_MAMBA2_MIXER_RECIPE",
+    "Mamba2MixerRecipe",
     "DECODE_MAMBA2_SCAN_RECIPE",
     "DEFAULT_MAMBA2_SCAN_RECIPE",
     "Mamba2ScanRecipe",
