@@ -23,9 +23,6 @@ def _prov(rule_id: str, kind: str, component: str) -> ProvenanceMatchRule:
     )
 
 
-GATED_DELTA_SCAN_PROVENANCE = _prov(
-    "prov-gated-delta-scan", "region/gated_delta_scan", "GatedDeltaScan"
-)
 MAMBA2_SCAN_PROVENANCE = _prov(
     "prov-mamba2-scan", "region/mamba2_scan", "SelectiveSSMScan"
 )
@@ -86,7 +83,6 @@ def _stub(kind: str, provenance: ProvenanceMatchRule) -> _StubMixerRegion:
 
 
 MIXER_STUB_REGIONS: tuple[_StubMixerRegion, ...] = (
-    _stub("region/gated_delta_scan", GATED_DELTA_SCAN_PROVENANCE),
     _stub("region/mamba2_scan", MAMBA2_SCAN_PROVENANCE),
     _stub("region/gated_rms_norm", GATED_RMS_NORM_PROVENANCE),
     _stub("region/gated_grouped_rms_norm", GATED_GROUPED_RMS_NORM_PROVENANCE),

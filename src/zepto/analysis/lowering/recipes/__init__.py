@@ -22,6 +22,11 @@ from .depthwise_causal_conv1d import (
     DEFAULT_DEPTHWISE_CAUSAL_CONV1D_RECIPE,
     DepthwiseCausalConv1dRecipe,
 )
+from .gated_delta_scan import (
+    DECODE_GATED_DELTA_SCAN_RECIPE,
+    DEFAULT_GATED_DELTA_SCAN_RECIPE,
+    GatedDeltaScanRecipe,
+)
 from .l2_normalize import DEFAULT_L2_NORMALIZE_RECIPE, L2NormalizeRecipe
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
 from .masked_softmax import (
@@ -66,8 +71,11 @@ __all__ = [
     "GeGLURecipe",
     "DEFAULT_GQA_RECIPE",
     "DEFAULT_DEPTHWISE_CAUSAL_CONV1D_RECIPE",
+    "DECODE_GATED_DELTA_SCAN_RECIPE",
+    "DEFAULT_GATED_DELTA_SCAN_RECIPE",
     "DEFAULT_L2_NORMALIZE_RECIPE",
     "DepthwiseCausalConv1dRecipe",
+    "GatedDeltaScanRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",

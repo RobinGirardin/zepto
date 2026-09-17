@@ -302,6 +302,10 @@ Registered: `region/l2_normalize/reference`, `region/l2_normalize/fla` (default 
 
 Registered: `region/depthwise_causal_conv1d/decomposed` (default on non-CUDA hardware), `region/depthwise_causal_conv1d/cuda` (Dao `causal-conv1d` parity on CUDA), `region/depthwise_causal_conv1d/hub` (HF Hub routing). Identity module `DepthwiseCausalConv1d` remains the unfused reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe (K=4, SiLU, no bias): **\(12\,SC\)** forward, **\(22\,SC\)** backward when training; elides extended history and per-timestep window temps; **`SAVE pre_activation`** when SiLU + grad. Mutually exclusive with mega-fusion **`region/mamba2_mixer`** on the same mixer conv slot. Full research: [`docs/kernel/depthwise-causal-conv1d.md`](kernel/depthwise-causal-conv1d.md) (see also `_workspace/research.md`).
 
+### Gated delta scan (Gated DeltaNet recurrence)
+
+Registered: `region/gated_delta_scan/reference` (default on non-CUDA hardware), `region/gated_delta_scan` (FLA chunk prefill on CUDA), `region/gated_delta_scan/decode` (single-step recurrent decode when `S=1` and `scan_state_in` / horizon recurrent port). Identity module `GatedDeltaScan` remains the S-unrolled reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(S h (8 d_k d_v + 2 d_v + 1)\)** forward, **\(S h (16 d_k d_v + 4 d_v + 4)\)** backward when training; elides per-step `decayed` / `prediction` / `delta` / `outer` temps; **`SAVE state_checkpoint`** `[S,h,d_k,d_v]` fp32 when training. Default `GatedDeltaNet` stack keeps **two** standalone `region/l2_normalize` leaves on Q/K — scan leaf does **not** include L2 FLOPs unless a future in-kernel L2 variant subsumes them. Full research: [`docs/kernel/gated-delta-scan.md`](kernel/gated-delta-scan.md).
+
 ---
 
 ## 6. LayerNorm (non-Apertus, existing Zepto region)

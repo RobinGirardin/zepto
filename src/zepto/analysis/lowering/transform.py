@@ -222,6 +222,7 @@ def lower_region(
         "region/gqa",
         "region/gqa-sink",
         "region/depthwise_causal_conv1d",
+        "region/gated_delta_scan",
     ):
         lower_kwargs["state_port_collector"] = state.state_port_events
     lowered_node = impl.lower(
