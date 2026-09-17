@@ -27,6 +27,11 @@ from .gated_delta_scan import (
     DEFAULT_GATED_DELTA_SCAN_RECIPE,
     GatedDeltaScanRecipe,
 )
+from .mamba2_scan import (
+    DECODE_MAMBA2_SCAN_RECIPE,
+    DEFAULT_MAMBA2_SCAN_RECIPE,
+    Mamba2ScanRecipe,
+)
 from .gated_rms_norm import (
     DEFAULT_GATED_RMS_NORM_RECIPE,
     GatedRMSNormRecipe,
@@ -80,6 +85,9 @@ __all__ = [
     "DEFAULT_L2_NORMALIZE_RECIPE",
     "DepthwiseCausalConv1dRecipe",
     "GatedDeltaScanRecipe",
+    "DECODE_MAMBA2_SCAN_RECIPE",
+    "DEFAULT_MAMBA2_SCAN_RECIPE",
+    "Mamba2ScanRecipe",
     "DEFAULT_GATED_RMS_NORM_RECIPE",
     "GatedRMSNormRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",
