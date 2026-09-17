@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.vision_attention_config import (
+from modules.vision.vision_attention_config import (
     gemma4_vision_attention,
     muse_glimmer_vision_attention,
     qwen3_vl_vision_attention,
 )
-from zepto.modules.vision_encoder_block import VisionEncoderBlock
-from zepto.modules.vision_masks import (
+from modules.vision.vision_encoder_block import VisionEncoderBlock
+from modules.vision.vision_masks import (
     MaterializedBidirectionalMask,
     SlidingWindowBidirectionalMask,
 )

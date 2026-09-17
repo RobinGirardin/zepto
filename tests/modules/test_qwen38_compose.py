@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.layer_spec import LayerSpec
-from zepto.modules.mixer_config import GatedDeltaNetConfig
-from zepto.modules.mixer_presets import qwen35_language_layer_specs
-from zepto.modules.qwen38 import Qwen38, Qwen38Config
+from modules.mixers.layer_spec import LayerSpec
+from modules.mixers.mixer_config import GatedDeltaNetConfig
+from modules.mixers.mixer_presets import qwen35_language_layer_specs
+from modules.models.qwen38 import Qwen38, Qwen38Config
 from zepto.semantic.metadata import DType
 
 

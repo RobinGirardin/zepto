@@ -8,7 +8,7 @@ from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.plan import resolve_overlaps
 from zepto.analysis.lowering.registry import region_has_compatible_implementation
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.attention_softmax_with_sink import AttentionSoftmaxWithSink
+from modules.attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
 from zepto.semantic import Add, Multiply
 
 _HEADS = 4

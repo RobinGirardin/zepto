@@ -7,7 +7,7 @@ from zepto.analysis.horizon.state import RecurrentScanState
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.selective_ssm_scan import SelectiveSSMScan
+from modules.mixers.selective_ssm_scan import SelectiveSSMScan
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 

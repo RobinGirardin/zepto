@@ -8,7 +8,7 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.depthwise_causal_conv1d import DepthwiseCausalConv1dRecipe
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.depthwise_causal_conv1d import DepthwiseCausalConv1d
+from modules.mixers.depthwise_causal_conv1d import DepthwiseCausalConv1d
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 

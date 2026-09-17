@@ -6,8 +6,8 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.attention import FlexibleAttention
-from zepto.modules.attention_config import granite_attention_layer
+from modules.attention.attention import FlexibleAttention
+from modules.attention.attention_config import granite_attention_layer
 
 _SEQ = 8
 _BATCH = 2

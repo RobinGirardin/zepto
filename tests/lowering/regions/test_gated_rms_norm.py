@@ -10,9 +10,9 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.gated_delta_net import GatedDeltaNet
-from zepto.modules.gated_rms_norm import GatedRMSNorm
-from zepto.modules.mixer_config import GatedDeltaNetConfig
+from modules.mixers.gated_delta_net import GatedDeltaNet
+from modules.layers.gated_rms_norm import GatedRMSNorm
+from modules.mixers.mixer_config import GatedDeltaNetConfig
 from zepto.semantic import ResourceEventKind
 
 

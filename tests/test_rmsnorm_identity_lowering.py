@@ -6,7 +6,7 @@ from zepto.analysis import lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.rms_norm import RMSNorm
+from modules.layers.rms_norm import RMSNorm
 from zepto.semantic import ResourceEventKind
 
 S, D = 4, 8

@@ -6,11 +6,11 @@ from zepto.analysis import lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.capped_fused_linear_cross_entropy import (
+from modules.output.capped_fused_linear_cross_entropy import (
     CappedFusedLinearCrossEntropy,
 )
-from zepto.modules.fused_linear_cross_entropy import FusedLinearCrossEntropy
-from zepto.modules.logit_soft_cap import LogitSoftCapConfig
+from modules.output.fused_linear_cross_entropy import FusedLinearCrossEntropy
+from modules.output.logit_soft_cap import LogitSoftCapConfig
 
 _S, _D, _V = 4, 32, 64
 

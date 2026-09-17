@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.output_presets import granite_lm_output, muse_glimmer_lm_output
-from zepto.modules.rms_norm import RMSNorm
+from modules.output.output_presets import granite_lm_output, muse_glimmer_lm_output
+from modules.layers.rms_norm import RMSNorm
 from zepto.semantic.metadata import DType
 
 

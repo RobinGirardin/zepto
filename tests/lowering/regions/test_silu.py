@@ -6,7 +6,7 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.silu import SiLU
+from modules.layers.silu import SiLU
 from zepto.semantic import ResourceEventKind
 
 

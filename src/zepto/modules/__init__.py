@@ -1,10 +1,10 @@
 """Reusable user-level module compositions built on Zepto operations."""
 
-from .affine_linear import AffineLinear
-from .apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
-from .apertus_decoder_block import ApertusDecoderBlock
-from .attention import FlexibleAttention
-from .attention_config import (
+from .layers.affine_linear import AffineLinear
+from .models.apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
+from .blocks.apertus_decoder_block import ApertusDecoderBlock
+from .attention.attention import FlexibleAttention
+from .attention.attention_config import (
     AttentionConfig,
     AttentionLayerTemplate,
     gated_gqa,
@@ -16,55 +16,55 @@ from .attention_config import (
     muse_glimmer_text_attention_layer,
     repeat_pattern,
 )
-from .attention_softmax_with_sink import AttentionSoftmaxWithSink
-from .depthwise_causal_conv1d import DepthwiseCausalConv1d
-from .embedding import Embedding
-from .gated_delta_net import GatedDeltaNet
-from .gated_delta_scan import GatedDeltaScan
-from .gated_grouped_rms_norm import GatedGroupedRMSNorm
-from .gated_rms_norm import GatedRMSNorm
-from .attention_moe_decoder_block import AttentionMoEDecoderBlock
-from .decoder_attention_context import DecoderAttentionContext, LayerAttentionInputs
-from .gemma4 import GEMMA4_31B_IT, Gemma4, Gemma4Config
-from .gpt_oss import GPT_OSS_20B, GptOss, GptOssConfig
-from .granite import GRANITE_42_30B, Granite, GraniteConfig
-from .hybrid_decoder_block import HybridDecoderBlock
-from .laguna_decoder_block import LagunaDecoderBlock
-from .laguna_xs import LAGUNA_XS_21, LagunaXs, LagunaXsConfig
-from .multimodal_language_model import embed_multimodal_sequence
-from .muse_glimmer import MUSE_GLIMMER_30B, MuseGlimmer, MuseGlimmerConfig
-from .nemotron_h import NEMOTRON_H_30B_A3B, NemotronH, NemotronHConfig
-from .qwen38 import QWEN38_27B, Qwen38, Qwen38Config
-from .sandwich_norm_swiglu_decoder_block import (
+from .attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
+from .mixers.depthwise_causal_conv1d import DepthwiseCausalConv1d
+from .layers.embedding import Embedding
+from .mixers.gated_delta_net import GatedDeltaNet
+from .mixers.gated_delta_scan import GatedDeltaScan
+from .layers.gated_grouped_rms_norm import GatedGroupedRMSNorm
+from .layers.gated_rms_norm import GatedRMSNorm
+from .blocks.attention_moe_decoder_block import AttentionMoEDecoderBlock
+from .attention.decoder_attention_context import DecoderAttentionContext, LayerAttentionInputs
+from .models.gemma4 import GEMMA4_31B_IT, Gemma4, Gemma4Config
+from .models.gpt_oss import GPT_OSS_20B, GptOss, GptOssConfig
+from .models.granite import GRANITE_42_30B, Granite, GraniteConfig
+from .blocks.hybrid_decoder_block import HybridDecoderBlock
+from .blocks.laguna_decoder_block import LagunaDecoderBlock
+from .models.laguna_xs import LAGUNA_XS_21, LagunaXs, LagunaXsConfig
+from .multimodal.multimodal_language_model import embed_multimodal_sequence
+from .models.muse_glimmer import MUSE_GLIMMER_30B, MuseGlimmer, MuseGlimmerConfig
+from .models.nemotron_h import NEMOTRON_H_30B_A3B, NemotronH, NemotronHConfig
+from .models.qwen38 import QWEN38_27B, Qwen38, Qwen38Config
+from .blocks.sandwich_norm_swiglu_decoder_block import (
     GEMMA4_LANGUAGE_SANDWICH_NORM,
     MUSE_LANGUAGE_SANDWICH_NORM,
     SandwichNormStyle,
     SandwichNormSwiGLUDecoderBlock,
 )
-from .swiglu_decoder_block import SwiGLUDecoderBlock
-from .l2_normalize import L2Normalize
-from .layer_spec import LayerSpec, MixerKind
-from .mamba2_mixer import Mamba2Mixer
-from .mixer_config import GatedDeltaNetConfig, Mamba2MixerConfig
-from .mixer_presets import nemotron_h_layer_specs, qwen35_language_layer_specs
-from .qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
-from .selective_ssm_scan import SelectiveSSMScan
-from .ffn import FFN
-from .geglu import GeGLU
-from .gpt_oss_expert import GptOssExpert
-from .gpt_oss_expert_pool import GptOssExpertPool
-from .gpt_oss_moe_block import GptOssMoEBlock
-from .gpt_oss_moe_router import GptOssMoERouter
-from .capped_fused_linear_cross_entropy import CappedFusedLinearCrossEntropy
-from .fused_linear_cross_entropy import FusedLinearCrossEntropy
-from .language_model_output import LanguageModelOutput, LanguageModelOutputConfig
-from .logit_soft_cap import LogitSoftCap, LogitSoftCapConfig
-from .mtp_config import MtpStageConfig
-from .mtp_input_fusion import MtpInputFusion
-from .mtp_mlp_block import MtpMlpBlock
-from .mtp_presets import nemotron_h_mtp_stage, qwen38_mtp_head
-from .mtp_stage import MtpStage
-from .output_presets import (
+from .blocks.swiglu_decoder_block import SwiGLUDecoderBlock
+from .layers.l2_normalize import L2Normalize
+from .mixers.layer_spec import LayerSpec, MixerKind
+from .mixers.mamba2_mixer import Mamba2Mixer
+from .mixers.mixer_config import GatedDeltaNetConfig, Mamba2MixerConfig
+from .mixers.mixer_presets import nemotron_h_layer_specs, qwen35_language_layer_specs
+from .blocks.qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
+from .mixers.selective_ssm_scan import SelectiveSSMScan
+from .ffn.ffn import FFN
+from .ffn.geglu import GeGLU
+from .moe.gpt_oss.gpt_oss_expert import GptOssExpert
+from .moe.gpt_oss.gpt_oss_expert_pool import GptOssExpertPool
+from .moe.gpt_oss.gpt_oss_moe_block import GptOssMoEBlock
+from .moe.gpt_oss.gpt_oss_moe_router import GptOssMoERouter
+from .output.capped_fused_linear_cross_entropy import CappedFusedLinearCrossEntropy
+from .output.fused_linear_cross_entropy import FusedLinearCrossEntropy
+from .output.language_model_output import LanguageModelOutput, LanguageModelOutputConfig
+from .output.logit_soft_cap import LogitSoftCap, LogitSoftCapConfig
+from .mtp.mtp_config import MtpStageConfig
+from .mtp.mtp_input_fusion import MtpInputFusion
+from .mtp.mtp_mlp_block import MtpMlpBlock
+from .mtp.mtp_presets import nemotron_h_mtp_stage, qwen38_mtp_head
+from .mtp.mtp_stage import MtpStage
+from .output.output_presets import (
     gemma4_lm_output,
     gpt_oss_lm_output,
     granite_lm_output,
@@ -73,62 +73,62 @@ from .output_presets import (
     nemotron_h_lm_output,
     qwen38_lm_output,
 )
-from .gqa import GroupedQueryAttention
-from .laguna_expert_pool import LagunaExpertPool
-from .laguna_moe_router import LagunaMoERouter
-from .laguna_sparse_moe_block import LagunaSparseMoEBlock
-from .layer_norm import LayerNorm
-from .linear import Linear
-from .lm_head import LMHead
-from .moe_presets import gpt_oss_moe_block, laguna_sparse_moe_block, nemotron_moe_block
-from .moe_routing import UniformRoutingProfile
-from .materialized_causal_mask import MaterializedCausalMask
-from .sliding_window_causal_mask import SlidingWindowCausalMask
-from .qk_norm import QKNormRMSNorm
-from .rms_norm import RMSNorm
-from .relu import ReLU
-from .silu import SiLU
-from .softplus import Softplus
-from .axial_rope_materialize import AxialRoPEMaterialize
-from .interpolated_position_grid import InterpolatedPositionGrid
-from .learned_position_embedding_2d import LearnedPositionEmbedding2D
-from .multimodal_projector import (
+from .attention.gqa import GroupedQueryAttention
+from .moe.laguna.laguna_expert_pool import LagunaExpertPool
+from .moe.laguna.laguna_moe_router import LagunaMoERouter
+from .moe.laguna.laguna_sparse_moe_block import LagunaSparseMoEBlock
+from .layers.layer_norm import LayerNorm
+from .layers.linear import Linear
+from .layers.lm_head import LMHead
+from .moe.moe_presets import gpt_oss_moe_block, laguna_sparse_moe_block, nemotron_moe_block
+from .moe.moe_routing import UniformRoutingProfile
+from .attention.materialized_causal_mask import MaterializedCausalMask
+from .attention.sliding_window_causal_mask import SlidingWindowCausalMask
+from .layers.qk_norm import QKNormRMSNorm
+from .layers.rms_norm import RMSNorm
+from .layers.relu import ReLU
+from .layers.silu import SiLU
+from .layers.softplus import Softplus
+from .position.axial_rope_materialize import AxialRoPEMaterialize
+from .position.interpolated_position_grid import InterpolatedPositionGrid
+from .position.learned_position_embedding_2d import LearnedPositionEmbedding2D
+from .multimodal.multimodal_projector import (
     MultimodalProjector,
     ProjectorConfig,
     gemma4_vision_projector,
     muse_glimmer_perception_adapter,
 )
-from .multimodal_rope_materialize import MultimodalRoPEMaterialize
-from .multimodal_sequence_builder import MultimodalSequenceBuilder
-from .patch_embed import (
+from .position.multimodal_rope_materialize import MultimodalRoPEMaterialize
+from .multimodal.multimodal_sequence_builder import MultimodalSequenceBuilder
+from .vision.patch_embed import (
     Conv2dPatchEmbed,
     Conv3dPatchEmbed,
     GemmaLinearPatchEmbed,
     LinearPatchEmbed,
     qwen3_vl_patch_embed,
 )
-from .patch_merger import PatchMerger2x2
-from .pixel_shuffle import PixelShuffle2x2
-from .position_aware_pool import PositionAwareAveragePool2x2
-from .vision_attention_config import (
+from .vision.patch_merger import PatchMerger2x2
+from .vision.pixel_shuffle import PixelShuffle2x2
+from .vision.position_aware_pool import PositionAwareAveragePool2x2
+from .vision.vision_attention_config import (
     VisionAttentionConfig,
     gemma4_vision_attention,
     muse_glimmer_vision_attention,
     muse_glimmer_vision_schedule,
     qwen3_vl_vision_attention,
 )
-from .vision_encoder_block import VisionEncoderBlock
-from .vision_masks import (
+from .vision.vision_encoder_block import VisionEncoderBlock
+from .vision.vision_masks import (
     MaterializedBidirectionalMask,
     SlidingWindowBidirectionalMask,
     vision_mask_for_config,
 )
-from .vision_presets import Gemma4VisionPath, MuseGlimmerVisionTower, Qwen3VLVisionTower, VisionConfig
-from .nemotron_expert_pool import NemotronExpertPool
-from .nemotron_moe_block import NemotronMoEBlock
-from .nemotron_moe_router import NemotronMoERouter
-from .rope_apply import RoPE, RoPEApply
-from .rope_config import (
+from .vision.vision_presets import Gemma4VisionPath, MuseGlimmerVisionTower, Qwen3VLVisionTower, VisionConfig
+from .moe.nemotron.nemotron_expert_pool import NemotronExpertPool
+from .moe.nemotron.nemotron_moe_block import NemotronMoEBlock
+from .moe.nemotron.nemotron_moe_router import NemotronMoERouter
+from .position.rope_apply import RoPE, RoPEApply
+from .position.rope_config import (
     LayerRoPEBinding,
     RoPEConfig,
     apertus_rope,
@@ -145,12 +145,12 @@ from .rope_config import (
     muse_glimmer_rope_layer,
     qwen3_vl_mrope,
 )
-from .rope_materialize import RoPEMaterialize
-from .softmax import Softmax, attention_softmax_scale
-from .squared_relu import SquaredReLU
-from .squared_relu_ffn import SquaredReluFFN
-from .swiglu import SwiGLU
-from .xielu import XIELU
+from .position.rope_materialize import RoPEMaterialize
+from .attention.softmax import Softmax, attention_softmax_scale
+from .layers.squared_relu import SquaredReLU
+from .ffn.squared_relu_ffn import SquaredReluFFN
+from .ffn.swiglu import SwiGLU
+from .layers.xielu import XIELU
 
 __all__ = [
     "APERTUS_70B",

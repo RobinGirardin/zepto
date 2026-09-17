@@ -7,7 +7,7 @@ from zepto.analysis.memory import ResourceEventSimulator
 from zepto.compose import Tensor, compose_graph
 from zepto.compose.values import Tensor as ComposeTensor
 from zepto.graph import GraphBuilder, Provenance
-from zepto.modules.linear import Linear
+from modules.layers.linear import Linear
 from zepto.semantic import Identity, MatMul, Port
 
 

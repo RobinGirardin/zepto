@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from zepto.modules.mixer_config import GatedDeltaNetConfig
+from modules.mixers.mixer_config import GatedDeltaNetConfig
 
 from .depthwise_causal_conv1d import DEFAULT_DEPTHWISE_CAUSAL_CONV1D_RECIPE
 from .gated_delta_scan import DEFAULT_GATED_DELTA_SCAN_RECIPE

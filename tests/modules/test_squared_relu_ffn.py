@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.squared_relu_ffn import SquaredReluFFN
+from modules.ffn.squared_relu_ffn import SquaredReluFFN
 
 
 def test_squared_relu_ffn_output_shape() -> None:

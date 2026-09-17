@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.vision_presets import Qwen3VLVisionTower
+from modules.vision.vision_presets import Qwen3VLVisionTower
 
 
 def _tower(grid_t: int, grid_h: int, grid_w: int) -> Qwen3VLVisionTower:

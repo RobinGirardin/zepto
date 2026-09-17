@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from zepto.modules.mixer_config import Mamba2MixerConfig
+from modules.mixers.mixer_config import Mamba2MixerConfig
 
 from .depthwise_causal_conv1d import DepthwiseCausalConv1dRecipe
 from .gated_grouped_rms_norm import DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE

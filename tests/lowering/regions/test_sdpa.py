@@ -8,9 +8,9 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.attention import FlexibleAttention
-from zepto.modules.attention_config import llama_gqa
-from zepto.modules.gqa import GroupedQueryAttention
+from modules.attention.attention import FlexibleAttention
+from modules.attention.attention_config import llama_gqa
+from modules.attention.gqa import GroupedQueryAttention
 from zepto.semantic import ResourceEventKind
 
 _SEQ = 8

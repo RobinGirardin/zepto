@@ -7,10 +7,10 @@ from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.gqa_sink import GQASinkRecipe
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.attention import FlexibleAttention
-from zepto.modules.attention_config import AttentionConfig, gpt_oss_attention_layer
-from zepto.modules.materialized_causal_mask import MaterializedCausalMask
-from zepto.modules.sliding_window_causal_mask import SlidingWindowCausalMask
+from modules.attention.attention import FlexibleAttention
+from modules.attention.attention_config import AttentionConfig, gpt_oss_attention_layer
+from modules.attention.materialized_causal_mask import MaterializedCausalMask
+from modules.attention.sliding_window_causal_mask import SlidingWindowCausalMask
 from zepto.semantic import ResourceEventKind
 
 _SEQ = 8

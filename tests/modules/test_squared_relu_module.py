@@ -6,7 +6,7 @@ from zepto.analysis import lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.squared_relu import SquaredReLU
+from modules.layers.squared_relu import SquaredReLU
 
 
 def test_squared_relu_activation_flops() -> None:

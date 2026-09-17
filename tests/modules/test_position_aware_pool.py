@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.position_aware_pool import PositionAwareAveragePool2x2
+from modules.vision.position_aware_pool import PositionAwareAveragePool2x2
 
 
 def test_gemma_pool_output_length_280() -> None:

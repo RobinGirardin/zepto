@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.multimodal_projector import (
+from modules.multimodal.multimodal_projector import (
     gemma4_vision_projector,
     muse_glimmer_perception_adapter,
 )

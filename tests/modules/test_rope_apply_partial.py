@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.rope_apply import RoPEApply
-from zepto.modules.rope_config import RoPEConfig
-from zepto.modules.rope_materialize import RoPEMaterialize
+from modules.position.rope_apply import RoPEApply
+from modules.position.rope_config import RoPEConfig
+from modules.position.rope_materialize import RoPEMaterialize
 
 _SEQ = 8
 _HEADS = 4

@@ -10,8 +10,8 @@ from zepto.analysis import (
     reference_invocation,
 )
 from zepto.compose import Tensor
-from zepto.modules.mamba2_mixer import Mamba2Mixer
-from zepto.modules.mixer_config import Mamba2MixerConfig
+from modules.mixers.mamba2_mixer import Mamba2Mixer
+from modules.mixers.mixer_config import Mamba2MixerConfig
 from zepto.semantic.metadata import DType
 
 

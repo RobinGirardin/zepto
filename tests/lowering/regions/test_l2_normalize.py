@@ -9,7 +9,7 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Tensor, compose_graph
 from zepto.graph import GraphBuilder, Provenance
-from zepto.modules.l2_normalize import L2Normalize
+from modules.layers.l2_normalize import L2Normalize
 from zepto.semantic import Add, Cast, Divide, Multiply, Port, ReduceSum, SquareRoot
 from zepto.semantic.metadata import DType
 from zepto.semantic import ResourceEventKind

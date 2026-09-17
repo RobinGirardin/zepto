@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.moe_routing import UniformRoutingProfile
-from zepto.modules.nemotron_moe_block import NemotronMoEBlock
+from modules.moe.moe_routing import UniformRoutingProfile
+from modules.moe.nemotron.nemotron_moe_block import NemotronMoEBlock
 
 
 def _families(graph) -> tuple[str, ...]:

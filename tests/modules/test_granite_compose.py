@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.granite import Granite, GraniteConfig
+from modules.models.granite import Granite, GraniteConfig
 from zepto.semantic.metadata import DType
 
 

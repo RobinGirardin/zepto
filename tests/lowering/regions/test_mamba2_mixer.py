@@ -25,8 +25,8 @@ from zepto.analysis.lowering.recipes import (
     Mamba2MixerRecipe,
 )
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.mamba2_mixer import Mamba2Mixer
-from zepto.modules.mixer_config import Mamba2MixerConfig
+from modules.mixers.mamba2_mixer import Mamba2Mixer
+from modules.mixers.mixer_config import Mamba2MixerConfig
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 

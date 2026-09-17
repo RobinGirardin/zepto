@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import Parameter, Tensor, compose_graph
-from zepto.modules.output_presets import (
+from modules.output.output_presets import (
     gemma4_lm_output,
     granite_lm_output,
     muse_glimmer_lm_output,
@@ -34,7 +34,7 @@ def test_untied_preset_dims(factory, d, v) -> None:
 
 def test_reference_checkpoint_dims() -> None:
     assert _weight_shape(granite_lm_output, d=4096, v=100352) == (4096, 100352)
-    from zepto.modules.output_presets import (
+    from modules.output.output_presets import (
         gpt_oss_lm_output,
         laguna_xs_lm_output,
         nemotron_h_lm_output,

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import compose_graph
-from zepto.modules.multimodal_rope_materialize import MultimodalRoPEMaterialize
-from zepto.modules.rope_config import RoPEConfig, qwen3_vl_mrope
+from modules.position.multimodal_rope_materialize import MultimodalRoPEMaterialize
+from modules.position.rope_config import RoPEConfig, qwen3_vl_mrope
 
 
 def test_mrope_output_shapes() -> None:

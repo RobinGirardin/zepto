@@ -11,8 +11,8 @@ from zepto.analysis.lowering.recipes.gated_grouped_rms_norm import (
     DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE,
 )
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.gated_grouped_rms_norm import GatedGroupedRMSNorm
-from zepto.modules.gated_rms_norm import GatedRMSNorm
+from modules.layers.gated_grouped_rms_norm import GatedGroupedRMSNorm
+from modules.layers.gated_rms_norm import GatedRMSNorm
 from zepto.semantic import ResourceEventKind
 
 

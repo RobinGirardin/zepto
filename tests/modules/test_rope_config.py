@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from zepto.modules.rope_config import (
+from modules.position.rope_config import (
     RoPEConfig,
     gemma4_rope_layer,
     gpt_oss_rope,

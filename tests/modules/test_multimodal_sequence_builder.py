@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.multimodal_sequence_builder import MultimodalSequenceBuilder
+from modules.multimodal.multimodal_sequence_builder import MultimodalSequenceBuilder
 
 
 def test_scatter_update_fusion_shape() -> None:

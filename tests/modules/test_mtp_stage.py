@@ -6,9 +6,9 @@ from zepto.analysis import lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_identity_defaults
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.materialized_causal_mask import MaterializedCausalMask
-from zepto.modules.moe_presets import nemotron_moe_block
-from zepto.modules.mtp_presets import nemotron_h_mtp_stage, qwen38_mtp_head
+from modules.attention.materialized_causal_mask import MaterializedCausalMask
+from modules.moe.moe_presets import nemotron_moe_block
+from modules.mtp.mtp_presets import nemotron_h_mtp_stage, qwen38_mtp_head
 
 
 def test_qwen_mtp_graph_no_attention() -> None:

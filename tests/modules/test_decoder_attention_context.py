@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.decoder_attention_context import DecoderAttentionContext
-from zepto.modules.rope_config import gpt_oss_layer_binding
+from modules.attention.decoder_attention_context import DecoderAttentionContext
+from modules.position.rope_config import gpt_oss_layer_binding
 
 
 def _mask_component_types(graph) -> set[str]:

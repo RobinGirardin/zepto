@@ -10,8 +10,8 @@ from zepto.analysis import (
     reference_invocation,
 )
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.gated_delta_net import GatedDeltaNet
-from zepto.modules.mixer_config import GatedDeltaNetConfig
+from modules.mixers.gated_delta_net import GatedDeltaNet
+from modules.mixers.mixer_config import GatedDeltaNetConfig
 from zepto.semantic.metadata import DType
 
 

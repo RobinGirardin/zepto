@@ -1,5 +1,5 @@
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.l2_normalize import L2Normalize
+from modules.layers.l2_normalize import L2Normalize
 
 
 def test_l2_normalize_compose() -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.pixel_shuffle import PixelShuffle2x2
+from modules.vision.pixel_shuffle import PixelShuffle2x2
 
 
 def test_muse_pixel_shuffle_channel_and_spatial() -> None:

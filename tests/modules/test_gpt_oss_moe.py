@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.gpt_oss_moe_block import GptOssMoEBlock
-from zepto.modules.moe_routing import UniformRoutingProfile
+from modules.moe.gpt_oss.gpt_oss_moe_block import GptOssMoEBlock
+from modules.moe.moe_routing import UniformRoutingProfile
 
 
 def _families(graph) -> tuple[str, ...]:

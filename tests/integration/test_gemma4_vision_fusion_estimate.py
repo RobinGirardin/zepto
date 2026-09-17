@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.vision_presets import Gemma4VisionPath
+from modules.vision.vision_presets import Gemma4VisionPath
 
 
 def test_gemma4_vision_pool_and_projector() -> None:

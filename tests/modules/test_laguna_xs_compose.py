@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Module, Tensor, compose_graph
-from zepto.modules.laguna_decoder_block import LagunaDecoderBlock
-from zepto.modules.laguna_xs import LagunaXs, LagunaXsConfig
-from zepto.modules.moe_presets import laguna_sparse_moe_block
-from zepto.modules.rope_config import laguna_layer_binding
+from modules.blocks.laguna_decoder_block import LagunaDecoderBlock
+from modules.models.laguna_xs import LagunaXs, LagunaXsConfig
+from modules.moe.moe_presets import laguna_sparse_moe_block
+from modules.position.rope_config import laguna_layer_binding
 from zepto.semantic.metadata import DType
 
 
 def _rope_apply(layer_index: int):
-    from zepto.modules.laguna_xs import _rope_apply_for_binding
+    from modules.models.laguna_xs import _rope_apply_for_binding
 
     return _rope_apply_for_binding(layer_index)
 

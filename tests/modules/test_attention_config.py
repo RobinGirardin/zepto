@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from zepto.modules.attention_config import (
+from modules.attention.attention_config import (
     AttentionConfig,
     AttentionLayerTemplate,
     gemma4_text_attention_layer,

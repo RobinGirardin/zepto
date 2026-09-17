@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.patch_embed import (
+from modules.vision.patch_embed import (
     LinearPatchEmbed,
     qwen3_vl_patch_embed,
 )

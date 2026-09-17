@@ -12,7 +12,7 @@ from zepto.analysis.resolved import ResolvedValue
 from zepto.compose import Tensor, compose_graph
 from zepto.compose.values import Tensor as ComposeTensor
 from zepto.graph import GraphBuilder, Provenance
-from zepto.modules.relu import ReLU
+from modules.layers.relu import ReLU
 from zepto.semantic import (
     DType,
     Identity,
@@ -221,7 +221,7 @@ def test_unreduced_temp_same_node_release() -> None:
 
 
 def test_parameter_bootstrap_in_peak() -> None:
-    from zepto.modules.linear import Linear
+    from modules.layers.linear import Linear
 
     graph = compose_graph(
         lambda ctx: Linear(64, 32),

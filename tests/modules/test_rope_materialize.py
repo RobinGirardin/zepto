@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from zepto.compose import compose_graph
-from zepto.modules.rope_config import RoPEConfig
-from zepto.modules.rope_materialize import RoPEMaterialize
+from modules.position.rope_config import RoPEConfig
+from modules.position.rope_materialize import RoPEMaterialize
 
 
 def _output_shapes(graph) -> tuple[tuple[int, ...], tuple[int, ...]]:
