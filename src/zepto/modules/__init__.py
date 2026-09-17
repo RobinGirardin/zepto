@@ -37,7 +37,24 @@ from .gpt_oss_expert import GptOssExpert
 from .gpt_oss_expert_pool import GptOssExpertPool
 from .gpt_oss_moe_block import GptOssMoEBlock
 from .gpt_oss_moe_router import GptOssMoERouter
+from .capped_fused_linear_cross_entropy import CappedFusedLinearCrossEntropy
 from .fused_linear_cross_entropy import FusedLinearCrossEntropy
+from .language_model_output import LanguageModelOutput, LanguageModelOutputConfig
+from .logit_soft_cap import LogitSoftCap, LogitSoftCapConfig
+from .mtp_config import MtpStageConfig
+from .mtp_input_fusion import MtpInputFusion
+from .mtp_mlp_block import MtpMlpBlock
+from .mtp_presets import nemotron_h_mtp_stage, qwen38_mtp_head
+from .mtp_stage import MtpStage
+from .output_presets import (
+    gemma4_lm_output,
+    gpt_oss_lm_output,
+    granite_lm_output,
+    laguna_xs_lm_output,
+    muse_glimmer_lm_output,
+    nemotron_h_lm_output,
+    qwen38_lm_output,
+)
 from .gqa import GroupedQueryAttention
 from .laguna_expert_pool import LagunaExpertPool
 from .laguna_moe_router import LagunaMoERouter
@@ -152,7 +169,25 @@ __all__ = [
     "GptOssExpertPool",
     "GptOssMoEBlock",
     "GptOssMoERouter",
+    "CappedFusedLinearCrossEntropy",
     "FusedLinearCrossEntropy",
+    "LanguageModelOutput",
+    "LanguageModelOutputConfig",
+    "LogitSoftCap",
+    "LogitSoftCapConfig",
+    "MtpInputFusion",
+    "MtpMlpBlock",
+    "MtpStage",
+    "MtpStageConfig",
+    "gemma4_lm_output",
+    "gpt_oss_lm_output",
+    "granite_lm_output",
+    "laguna_xs_lm_output",
+    "muse_glimmer_lm_output",
+    "nemotron_h_lm_output",
+    "nemotron_h_mtp_stage",
+    "qwen38_lm_output",
+    "qwen38_mtp_head",
     "GroupedQueryAttention",
     "gpt_oss_moe_block",
     "laguna_sparse_moe_block",
