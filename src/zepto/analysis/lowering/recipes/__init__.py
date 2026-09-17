@@ -27,6 +27,10 @@ from .gated_delta_scan import (
     DEFAULT_GATED_DELTA_SCAN_RECIPE,
     GatedDeltaScanRecipe,
 )
+from .gated_rms_norm import (
+    DEFAULT_GATED_RMS_NORM_RECIPE,
+    GatedRMSNormRecipe,
+)
 from .l2_normalize import DEFAULT_L2_NORMALIZE_RECIPE, L2NormalizeRecipe
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
 from .masked_softmax import (
@@ -76,6 +80,8 @@ __all__ = [
     "DEFAULT_L2_NORMALIZE_RECIPE",
     "DepthwiseCausalConv1dRecipe",
     "GatedDeltaScanRecipe",
+    "DEFAULT_GATED_RMS_NORM_RECIPE",
+    "GatedRMSNormRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",
