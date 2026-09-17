@@ -15,7 +15,10 @@ from .qk_norm import QKNormRMSNorm
 from .rms_norm import RMSNorm
 from .rope_apply import RoPEApply
 from .rope_config import muse_glimmer_layer_binding
-from .swiglu_decoder_block import SwiGLUDecoderBlock
+from .sandwich_norm_swiglu_decoder_block import (
+    MUSE_LANGUAGE_SANDWICH_NORM,
+    SandwichNormSwiGLUDecoderBlock,
+)
 from .vision_presets import MuseGlimmerVisionTower
 
 
@@ -41,7 +44,7 @@ def _rope_apply_for_binding(layer_index: int) -> RoPEApply | None:
 
 
 class MuseGlimmer(Module):
-    """Vision tower + language trunk; v1 Granite-shaped norms (see fidelity gaps)."""
+    """Vision tower + language trunk with centered sandwich RMSNorm blocks."""
 
     module_kind = "MuseGlimmer"
 
@@ -80,14 +83,18 @@ class MuseGlimmer(Module):
             layer_binding=lambda i: muse_glimmer_layer_binding(layer_index=i),
             num_layers=layers,
         )
-        self.blocks: list[SwiGLUDecoderBlock] = []
+        self.embed_norm = RMSNorm(
+            cfg.hidden_size, center=True, elementwise_affine=False
+        )
+        self.blocks: list[SandwichNormSwiGLUDecoderBlock] = []
         for index in range(layers):
             binding = muse_glimmer_layer_binding(layer_index=index)
             attn = binding.attention
             qk = QKNormRMSNorm(attn.head_dim)
-            block = SwiGLUDecoderBlock(
+            block = SandwichNormSwiGLUDecoderBlock(
                 attn,
                 swiglu_intermediate=cfg.swiglu_intermediate,
+                norm_style=MUSE_LANGUAGE_SANDWICH_NORM,
                 rope=_rope_apply_for_binding(index),
                 qk_norm=qk,
             )
@@ -125,7 +132,7 @@ class MuseGlimmer(Module):
             placeholder_indices=placeholder_indices,
             vision_pixels=vision_pixels,
         )
-        return self._language_trunk(hidden)
+        return self._language_trunk(self.embed_norm(hidden))
 
     def vision_forward(self, vision_pixels: Tensor) -> Tensor:
         if self.vision is None:

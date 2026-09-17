@@ -72,6 +72,12 @@ class FlexibleAttention(Module):
 
         if qk_norm is not None:
             self.qk_norm = qk_norm
+        if cfg.q_post_norm_scale is not None:
+            self._q_post_norm_scale = Tensor(
+                shape=(1,),
+                semantic_type="q_post_norm_scale",
+                requires_grad=False,
+            )
         if rope is not None and cfg.position != "none":
             self.rope = rope
         if v_norm is not None:
@@ -145,6 +151,10 @@ class FlexibleAttention(Module):
         qk_norm = getattr(self, "qk_norm", None)
         if qk_norm is not None:
             query_heads, key_heads = qk_norm(query_heads, key_heads)  # type: ignore[misc]
+
+        q_scale = getattr(self, "_q_post_norm_scale", None)
+        if q_scale is not None:
+            query_heads = Multiply()(query_heads, q_scale)  # type: ignore[call-arg]
 
         v_norm = getattr(self, "v_norm", None)
         if v_norm is not None:

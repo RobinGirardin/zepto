@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
+from zepto.semantic import Multiply
 
 from .decoder_attention_context import DecoderAttentionContext
 from .embedding import Embedding
@@ -15,7 +17,10 @@ from .qk_norm import QKNormRMSNorm
 from .rms_norm import RMSNorm
 from .rope_apply import RoPEApply
 from .rope_config import gemma4_layer_binding
-from .swiglu_decoder_block import SwiGLUDecoderBlock
+from .sandwich_norm_swiglu_decoder_block import (
+    GEMMA4_LANGUAGE_SANDWICH_NORM,
+    SandwichNormSwiGLUDecoderBlock,
+)
 from .vision_presets import Gemma4VisionPath
 
 
@@ -27,9 +32,10 @@ class Gemma4Config:
     swiglu_intermediate: int = 21504
     num_layers: int = 60
     vocab_size: int = 262144
+    embed_scale: float | None = None
 
 
-GEMMA4_31B_IT = Gemma4Config()
+GEMMA4_31B_IT = Gemma4Config(embed_scale=math.sqrt(5376))
 
 
 def _rope_apply_for_binding(layer_index: int) -> RoPEApply | None:
@@ -44,7 +50,7 @@ def _rope_apply_for_binding(layer_index: int) -> RoPEApply | None:
 
 
 class Gemma4(Module):
-    """Vision tower + language trunk; v1 uses two pre-norms per block (Granite-shaped).
+    """Vision tower + language trunk with sandwich RMSNorm blocks.
 
     Text-only ``forward(token_ids)`` skips vision compute but retains tower weights
     when ``include_vision=True``. Tied embedding/LM head per checkpoint.
@@ -87,20 +93,28 @@ class Gemma4(Module):
             layer_binding=lambda i: gemma4_layer_binding(layer_index=i),
             num_layers=layers,
         )
-        self.blocks: list[SwiGLUDecoderBlock] = []
+        self.blocks: list[SandwichNormSwiGLUDecoderBlock] = []
         for index in range(layers):
             binding = gemma4_layer_binding(layer_index=index)
             attn = binding.attention
             qk = QKNormRMSNorm(attn.head_dim)
-            block = SwiGLUDecoderBlock(
+            block = SandwichNormSwiGLUDecoderBlock(
                 attn,
                 swiglu_intermediate=cfg.swiglu_intermediate,
+                norm_style=GEMMA4_LANGUAGE_SANDWICH_NORM,
                 rope=_rope_apply_for_binding(index),
                 qk_norm=qk,
             )
             self.register_module(f"layers.{index}", block)
             self.blocks.append(block)
         self.final_norm = RMSNorm(cfg.hidden_size)
+        self._embed_scale: Tensor | None = None
+        if cfg.embed_scale is not None:
+            self._embed_scale = Tensor(
+                shape=(1,),
+                semantic_type="embed_scale",
+                requires_grad=False,
+            )
         self.lm_output = gemma4_lm_output(
             tied_weight=self.embedding.weight,
             hidden_size=cfg.hidden_size,
@@ -110,6 +124,11 @@ class Gemma4(Module):
     @classmethod
     def gemma4_31b_it(cls, seq_len: int) -> Gemma4:
         return cls(config=GEMMA4_31B_IT, seq_len=seq_len)
+
+    def _scale_embed(self, hidden: Tensor) -> Tensor:
+        if self._embed_scale is None:
+            return hidden
+        return Multiply()(hidden, self._embed_scale)  # type: ignore[return-value]
 
     def _language_trunk(self, hidden: Tensor) -> Tensor:
         for index, block in enumerate(self.blocks):
@@ -134,7 +153,7 @@ class Gemma4(Module):
             placeholder_indices=placeholder_indices,
             vision_pixels=vision_pixels,
         )
-        return self._language_trunk(hidden)
+        return self._language_trunk(self._scale_embed(hidden))
 
     def vision_forward(self, vision_pixels: Tensor) -> Tensor:
         if self.vision is None:

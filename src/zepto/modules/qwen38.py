@@ -46,6 +46,7 @@ class Qwen38(Module):
         num_layers: int | None = None,
         include_vision: bool = True,
         include_mtp: bool = True,
+        mtp_source_hidden_layer_index: int | None = None,
         vision_num_layers: int = 2,
         grid_t: int = 1,
         grid_h: int = 8,
@@ -91,11 +92,21 @@ class Qwen38(Module):
         )
         self.mtp: MtpStage | None = None
         if include_mtp:
+            tap_index = (
+                mtp_source_hidden_layer_index
+                if mtp_source_hidden_layer_index is not None
+                else 47
+            )
+            if tap_index < 0 or tap_index >= layers:
+                raise ValueError(
+                    "mtp_source_hidden_layer_index must be in [0, num_layers)"
+                )
             self.mtp = qwen38_mtp_head(
                 hidden_size=cfg.hidden_size,
                 vocab_size=cfg.vocab_size,
                 embed=self.embedding,
                 lm_output=self.lm_output,
+                source_hidden_layer_index=tap_index,
             )
 
     @classmethod
@@ -121,10 +132,18 @@ class Qwen38(Module):
             return out[0]
         return out  # type: ignore[return-value]
 
-    def _language_trunk(self, hidden: Tensor) -> Tensor:
+    def _language_trunk(
+        self,
+        hidden: Tensor,
+        *,
+        capture_layer_index: int | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
+        captured: Tensor | None = None
         for index, block in enumerate(self.blocks):
             hidden = self._run_block(block, index, hidden)
-        return hidden
+            if capture_layer_index is not None and index == capture_layer_index:
+                captured = hidden
+        return hidden, captured
 
     def forward(
         self,
@@ -138,7 +157,7 @@ class Qwen38(Module):
             placeholder_indices=placeholder_indices,
             vision_pixels=vision_pixels,
         )
-        hidden = self._language_trunk(hidden)
+        hidden, _ = self._language_trunk(hidden)
         return self.lm_output(self.final_norm(hidden))  # type: ignore[return-value]
 
     def mtp_forward(self, trunk_hidden: Tensor, mtp_token_ids: Tensor) -> Tensor:
@@ -150,18 +169,29 @@ class Qwen38(Module):
         self,
         token_ids: Tensor,
         mtp_token_ids: Tensor,
-        trunk_hidden: Tensor,
         *,
         placeholder_indices: Tensor | None = None,
         vision_pixels: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
-        primary = self.forward(
+        if self.mtp is None:
+            raise ValueError("forward_with_mtp requires include_mtp=True")
+        hidden = embed_multimodal_sequence(
+            self,
             token_ids,
             placeholder_indices=placeholder_indices,
             vision_pixels=vision_pixels,
         )
-        assert self.mtp is not None
-        aux = self.mtp_forward(trunk_hidden, mtp_token_ids)
+        tap = self.mtp.config.source_hidden_layer_index
+        hidden, mtp_hidden = self._language_trunk(
+            hidden, capture_layer_index=tap
+        )
+        if mtp_hidden is None:
+            raise RuntimeError(
+                f"MTP tap missing at layer {tap}; check num_layers and "
+                "mtp_source_hidden_layer_index"
+            )
+        primary = self.lm_output(self.final_norm(hidden))  # type: ignore[assignment]
+        aux = self.mtp(mtp_hidden, mtp_token_ids)  # type: ignore[assignment]
         return primary, aux
 
     def vision_forward(self, vision_pixels: Tensor) -> Tensor:

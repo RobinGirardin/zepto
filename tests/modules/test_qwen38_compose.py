@@ -22,11 +22,13 @@ def _tiny_qwen38(seq_len: int, *, include_mtp: bool = True) -> Qwen38:
         LayerSpec(mixer="gated_delta_net", gated_delta=delta, ffn="swiglu", swiglu_intermediate=256),
         LayerSpec(mixer="gated_delta_net", gated_delta=delta, ffn="swiglu", swiglu_intermediate=256),
     )
+    mtp_tap = 1 if include_mtp else None
     return Qwen38(
         config=Qwen38Config(hidden_size=128, num_layers=2, vocab_size=512),
         seq_len=seq_len,
         include_vision=False,
         include_mtp=include_mtp,
+        mtp_source_hidden_layer_index=mtp_tap,
         layer_specs=specs,
     )
 
@@ -62,9 +64,8 @@ def test_qwen38_primary_plus_mtp_exceeds_primary_only() -> None:
             self,
             token_ids: Tensor,
             mtp_ids: Tensor,
-            trunk: Tensor,
         ) -> Tensor:
-            _primary, aux = self.model.forward_with_mtp(token_ids, mtp_ids, trunk)
+            _primary, aux = self.model.forward_with_mtp(token_ids, mtp_ids)
             return aux
 
     combined = compose_graph(
@@ -72,7 +73,6 @@ def test_qwen38_primary_plus_mtp_exceeds_primary_only() -> None:
         (
             Tensor(shape=(seq_len,)),
             Tensor(shape=(seq_len,)),
-            Tensor(shape=(seq_len, d), requires_grad=True),
         ),
     )
     ctx = reference_invocation(default_dtype=DType.FP16)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor
-from zepto.semantic import Add, Cast, Divide, Multiply, ReduceSum, SquareRoot
+from zepto.semantic import Add, Cast, Divide, Multiply, ReduceSum, SquareRoot, Subtract
 from zepto.semantic.metadata import DType
 from ._helpers import (
     RMSNORM_COMPUTE_DTYPE,
@@ -20,7 +20,8 @@ class RMSNorm(Module):
     Normalizes over the last dimension. Variance accumulation runs in fp32
     (``Cast`` up/down), matching ``LlamaRMSNorm`` / ``ApertusRMSNorm`` eager.
     With ``elementwise_affine=True`` (default) a learnable scale ``weight``
-    (γ) is applied; Apertus uses γ-only (no β).
+    (γ) is applied; Apertus uses γ-only (no β). With ``center=True``, the mean
+    along the normalized axis is subtracted before RMS (Muse/Gemma centered norm).
     """
 
     module_kind = "RMSNorm"
@@ -31,6 +32,7 @@ class RMSNorm(Module):
         *,
         eps: float = 1e-5,
         elementwise_affine: bool = True,
+        center: bool = False,
         compute_dtype: DType = RMSNORM_COMPUTE_DTYPE,
         activation_dtype_default: DType = DType.BF16,
     ) -> None:
@@ -40,6 +42,7 @@ class RMSNorm(Module):
         self.normalized_shape = normalized_shape
         self.eps = eps
         self.elementwise_affine = elementwise_affine
+        self.center = center
         self.compute_dtype = compute_dtype
         self._activation_dtype_default = activation_dtype_default
 
@@ -65,6 +68,13 @@ class RMSNorm(Module):
 
         # HF eager: hidden_states = hidden_states.to(float32)
         x_compute = Cast(to_dtype=self.compute_dtype)(value)
+
+        if self.center:
+            mean = Divide()(
+                ReduceSum(axis=axis, keepdim=True)(x_compute),
+                self._inv_norm_size,
+            )
+            x_compute = Subtract()(x_compute, mean)  # type: ignore[assignment]
 
         squared = Multiply()(x_compute, x_compute)
         variance = Divide()(

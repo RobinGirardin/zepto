@@ -31,6 +31,7 @@ class AttentionConfig:
 
     qkv_bias: bool = False
     o_bias: bool = False
+    q_post_norm_scale: float | None = None
 
     @property
     def q_proj_size(self) -> int:
@@ -65,6 +66,8 @@ class AttentionConfig:
                 )
         elif self.mask == "full" and self.window_size is not None:
             raise ValueError("full mask requires window_size to be None")
+        if self.q_post_norm_scale is not None and self.q_post_norm_scale <= 0:
+            raise ValueError("q_post_norm_scale must be positive when set")
 
 
 def llama_gqa(
@@ -156,6 +159,7 @@ def muse_glimmer_text_attention_layer(*, layer_index: int) -> AttentionConfig:
         window_size=None if global_layer else 2048,
         position="none" if global_layer else "rope",
         output_gate="sigmoid",
+        q_post_norm_scale=3.87,
     )
 
 

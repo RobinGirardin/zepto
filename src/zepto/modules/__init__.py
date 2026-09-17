@@ -35,6 +35,12 @@ from .multimodal_language_model import embed_multimodal_sequence
 from .muse_glimmer import MUSE_GLIMMER_30B, MuseGlimmer, MuseGlimmerConfig
 from .nemotron_h import NEMOTRON_H_30B_A3B, NemotronH, NemotronHConfig
 from .qwen38 import QWEN38_27B, Qwen38, Qwen38Config
+from .sandwich_norm_swiglu_decoder_block import (
+    GEMMA4_LANGUAGE_SANDWICH_NORM,
+    MUSE_LANGUAGE_SANDWICH_NORM,
+    SandwichNormStyle,
+    SandwichNormSwiGLUDecoderBlock,
+)
 from .swiglu_decoder_block import SwiGLUDecoderBlock
 from .l2_normalize import L2Normalize
 from .layer_spec import LayerSpec, MixerKind
@@ -191,6 +197,10 @@ __all__ = [
     "QWEN38_27B",
     "Qwen38",
     "Qwen38Config",
+    "GEMMA4_LANGUAGE_SANDWICH_NORM",
+    "MUSE_LANGUAGE_SANDWICH_NORM",
+    "SandwichNormStyle",
+    "SandwichNormSwiGLUDecoderBlock",
     "SwiGLUDecoderBlock",
     "embed_multimodal_sequence",
     "L2Normalize",
