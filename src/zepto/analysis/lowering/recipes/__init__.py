@@ -32,6 +32,11 @@ from .mamba2_scan import (
     DEFAULT_MAMBA2_SCAN_RECIPE,
     Mamba2ScanRecipe,
 )
+from .gated_grouped_rms_norm import (
+    DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE,
+    EAGER_HF_GATED_GROUPED_RMS_NORM_RECIPE,
+    GatedGroupedRMSNormRecipe,
+)
 from .gated_rms_norm import (
     DEFAULT_GATED_RMS_NORM_RECIPE,
     GatedRMSNormRecipe,
@@ -88,6 +93,9 @@ __all__ = [
     "DECODE_MAMBA2_SCAN_RECIPE",
     "DEFAULT_MAMBA2_SCAN_RECIPE",
     "Mamba2ScanRecipe",
+    "DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE",
+    "EAGER_HF_GATED_GROUPED_RMS_NORM_RECIPE",
+    "GatedGroupedRMSNormRecipe",
     "DEFAULT_GATED_RMS_NORM_RECIPE",
     "GatedRMSNormRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",

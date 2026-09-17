@@ -57,6 +57,7 @@ from .regions import (
     DEPTHWISE_CAUSAL_CONV1D_REGIONS,
     GATED_DELTA_SCAN_REGIONS,
     MAMBA2_SCAN_REGIONS,
+    GATED_GROUPED_RMS_NORM_REGIONS,
     GATED_RMS_NORM_REGIONS,
     L2_NORMALIZE_REGIONS,
     LINEAR_CE_REGIONS,
@@ -165,6 +166,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in GATED_DELTA_SCAN_REGIONS:
         registry.register_region(impl)
     for impl in MAMBA2_SCAN_REGIONS:
+        registry.register_region(impl)
+    for impl in GATED_GROUPED_RMS_NORM_REGIONS:
         registry.register_region(impl)
     for impl in GATED_RMS_NORM_REGIONS:
         registry.register_region(impl)
