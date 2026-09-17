@@ -18,6 +18,10 @@ from .gqa import (
     GQARecipe,
     GQASDPAMathRecipe,
 )
+from .depthwise_causal_conv1d import (
+    DEFAULT_DEPTHWISE_CAUSAL_CONV1D_RECIPE,
+    DepthwiseCausalConv1dRecipe,
+)
 from .l2_normalize import DEFAULT_L2_NORMALIZE_RECIPE, L2NormalizeRecipe
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
 from .masked_softmax import (
@@ -61,7 +65,9 @@ __all__ = [
     "LIGER_GEGLU_RECIPE",
     "GeGLURecipe",
     "DEFAULT_GQA_RECIPE",
+    "DEFAULT_DEPTHWISE_CAUSAL_CONV1D_RECIPE",
     "DEFAULT_L2_NORMALIZE_RECIPE",
+    "DepthwiseCausalConv1dRecipe",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",

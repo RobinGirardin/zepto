@@ -52,7 +52,7 @@ For each production kernel:
 4. Set `forward_flops` from the paper/Appendix E leaf, not from summing unfused primitive estimates, unless the backend is literally the eager chain.
 5. Record HBM/IO complexity when the kernel is memory-bound (FlashAttention, fused RMSNorm). Wall-clock speedup is *not* a Zepto output; IO complexity explains *why* peak VRAM drops.
 
-Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/squared_relu`, `region/rmsnorm`, `region/silu`, `region/softplus`, `region/gelu`, `region/gelu_erf`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`), `region/softmax`, `region/softmax-one` (reference + megatron sink-softmax leaves), `region/masked_softmax` (including `region/masked_softmax/sink` for Megatron SoftmaxOne torch fallback), `region/gqa-sink`, `region/swiglu` (decomposed default; Liger variants on CUDA with `fused_post_gemm` / `fused_gate_up`), `region/geglu` (decomposed default; erf and Liger variants). Apertus-critical missing regions are called out per kernel below.
+Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/squared_relu`, `region/rmsnorm`, `region/l2_normalize` (reference + FLA; gated on `requested_capabilities={'fused'}`), `region/depthwise_causal_conv1d` (decomposed + cuda + hub; gated on `requested_capabilities={'fused'}`), `region/silu`, `region/softplus`, `region/gelu`, `region/gelu_erf`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`), `region/softmax`, `region/softmax-one` (reference + megatron sink-softmax leaves), `region/masked_softmax` (including `region/masked_softmax/sink` for Megatron SoftmaxOne torch fallback), `region/gqa-sink`, `region/swiglu` (decomposed default; Liger variants on CUDA with `fused_post_gemm` / `fused_gate_up`), `region/geglu` (decomposed default; erf and Liger variants). Apertus-critical missing regions are called out per kernel below.
 
 ---
 
@@ -293,6 +293,14 @@ Let \(n = \lvert x \rvert\) (e.g. \(S d\) for hidden RMSNorm).
 Apertus-8B, \(S{=}8192\), one hidden RMSNorm: \(S d e = 64\,\mathrm{MiB}\) bf16. Two full-size temps on pre-attn **and** pre-FFN ≈ **256 MiB** of elidable peak if counted as simultaneous — fused `region/rmsnorm` must **replace** the primitive chain so those temps never enter the resource-event stream.
 
 **Zepto:** add `region/rmsnorm` mirroring `region/layernorm` (which already saves `mean` and `inv_std` and uses \(5n\) FLOPs). RMSNorm should save **`rstd` only** (no mean) and use **\(4n\)** FLOPs. Optional `region/fused_add_rmsnorm` for vLLM-comparable residual fusion.
+
+### L2-normalize (last-dim, no γ)
+
+Registered: `region/l2_normalize/reference`, `region/l2_normalize/fla` (default on generic hardware). Un-averaged sum-of-squares + ε with fp32 reduction — module spec in [`docs/plans/step5-stateful-mixers.md`](plans/step5-stateful-mixers.md) §7.6; full kernel research in [`docs/kernel/l2-normalize.md`](kernel/l2-normalize.md). Fused leaf: **\(3n\)** forward, **\(4n\)** backward, **`SAVE rstd`** when training. `GatedDeltaNet` bills two standalone leaves (Q, K) unless a future `region/gated_delta_scan` in-kernel norm subsumes them (composition rule TBD).
+
+### Depthwise causal Conv1D (+ optional SiLU)
+
+Registered: `region/depthwise_causal_conv1d/decomposed` (default on non-CUDA hardware), `region/depthwise_causal_conv1d/cuda` (Dao `causal-conv1d` parity on CUDA), `region/depthwise_causal_conv1d/hub` (HF Hub routing). Identity module `DepthwiseCausalConv1d` remains the unfused reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe (K=4, SiLU, no bias): **\(12\,SC\)** forward, **\(22\,SC\)** backward when training; elides extended history and per-timestep window temps; **`SAVE pre_activation`** when SiLU + grad. Mutually exclusive with mega-fusion **`region/mamba2_mixer`** on the same mixer conv slot. Full research: [`docs/kernel/depthwise-causal-conv1d.md`](kernel/depthwise-causal-conv1d.md) (see also `_workspace/research.md`).
 
 ---
 

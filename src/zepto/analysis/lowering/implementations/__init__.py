@@ -54,6 +54,7 @@ from .regions import (
     GELU_REGIONS,
     GQA_REGIONS,
     GQA_SINK_REGIONS,
+    DEPTHWISE_CAUSAL_CONV1D_REGIONS,
     L2_NORMALIZE_REGIONS,
     LINEAR_CE_REGIONS,
     MASKED_SOFTMAX_REGIONS,
@@ -155,6 +156,8 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in SOFTMAX_ONE_REGIONS:
         registry.register_region(impl)
     for impl in L2_NORMALIZE_REGIONS:
+        registry.register_region(impl)
+    for impl in DEPTHWISE_CAUSAL_CONV1D_REGIONS:
         registry.register_region(impl)
     for impl in LINEAR_CE_REGIONS:
         registry.register_region(impl)

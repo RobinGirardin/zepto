@@ -23,11 +23,6 @@ def _prov(rule_id: str, kind: str, component: str) -> ProvenanceMatchRule:
     )
 
 
-DEPTHWISE_CONV_PROVENANCE = _prov(
-    "prov-depthwise-causal-conv1d",
-    "region/depthwise_causal_conv1d",
-    "DepthwiseCausalConv1d",
-)
 GATED_DELTA_SCAN_PROVENANCE = _prov(
     "prov-gated-delta-scan", "region/gated_delta_scan", "GatedDeltaScan"
 )
@@ -91,7 +86,6 @@ def _stub(kind: str, provenance: ProvenanceMatchRule) -> _StubMixerRegion:
 
 
 MIXER_STUB_REGIONS: tuple[_StubMixerRegion, ...] = (
-    _stub("region/depthwise_causal_conv1d", DEPTHWISE_CONV_PROVENANCE),
     _stub("region/gated_delta_scan", GATED_DELTA_SCAN_PROVENANCE),
     _stub("region/mamba2_scan", MAMBA2_SCAN_PROVENANCE),
     _stub("region/gated_rms_norm", GATED_RMS_NORM_PROVENANCE),

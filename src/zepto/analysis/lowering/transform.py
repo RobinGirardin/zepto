@@ -218,7 +218,11 @@ def lower_region(
         "estimation": estimation,
         "lowered_edges": state.lowered_edges,
     }
-    if region.kind in ("region/gqa", "region/gqa-sink"):
+    if region.kind in (
+        "region/gqa",
+        "region/gqa-sink",
+        "region/depthwise_causal_conv1d",
+    ):
         lower_kwargs["state_port_collector"] = state.state_port_events
     lowered_node = impl.lower(
         region,
