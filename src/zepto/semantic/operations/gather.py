@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from zepto.compose.values import Tensor
 from ..ports import Port, ValueKind
 from .base import Operation
-from .helpers import allocate, activation_grad_events, reduced_gradient_tensor
+from .helpers import allocate, activation_grad_events, reduced_gradient_tensor, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 GRAD_INPUT = "grad_input"
@@ -102,7 +102,15 @@ class Gather(Operation):
         return 0
 
     def backward_flops(self, context: EstimationContext) -> int:
-        return 0
+        output = context.tensor_for("output") 
+        input = context.tensor_for("input")
+        if output is None:
+            raise ValueError("Estimation context must provide an 'output' port")
+        if input is None:
+            raise ValueError("Estimation context must provide an 'input' port")
+        if not input.requires_grad:
+            return 0
+        return numel(output)
 
     def resource_events(
         self, context: EstimationContext, result: OperationResult

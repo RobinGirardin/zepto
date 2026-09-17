@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from zepto.compose import Module, Tensor
 from zepto.semantic import Concat, Cos, MatMul, Multiply, Reshape, Sin
 
-
-@dataclass(frozen=True, slots=True)
-class RoPEConfig:
-    """RoPE frequency/scaling knobs (init-only; shapes unchanged at runtime)."""
-
-    attention_scaling: float = 1.0
+from .rope_config import RoPEConfig
 
 
 class RoPEMaterialize(Module):
@@ -35,13 +28,20 @@ class RoPEMaterialize(Module):
         super().__init__()
         if seq_len <= 0 or head_dim <= 0:
             raise ValueError("seq_len and head_dim must be positive")
-        if head_dim % 2 != 0:
-            raise ValueError(f"head_dim must be even for RoPE, got {head_dim}")
+        cfg = config or RoPEConfig(head_dim=head_dim)
+        if cfg.head_dim != head_dim:
+            raise ValueError(
+                f"config.head_dim ({cfg.head_dim}) must match head_dim ({head_dim})"
+            )
+        rotary_dim = cfg.resolved_rotary_dim
+        if rotary_dim % 2 != 0:
+            raise ValueError(f"rotary_dim must be even, got {rotary_dim}")
+
         self.seq_len = seq_len
         self.head_dim = head_dim
-        self.config = config or RoPEConfig()
+        self.config = cfg
 
-        half = head_dim // 2
+        half = rotary_dim // 2
         self._inv_freq = Tensor(
             shape=(half,),
             semantic_type="inv_freq",
@@ -60,7 +60,7 @@ class RoPEMaterialize(Module):
         )
 
     def forward(self) -> tuple[Tensor, Tensor]:  # type: ignore[override]
-        half = self.head_dim // 2
+        half = self.config.resolved_rotary_dim // 2
         position_col = Reshape(shape=(self.seq_len, 1))(self._position_ids)
         inv_row = Reshape(shape=(1, half))(self._inv_freq)
         freqs = MatMul()(position_col, inv_row)

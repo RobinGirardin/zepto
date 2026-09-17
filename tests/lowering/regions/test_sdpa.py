@@ -8,6 +8,8 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
+from zepto.modules.attention import FlexibleAttention
+from zepto.modules.attention_config import llama_gqa
 from zepto.modules.gqa import GroupedQueryAttention
 from zepto.semantic import ResourceEventKind
 
@@ -71,6 +73,23 @@ def _gqa_node(lowered):
     nodes = [n for n in lowered.nodes if n.implementation.startswith("region/gqa")]
     assert len(nodes) == 1
     return nodes[0]
+
+
+def test_flexible_llama_sdpa_flash_flops() -> None:
+    graph = compose_graph(
+        lambda _ctx: FlexibleAttention(
+            llama_gqa(_HIDDEN, _HEADS, _KV_HEADS, head_dim=_HEAD_DIM)
+        ),
+        (
+            Tensor(shape=(_SEQ, _HIDDEN), requires_grad=True),
+            Tensor(shape=(1, _SEQ, _SEQ), requires_grad=False),
+        ),
+    )
+    lowered = lower(graph, _sdpa_context(sdpa_mode="flash"))
+    op = _gqa_node(lowered)
+    assert op.implementation == "region/gqa/sdpa-flash"
+    expected = _expected_flash_forward_flops()
+    assert op.forward_flops == expected
 
 
 def test_compose_gqa_discovers_sdpa_region() -> None:

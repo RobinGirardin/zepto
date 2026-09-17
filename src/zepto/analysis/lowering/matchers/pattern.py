@@ -213,7 +213,236 @@ class PatternRegionMatcher:
             minimum = constraint.min_rank or 0
             if rank < minimum:
                 return False
+        if constraint.kind == "silu_mul_x_sigmoid_x":
+            if len(operation_ids) < 2:
+                return False
+            sigmoid_op = graph.node(operation_ids[0])
+            multiply_op = graph.node(operation_ids[1])
+            if not sigmoid_op.input_edges or not multiply_op.input_edges:
+                return False
+            return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
+        if constraint.kind == "squared_relu_mul_relu_relu":
+            if len(operation_ids) < 2:
+                return False
+            maximum_op = graph.node(operation_ids[0])
+            multiply_op = graph.node(operation_ids[1])
+            if not maximum_op.output_edges or len(multiply_op.input_edges) < 2:
+                return False
+            relu_out = maximum_op.output_edges[0]
+            return (
+                multiply_op.input_edges[0] == relu_out
+                and multiply_op.input_edges[1] == relu_out
+            )
+        if constraint.kind == "gelu_tanh_activation":
+            return _check_gelu_tanh_activation(graph, operation_ids)
+        if constraint.kind == "gelu_erf_activation":
+            return _check_gelu_erf_activation(graph, operation_ids)
+        if constraint.kind == "softplus_decomposed_chain":
+            return _check_softplus_decomposed_chain(graph, operation_ids)
+        if constraint.kind == "swiglu_silu_branch":
+            return _check_swiglu_silu_branch(graph, operation_ids)
+        if constraint.kind == "swiglu_shared_gate_up_input":
+            return _check_swiglu_shared_gate_up_input(graph, operation_ids)
+        if constraint.kind == "swiglu_gate_act_mul_up":
+            return _check_swiglu_gate_act_mul_up(graph, operation_ids)
+        if constraint.kind == "geglu_shared_gate_up_input":
+            return _check_geglu_shared_gate_up_input(graph, operation_ids)
+        if constraint.kind == "geglu_gelu_on_gate_branch":
+            return _check_geglu_gelu_on_gate_branch(graph, operation_ids)
+        if constraint.kind == "geglu_gate_act_mul_up":
+            return _check_geglu_gate_act_mul_up(graph, operation_ids)
         return True
+
+
+def _edge_semantic_type(graph: Graph, edge_id: object) -> str:
+    return graph.edge(edge_id).tensor.semantic_type
+
+
+def _check_swiglu_silu_branch(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 4:
+        return False
+    sigmoid_op = graph.node(operation_ids[2])
+    multiply_op = graph.node(operation_ids[3])
+    if not sigmoid_op.input_edges or not multiply_op.input_edges:
+        return False
+    return multiply_op.input_edges[0] == sigmoid_op.input_edges[0]
+
+
+def _check_swiglu_shared_gate_up_input(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 2:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    up_op = graph.node(operation_ids[1])
+    if not gate_op.input_edges or not up_op.input_edges:
+        return False
+    return gate_op.input_edges[0] == up_op.input_edges[0]
+
+
+def _check_swiglu_gate_act_mul_up(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 5:
+        return False
+    up_op = graph.node(operation_ids[1])
+    silu_mul_op = graph.node(operation_ids[3])
+    gate_mul_op = graph.node(operation_ids[4])
+    if (
+        not up_op.output_edges
+        or not silu_mul_op.output_edges
+        or len(gate_mul_op.input_edges) < 2
+    ):
+        return False
+    silu_out = silu_mul_op.output_edges[0]
+    up_out = up_op.output_edges[0]
+    return (
+        gate_mul_op.input_edges[0] == silu_out
+        and gate_mul_op.input_edges[1] == up_out
+        and gate_mul_op.input_edges[0] != gate_mul_op.input_edges[1]
+    )
+
+
+def _check_geglu_shared_gate_up_input(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 2:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    up_op = graph.node(operation_ids[1])
+    if not gate_op.input_edges or not up_op.input_edges:
+        return False
+    return gate_op.input_edges[0] == up_op.input_edges[0]
+
+
+def _check_geglu_gelu_on_gate_branch(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 3:
+        return False
+    gate_op = graph.node(operation_ids[0])
+    gelu_op = graph.node(operation_ids[2])
+    if not gate_op.output_edges or not gelu_op.input_edges:
+        return False
+    return gelu_op.input_edges[0] == gate_op.output_edges[0]
+
+
+def _check_geglu_gate_act_mul_up(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 4:
+        return False
+    up_op = graph.node(operation_ids[1])
+    gelu_op = graph.node(operation_ids[2])
+    gate_mul_op = graph.node(operation_ids[3])
+    if (
+        not up_op.output_edges
+        or not gelu_op.output_edges
+        or len(gate_mul_op.input_edges) < 2
+    ):
+        return False
+    gelu_out = gelu_op.output_edges[0]
+    up_out = up_op.output_edges[0]
+    return (
+        gate_mul_op.input_edges[0] == gelu_out
+        and gate_mul_op.input_edges[1] == up_out
+        and gate_mul_op.input_edges[0] != gate_mul_op.input_edges[1]
+    )
+
+
+def _check_softplus_decomposed_chain(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 3:
+        return False
+    exp_op = graph.node(operation_ids[0])
+    add_op = graph.node(operation_ids[1])
+    log_op = graph.node(operation_ids[2])
+    if not exp_op.input_edges or len(add_op.input_edges) < 2:
+        return False
+    if not exp_op.output_edges or not add_op.output_edges:
+        return False
+    exp_out = exp_op.output_edges[0]
+    if add_op.input_edges[1] != exp_out:
+        return False
+    add_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in add_op.input_edges
+    }
+    if "one" not in add_types:
+        return False
+    if not log_op.input_edges:
+        return False
+    return log_op.input_edges[0] in add_op.output_edges
+
+
+def _check_gelu_tanh_activation(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 9:
+        return False
+    mul_x_squared = graph.node(operation_ids[0])
+    mul_x_cubed = graph.node(operation_ids[1])
+    mul_kappa = graph.node(operation_ids[2])
+    mul_scale = graph.node(operation_ids[4])
+    tanh_op = graph.node(operation_ids[5])
+    if len(mul_x_squared.input_edges) < 2 or len(mul_x_cubed.input_edges) < 2:
+        return False
+    x_edge = mul_x_squared.input_edges[0]
+    if mul_x_squared.input_edges[0] != mul_x_squared.input_edges[1]:
+        return False
+    if x_edge not in mul_x_cubed.input_edges:
+        return False
+    if mul_x_squared.output_edges[0] not in mul_x_cubed.input_edges:
+        return False
+    kappa_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_kappa.input_edges
+    }
+    if "gelu_kappa" not in kappa_types:
+        return False
+    sqrt_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_scale.input_edges
+    }
+    if "gelu_sqrt_2_over_pi" not in sqrt_types:
+        return False
+    if not mul_scale.output_edges or not tanh_op.input_edges:
+        return False
+    return mul_scale.output_edges[0] in tanh_op.input_edges
+
+
+def _check_gelu_erf_activation(
+    graph: Graph,
+    operation_ids: tuple[NodeId, ...],
+) -> bool:
+    if len(operation_ids) < 5:
+        return False
+    mul_scale = graph.node(operation_ids[0])
+    erf_op = graph.node(operation_ids[1])
+    add_op = graph.node(operation_ids[2])
+    mul4 = graph.node(operation_ids[4])
+    scale_types = {
+        _edge_semantic_type(graph, edge_id) for edge_id in mul_scale.input_edges
+    }
+    if "gelu_inv_sqrt2" not in scale_types:
+        return False
+    if not mul_scale.output_edges or not erf_op.input_edges:
+        return False
+    if mul_scale.output_edges[0] not in erf_op.input_edges:
+        return False
+    add_types = {_edge_semantic_type(graph, edge_id) for edge_id in add_op.input_edges}
+    if "one" not in add_types:
+        return False
+    half_types = {_edge_semantic_type(graph, edge_id) for edge_id in mul4.input_edges}
+    return "gelu_half" in half_types
 
 
 def _edge_satisfied(

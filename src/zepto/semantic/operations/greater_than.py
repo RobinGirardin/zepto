@@ -3,7 +3,7 @@
 from zepto.compose.values import Tensor
 from ..ports import Port
 from .base import Operation
-from .helpers import allocate, broadcast_tensor, numel
+from .helpers import allocate, broadcast_tensor
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
@@ -54,10 +54,7 @@ class GreaterThan(Operation):
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
-        output = context.tensor_for("output")
-        if output is None:
-            raise ValueError("Estimation context must provide an 'output' port")
-        return numel(output)
+        return 0
 
     def backward_flops(self, context: EstimationContext) -> int:
         return 0
