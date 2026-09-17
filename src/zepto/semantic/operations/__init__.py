@@ -5,6 +5,8 @@ from .add import Add
 from .bilinear_resize_2d import BilinearResize2D
 from .cast import Cast
 from .concat import Concat
+from .conv2d import Conv2d
+from .conv3d import Conv3d
 from .cos import Cos
 from .divide import Divide
 from .embedding_lookup import EmbeddingLookup
@@ -19,7 +21,11 @@ from .linear_matmul import LinearMatMul
 from .log import Log
 from .matmul import MatMul
 from .attention_softmax_with_sink import AttentionSoftmaxWithSink
+from .materialized_bidirectional_mask import MaterializedBidirectionalMask
 from .materialized_causal_mask import MaterializedCausalMask
+from .materialized_sliding_window_bidirectional_mask import (
+    MaterializedSlidingWindowBidirectionalMask,
+)
 from .materialized_sliding_window_causal_mask import (
     MaterializedSlidingWindowCausalMask,
 )
@@ -33,6 +39,7 @@ from .reduce_sum import ReduceSum
 from .repeat_kv import RepeatKV
 from .reshape import Reshape
 from .scatter_add import ScatterAdd
+from .scatter_update import ScatterUpdate
 from .sigmoid import Sigmoid
 from .sin import Sin
 from .split import Split
@@ -64,6 +71,8 @@ __all__ = [
     "BilinearResize2D",
     "Cast",
     "Concat",
+    "Conv2d",
+    "Conv3d",
     "Cos",
     "DeclarationValidator",
     "Divide",
@@ -85,7 +94,9 @@ __all__ = [
     "Log",
     "MatMul",
     "Materialization",
+    "MaterializedBidirectionalMask",
     "MaterializedCausalMask",
+    "MaterializedSlidingWindowBidirectionalMask",
     "MaterializedSlidingWindowCausalMask",
     "Maximum",
     "Minimum",
@@ -102,6 +113,7 @@ __all__ = [
     "ResourceEventKind",
     "Reshape",
     "ScatterAdd",
+    "ScatterUpdate",
     "SemanticOperation",
     "Sigmoid",
     "Sin",

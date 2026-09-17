@@ -9,6 +9,7 @@ from .affine_linear import AffineLinear
 from .attention_config import AttentionConfig
 from .attention_softmax_with_sink import AttentionSoftmaxWithSink
 from .qk_norm import QKNormRMSNorm
+from .rms_norm import RMSNorm
 from .rope_apply import RoPEApply
 from .softmax import Softmax, attention_softmax_scale
 from .softplus import Softplus
@@ -34,6 +35,7 @@ class FlexibleAttention(Module):
         *,
         qk_norm: QKNormRMSNorm | None = None,
         rope: RoPEApply | None = None,
+        v_norm: RMSNorm | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -72,6 +74,8 @@ class FlexibleAttention(Module):
             self.qk_norm = qk_norm
         if rope is not None and cfg.position != "none":
             self.rope = rope
+        if v_norm is not None:
+            self.v_norm = v_norm
 
     def forward(
         self,
@@ -141,6 +145,10 @@ class FlexibleAttention(Module):
         qk_norm = getattr(self, "qk_norm", None)
         if qk_norm is not None:
             query_heads, key_heads = qk_norm(query_heads, key_heads)  # type: ignore[misc]
+
+        v_norm = getattr(self, "v_norm", None)
+        if v_norm is not None:
+            value_heads = v_norm(value_heads)  # type: ignore[assignment]
 
         if cfg.position != "none":
             rope = getattr(self, "rope", None)

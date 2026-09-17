@@ -57,7 +57,38 @@ from .softplus import Softplus
 from .axial_rope_materialize import AxialRoPEMaterialize
 from .interpolated_position_grid import InterpolatedPositionGrid
 from .learned_position_embedding_2d import LearnedPositionEmbedding2D
+from .multimodal_projector import (
+    MultimodalProjector,
+    ProjectorConfig,
+    gemma4_vision_projector,
+    muse_glimmer_perception_adapter,
+)
 from .multimodal_rope_materialize import MultimodalRoPEMaterialize
+from .multimodal_sequence_builder import MultimodalSequenceBuilder
+from .patch_embed import (
+    Conv2dPatchEmbed,
+    Conv3dPatchEmbed,
+    GemmaLinearPatchEmbed,
+    LinearPatchEmbed,
+    qwen3_vl_patch_embed,
+)
+from .patch_merger import PatchMerger2x2
+from .pixel_shuffle import PixelShuffle2x2
+from .position_aware_pool import PositionAwareAveragePool2x2
+from .vision_attention_config import (
+    VisionAttentionConfig,
+    gemma4_vision_attention,
+    muse_glimmer_vision_attention,
+    muse_glimmer_vision_schedule,
+    qwen3_vl_vision_attention,
+)
+from .vision_encoder_block import VisionEncoderBlock
+from .vision_masks import (
+    MaterializedBidirectionalMask,
+    SlidingWindowBidirectionalMask,
+    vision_mask_for_config,
+)
+from .vision_presets import Gemma4VisionPath, MuseGlimmerVisionTower, Qwen3VLVisionTower, VisionConfig
 from .nemotron_expert_pool import NemotronExpertPool
 from .nemotron_moe_block import NemotronMoEBlock
 from .nemotron_moe_router import NemotronMoERouter
@@ -132,7 +163,33 @@ __all__ = [
     "LagunaSparseMoEBlock",
     "LayerRoPEBinding",
     "LearnedPositionEmbedding2D",
+    "Conv2dPatchEmbed",
+    "Conv3dPatchEmbed",
+    "Gemma4VisionPath",
+    "GemmaLinearPatchEmbed",
+    "LinearPatchEmbed",
+    "MaterializedBidirectionalMask",
+    "MultimodalProjector",
     "MultimodalRoPEMaterialize",
+    "MultimodalSequenceBuilder",
+    "MuseGlimmerVisionTower",
+    "PatchMerger2x2",
+    "PixelShuffle2x2",
+    "PositionAwareAveragePool2x2",
+    "ProjectorConfig",
+    "Qwen3VLVisionTower",
+    "SlidingWindowBidirectionalMask",
+    "VisionAttentionConfig",
+    "VisionConfig",
+    "VisionEncoderBlock",
+    "gemma4_vision_attention",
+    "gemma4_vision_projector",
+    "muse_glimmer_perception_adapter",
+    "muse_glimmer_vision_attention",
+    "muse_glimmer_vision_schedule",
+    "qwen3_vl_patch_embed",
+    "qwen3_vl_vision_attention",
+    "vision_mask_for_config",
     "SlidingWindowCausalMask",
     "apertus_rope",
     "bind_rope",
