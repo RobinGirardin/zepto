@@ -18,6 +18,7 @@ from .gqa import (
     GQARecipe,
     GQASDPAMathRecipe,
 )
+from .l2_normalize import DEFAULT_L2_NORMALIZE_RECIPE, L2NormalizeRecipe
 from .linear_ce import DEFAULT_LINEAR_CE_RECIPE, LinearCERecipe
 from .masked_softmax import (
     DEFAULT_MASKED_SOFTMAX_RECIPE,
@@ -60,6 +61,7 @@ __all__ = [
     "LIGER_GEGLU_RECIPE",
     "GeGLURecipe",
     "DEFAULT_GQA_RECIPE",
+    "DEFAULT_L2_NORMALIZE_RECIPE",
     "DEFAULT_LINEAR_CE_RECIPE",
     "LinearCERecipe",
     "DEFAULT_MASKED_SOFTMAX_RECIPE",
@@ -70,6 +72,7 @@ __all__ = [
     "DEFAULT_SOFTMAX_RECIPE",
     "GQARecipe",
     "GQASDPAMathRecipe",
+    "L2NormalizeRecipe",
     "MaskedSoftmaxRecipe",
     "MaskedSoftmaxSinkRecipe",
     "SoftmaxOneRecipe",
