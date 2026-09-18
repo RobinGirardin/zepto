@@ -65,11 +65,15 @@ class HorizonSimulationTiming:
         ]
         meta = self.metadata
         if "cache_hits" in meta:
-            lines.append(
+            state_only = meta.get("state_only_steps")
+            cache_line = (
                 f"cache: hits={meta.get('cache_hits', 0)} "
                 f"misses={meta.get('cache_misses', 0)} "
                 f"compose_skipped={meta.get('compose_skipped', 0)}"
             )
+            if state_only is not None:
+                cache_line += f" state_only={state_only}"
+            lines.append(cache_line)
         compose = sum(s.compose_seconds for s in self.step_timings)
         discover = sum(s.discover_seconds for s in self.step_timings)
         lower = sum(s.lower_seconds for s in self.step_timings)
@@ -166,6 +170,7 @@ def simulate_horizon_timed(
             "cache_hits": cache_stats.cache_hits,
             "cache_misses": cache_stats.cache_misses,
             "compose_skipped": cache_stats.compose_skipped,
+            "state_only_steps": cache_stats.state_only_steps,
         }
     )
 

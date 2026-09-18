@@ -93,7 +93,14 @@ def decode_step(
 
 
 def optimizer_step(*, seq_len: int, batch: int = 1) -> HorizonStep:
-    """Build one optimizer boundary step."""
+    """Build one optimizer boundary step.
+
+    Marks a timeline boundary for optimizer state ports (``StatePortRegistry``).
+    Simulation does not compose or lower the training module on this step;
+    compute FLOPs come from ``OptimizerPolicy.flops_per_parameter``. The
+    ``phase="forward"`` field is a legacy placeholder—optimizer rows ignore
+    model forward/backward phase for lowering and FLOP accounting.
+    """
     return HorizonStep(
         kind=StepKind.OPTIMIZER,
         seq_len=seq_len,

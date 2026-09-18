@@ -19,6 +19,10 @@ from .cache import (
     StructuralCacheEntry,
     make_structural_key,
 )
+from .optimizer_step import (
+    make_optimizer_stub_lowered,
+    reference_lowered_for_optimizer,
+)
 from .records import HorizonSimulation, InvocationRecord
 from .spec import HorizonSpec, HorizonStep, StepKind
 
@@ -75,6 +79,26 @@ def simulate_horizon(
     for step_index, step in enumerate(spec.steps):
         step_start = time.perf_counter()
         durations = HorizonStepDurations() if step_durations is not None else None
+
+        if step.kind == StepKind.OPTIMIZER:
+            reference = reference_lowered_for_optimizer(timeline)
+            ctx = _merge_context(step, context, port_registry)
+            lowered = make_optimizer_stub_lowered(reference, ctx)
+            graph = timeline[-1].graph
+            port_registry = port_registry.advance(step, lowered)
+            timeline.append(
+                InvocationRecord(
+                    step=step,
+                    graph=graph,
+                    lowered=lowered,
+                    state_after=port_registry.snapshot(),
+                )
+            )
+            stats.state_only_steps += 1
+            if step_durations is not None and durations is not None:
+                durations.step_total_seconds = time.perf_counter() - step_start
+                step_durations.append(durations)
+            continue
 
         ctx = _merge_context(step, context, port_registry)
         snapshot = port_registry.snapshot()
@@ -143,6 +167,7 @@ def simulate_horizon(
         cache_stats.cache_hits = stats.cache_hits
         cache_stats.cache_misses = stats.cache_misses
         cache_stats.compose_skipped = stats.compose_skipped
+        cache_stats.state_only_steps = stats.state_only_steps
 
     return HorizonSimulation(
         spec=spec,

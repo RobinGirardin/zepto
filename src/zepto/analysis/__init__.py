@@ -46,7 +46,7 @@ from .horizon import (
     optimizer_step,
     simulate_horizon,
 )
-from .optimizer import AdamW, OptimizerPolicy, SGD
+from .optimizer import AdamW, OptimizerPolicy, SGD, optimizer_update_flops
 
 __all__ = [
     "AccountingPolicy",
@@ -78,6 +78,7 @@ __all__ = [
     "LoweringRegistry",
     "MemoryReport",
     "OptimizerPolicy",
+    "optimizer_update_flops",
     "PrecisionPolicy",
     "RegionImplementationDescriptor",
     "RegionImplementationSelection",

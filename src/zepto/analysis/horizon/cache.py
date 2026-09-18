@@ -44,6 +44,7 @@ class HorizonStructuralCacheStats:
     cache_hits: int = 0
     cache_misses: int = 0
     compose_skipped: int = 0
+    state_only_steps: int = 0
 
 
 @dataclass

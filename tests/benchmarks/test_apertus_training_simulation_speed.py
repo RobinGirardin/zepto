@@ -16,6 +16,7 @@ import os
 
 import pytest
 
+from zepto.analysis.horizon.spec import StepKind
 from zepto.benchmark.apertus_training import (
     DEFAULT_WALL_CLOCK_LIMIT_SECONDS,
     WallClockLimitExceeded,
@@ -32,6 +33,10 @@ def test_apertus_training_simulation_timing_harness_smoke() -> None:
     assert len(timing.step_timings) == 3
     assert timing.total_seconds > 0
     assert timing.step_timings[0].discover_seconds > 0
+    assert timing.metadata.get("cache_misses") == 2
+    opt_timing = timing.step_timings[2]
+    assert opt_timing.compose_seconds == 0.0
+    assert opt_timing.lower_seconds == 0.0
 
 
 @pytest.mark.benchmark
@@ -55,8 +60,8 @@ def test_apertus_8b_training_horizon_simulation_speed(capfd) -> None:
     assert timing.total_seconds < DEFAULT_WALL_CLOCK_LIMIT_SECONDS
 
     last = sim.timeline[-1]
-    assert last.lowered.nodes
-    assert sum(n.forward_flops for n in last.lowered.nodes) > 0
+    assert last.step.kind == StepKind.OPTIMIZER
+    assert len(last.lowered.nodes) == 0
 
     summary = timing.format_summary()
     print("\n--- Apertus 8B training simulation timing ---")
