@@ -8,7 +8,7 @@ from zepto.analysis import AdamW, HorizonSpec, estimate, estimate_horizon
 from zepto.analysis.horizon.spec import HorizonStep, StepKind
 from zepto.compose import compose_graph
 
-from empirical.models.base import ModelFamily
+from zepto.empirical.models.base import ModelFamily
 
 ZEPTO_BATCH_REP = "micro_sum"
 

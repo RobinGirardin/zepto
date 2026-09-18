@@ -11,25 +11,25 @@ from typing import Any
 
 import torch
 
-from empirical import HARNESS_VERSION
-from empirical.dataset_io import (
+from zepto.empirical import HARNESS_VERSION
+from zepto.empirical.dataset_io import (
     append_evaluation_rows,
     write_dimension_tables,
     write_evaluation_rows,
     write_methodology,
     write_run_meta,
 )
-from empirical.measure_torch import (
+from zepto.empirical.measure_torch import (
     measure_infer_torch,
     measure_train_step_torch,
     training_warmup_step,
 )
-from empirical.measure_zepto import measure_infer_zepto, measure_train_zepto
-from empirical.models import get_model_family
-from empirical.parity_ctx import build_invocation_context
-from empirical.sampler import SamplerConfig, sample_configurations, sample_draws
-from empirical.schema import EvaluationRow
-from empirical.twin_hf import build_hf_inputs
+from zepto.empirical.measure_zepto import measure_infer_zepto, measure_train_zepto
+from zepto.empirical.models import get_model_family
+from zepto.empirical.parity_ctx import build_invocation_context
+from zepto.empirical.sampler import SamplerConfig, sample_configurations, sample_draws
+from zepto.empirical.schema import EvaluationRow
+from zepto.empirical.twin_hf import build_hf_inputs
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from empirical.schema import (
+from zepto.empirical.schema import (
     CONFIG_LINK_FIELDNAMES,
     EVALUATION_FIELDNAMES,
     OPTION_FIELDNAMES,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from empirical.models.apertus_core import ApertusFamilyCore as ApertusFamily
+from zepto.empirical.models.apertus_core import ApertusFamilyCore as ApertusFamily
 
 
 def test_derive_hidden_size() -> None:

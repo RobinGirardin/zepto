@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from empirical.schema import (
+from zepto.empirical.schema import (
     EvaluationRow,
     OptionRow,
     configuration_id,

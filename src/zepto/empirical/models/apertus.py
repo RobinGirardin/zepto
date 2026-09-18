@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from empirical.models.apertus_core import ApertusFamilyCore, OPTION_KEYS
+from zepto.empirical.models.apertus_core import ApertusFamilyCore, OPTION_KEYS
 
 try:
     from transformers import ApertusConfig, ApertusForCausalLM as HFApertusForCausalLM

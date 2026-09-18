@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from empirical.models.base import ModelFamily
+from zepto.empirical.models.base import ModelFamily
 
 
 def build_hf_inputs(

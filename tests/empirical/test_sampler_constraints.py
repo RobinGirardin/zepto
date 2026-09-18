@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from empirical.models.apertus_core import ApertusFamilyCore
-from empirical.sampler import ArchitectureRanges, IntRange, SamplerConfig, sample_configurations
+from zepto.empirical.models.apertus_core import ApertusFamilyCore
+from zepto.empirical.sampler import ArchitectureRanges, IntRange, SamplerConfig, sample_configurations
 
 
 def _smoke_sampler() -> SamplerConfig:

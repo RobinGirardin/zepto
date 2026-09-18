@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Iterable, Literal
 
-from empirical.schema import (
+from zepto.empirical.schema import (
     ConfigurationLinkRow,
     OptionRow,
     configuration_id,

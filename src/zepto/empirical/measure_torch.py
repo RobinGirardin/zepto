@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch.utils.flop_counter import FlopCounterMode
 
-from empirical.models.base import ModelFamily
+from zepto.empirical.models.base import ModelFamily
 
 
 def _cuda_sync_peak_vram() -> int:
