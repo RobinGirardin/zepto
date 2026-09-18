@@ -151,6 +151,7 @@ from .layers.squared_relu import SquaredReLU
 from .ffn.squared_relu_ffn import SquaredReluFFN
 from .ffn.swiglu import SwiGLU
 from .layers.xielu import XIELU
+from .apertus_for_causal_lm import ApertusForCausalLM
 
 __all__ = [
     "APERTUS_70B",
