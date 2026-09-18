@@ -39,6 +39,7 @@ class ProvenanceMatchRule(RegionMatchRule):
 
     component_type: str | None = None
     module_path_suffix: tuple[str, ...] = ()
+    module_path_envelope: bool = False
     require_contiguous_in_graph_order: bool = True
 
 
@@ -50,6 +51,17 @@ class PatternConstraint:
         "right_operand_is_zero",
         "parameter_count",
         "min_rank",
+        "silu_mul_x_sigmoid_x",
+        "squared_relu_mul_relu_relu",
+        "gelu_tanh_activation",
+        "gelu_erf_activation",
+        "softplus_decomposed_chain",
+        "swiglu_silu_branch",
+        "swiglu_shared_gate_up_input",
+        "swiglu_gate_act_mul_up",
+        "geglu_shared_gate_up_input",
+        "geglu_gelu_on_gate_branch",
+        "geglu_gate_act_mul_up",
     ]
     max_parameters: int | None = None
     min_rank: int | None = None

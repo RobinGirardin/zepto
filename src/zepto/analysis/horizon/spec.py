@@ -36,6 +36,24 @@ class KVConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ConvStateConfig:
+    """Depthwise conv rolling-buffer geometry for horizon simulation."""
+
+    layer_indices: tuple[int, ...]
+    channels: int
+    kernel_size: int
+    dtype: DType
+
+
+@dataclass(frozen=True, slots=True)
+class RecurrentStateConfig:
+    """Recurrent scan state geometry for horizon simulation."""
+
+    layers: tuple[tuple[int, str, int, int, int], ...]
+    dtype: DType
+
+
+@dataclass(frozen=True, slots=True)
 class HorizonStep:
     """One invocation in a horizon timeline."""
 
@@ -97,6 +115,8 @@ class HorizonSpec:
 
     steps: list[HorizonStep] = field(default_factory=list)
     kv: KVConfig | None = None
+    conv: ConvStateConfig | None = None
+    recurrent: RecurrentStateConfig | None = None
     optimizer_policy: OptimizerPolicy | None = field(default=None, repr=False)
 
     @classmethod
@@ -107,10 +127,12 @@ class HorizonSpec:
         decode_steps: int = 0,
         batch: int = 1,
         kv: KVConfig | None = None,
+        conv: ConvStateConfig | None = None,
+        recurrent: RecurrentStateConfig | None = None,
         decode_attention_backend: str | None = None,
     ) -> HorizonSpec:
         """Prefill plus optional decode timeline with optional KV state."""
-        spec = cls(kv=kv)
+        spec = cls(kv=kv, conv=conv, recurrent=recurrent)
         spec.prefill(prefill, batch=batch)
         if decode_steps > 0:
             spec.decode(
@@ -169,6 +191,18 @@ class HorizonSpec:
                 num_kv_heads=self.kv.num_kv_heads,
                 head_dim=self.kv.head_dim,
                 dtype=self.kv.dtype,
+            )
+        if self.conv is not None:
+            registry = registry.configure_conv_layers(
+                layer_indices=self.conv.layer_indices,
+                channels=self.conv.channels,
+                kernel_size=self.conv.kernel_size,
+                dtype=self.conv.dtype,
+            )
+        if self.recurrent is not None:
+            registry = registry.configure_recurrent_layers(
+                specs=self.recurrent.layers,
+                dtype=self.recurrent.dtype,
             )
         if self.optimizer_policy is not None:
             registry = replace(registry, optimizer_policy=self.optimizer_policy)

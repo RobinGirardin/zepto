@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Union
 
 from zepto.analysis.lowered import LoweredNode
@@ -30,6 +30,7 @@ from ....region import Region
 from ....registry import RegionImplementationDescriptor
 from ....role import RoleContext
 from .rules import GQA_OP_SEQUENCES, GQA_PATTERN
+from .shared import attention_dims, resolve_window_size
 
 HardwareGate = Literal["any", "cuda_only"]
 GQARecipeUnion = Union[GQARecipe, GQASDPAMathRecipe]
@@ -68,15 +69,6 @@ def _check_hardware_gate(gate: HardwareGate, context: InvocationContext) -> str 
     if gate == "cuda_only" and context.hardware != "cuda":
         return "cuda variant requires hardware='cuda'"
     return None
-
-
-def _attention_dims(output_tensor: Tensor) -> tuple[int, int, int]:
-    shape = output_tensor.shape
-    if len(shape) != 3:
-        raise ValueError(
-            f"gqa flash region expects rank-3 context (h, S, d_h), got {shape}"
-        )
-    return int(shape[0]), int(shape[1]), int(shape[2])
 
 
 def _register_attention_aux(
@@ -161,9 +153,14 @@ class FusedGQARegionImplementation:
         if input_tensor is None or output_tensor is None:
             raise ValueError("gqa region requires boundary tensors")
 
-        num_heads, seq_len, head_dim = _attention_dims(output_tensor)
+        batch, num_heads, seq_len, head_dim = attention_dims(output_tensor)
         output_id = region.boundary_outputs[0]
         lowered_out = edge_map[output_id]
+
+        window_size = resolve_window_size(region, graph)
+        recipe = self.recipe
+        if window_size is not None and isinstance(recipe, (GQARecipe, GQASDPAMathRecipe)):
+            recipe = replace(recipe, window_size=window_size)
 
         events: list[ResourceEvent] = []
         auxiliary_edges: list[str] = []
@@ -197,7 +194,7 @@ class FusedGQARegionImplementation:
             if state_port_collector is not None:
                 state_port_collector.append(state_event)
 
-        if isinstance(self.recipe, GQASDPAMathRecipe) and self.recipe.save_P:
+        if isinstance(recipe, GQASDPAMathRecipe) and recipe.save_P:
             scores_id = f"region:{region.id}:scores"
             p_id = f"region:{region.id}:P"
             attn_shape = (num_heads, seq_len, seq_len)
@@ -227,8 +224,8 @@ class FusedGQARegionImplementation:
         else:
             events.append(ResourceEvent(ResourceEventKind.ALLOCATE, lowered_out))
             if (
-                isinstance(self.recipe, GQARecipe)
-                and self.recipe.save_row_stats
+                isinstance(recipe, GQARecipe)
+                and recipe.save_row_stats
                 and input_tensor.requires_grad
             ):
                 saved_stats = f"region:{region.id}:row_stats"
@@ -242,23 +239,25 @@ class FusedGQARegionImplementation:
                 events.append(ResourceEvent(ResourceEventKind.SAVE, saved_stats))
                 auxiliary_edges.append(saved_stats)
 
-        if is_decode and isinstance(self.recipe, GQARecipe):
-            forward_flops = self.recipe.paged_forward_flops(
+        if is_decode and isinstance(recipe, GQARecipe):
+            forward_flops = recipe.paged_forward_flops(
                 num_heads=num_heads,
                 cache_len=flop_seq_len,
                 head_dim=head_dim,
             )
             backward_flops = 0
         else:
-            forward_flops = self.recipe.forward_flops(
+            forward_flops = recipe.forward_flops(
                 num_heads=num_heads, seq_len=flop_seq_len, head_dim=head_dim
             )
-            backward_flops = self.recipe.backward_flops(
+            backward_flops = recipe.backward_flops(
                 num_heads=num_heads,
                 seq_len=flop_seq_len,
                 head_dim=head_dim,
                 requires_grad=input_tensor.requires_grad,
             )
+        forward_flops *= batch
+        backward_flops *= batch
 
         if context.phase == "backward" and auxiliary_edges:
             events.append(

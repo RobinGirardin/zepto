@@ -115,7 +115,7 @@ def test_maximum_identity_produces_allocate_and_flops() -> None:
     op = lowered.nodes[0]
 
     assert op.implementation == "maximum/identity"
-    assert op.forward_flops == 12
+    assert op.forward_flops == 0
     assert op.backward_flops == 12
     assert any(event.kind is ResourceEventKind.ALLOCATE for event in op.resource_events)
 

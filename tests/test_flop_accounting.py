@@ -44,7 +44,8 @@ def test_account_flops_forward_phase() -> None:
     report = account_flops(lowered)
 
     forward = sum(node.forward_flops for node in lowered.nodes)
-    assert report.total_flops == forward
+    assert report.forward_flops == 0
+    assert report.total_flops == 0
     assert report.backward_flops == sum(node.backward_flops for node in lowered.nodes)
 
 

@@ -29,9 +29,9 @@ from zepto.semantic import (
     SquareRoot,
     Subtract,
 )
-from zepto.modules.layer_norm import LayerNorm
-from zepto.modules.linear import Linear
-from zepto.modules.relu import ReLU
+from modules.layers.layer_norm import LayerNorm
+from modules.layers.linear import Linear
+from modules.layers.relu import ReLU
 
 
 def _build_layernorm_chain_graph(

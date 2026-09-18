@@ -1,49 +1,46 @@
 ---
 description: >
-  Zepto kernel pipeline — research, architecture proposal, then implementation.
-  Use for "implement kernel X", "research and build GQA/xIELU", "kernel pipeline",
-  or full lowering from operation name through code and docs/kernel/ archive.
-argument-hint: "<operation, e.g. xIELU or GQA paged decode>"
+  Zepto kernel implementation from _workspace/architecture.md — recipes, regions,
+  registration, tests, and docs/kernel/ archive. Use after /architect-kernel or
+  when research + architecture already exist in _workspace/.
+argument-hint: "[operation slug for logging, optional]"
 ---
 
-Run the Zepto kernel pipeline for: **$@**
+Run the Zepto kernel **implementation** phase (operation **$@** if given — slug is optional; implementer reads §8 from `_workspace/research.md`).
 
-Use the **subagent** tool with `agentScope: "both"` in **chain** mode:
+## Prerequisite gate
+
+Before delegating, verify architecture exists and validates:
+
+```bash
+cd /Users/veoon/hslu/zepto-kernel-implementation
+test -f _workspace/architecture.md || { echo "Missing _workspace/architecture.md — run /architect-kernel first"; exit 1; }
+test -f _workspace/research.md || { echo "Missing _workspace/research.md — run /architect-kernel first"; exit 1; }
+python3 .pi/skills/kernel-architecture/scripts/validate_architecture.py _workspace/architecture.md
+```
+
+If the gate fails, stop and tell the user to run `/architect-kernel <operation>` first (or fix artifacts manually). Do not invoke implementer without valid architecture.
+
+## Subagent (single mode — one call, no chain)
+
+Use the **subagent** tool with `agentScope: "both"` and `confirmProjectAgents: false`:
 
 ```json
 {
   "agentScope": "both",
-  "chain": [
-    {
-      "agent": "kernel-searcher",
-      "task": "Research $@ for Zepto cost modeling. Follow your agent workflow: load kernel-search skill, write the full report to _workspace/research.md, run validate_research.py until pass. Return HANDOFF block."
-    },
-    {
-      "agent": "kernel-architect",
-      "task": "Read _workspace/research.md (must exist and pass validation). Follow your agent workflow: load kernel-architecture skill, write the proposal to _workspace/architecture.md, run validate_architecture.py until pass. Prior step summary: {previous}. Return HANDOFF block."
-    },
-    {
-      "agent": "kernel-implementer",
-      "task": "Read _workspace/architecture.md and _workspace/research.md. Implement every file and registration edit in the architecture plan; run the planned pytest until green. Archive _workspace/research.md to docs/kernel/<slug>.md (kebab-case from §8 region_kind): copy full report and add **Proposer:** from `git config user.name` in the header block. Do not redesign architecture — report blockers in HANDOFF. Prior step summary: {previous}. Return HANDOFF block."
-    }
-  ]
+  "confirmProjectAgents": false,
+  "agent": "kernel-implementer",
+  "task": "Read _workspace/architecture.md and _workspace/research.md. Implement every file and registration edit in the architecture plan; run the planned pytest until green. Archive _workspace/research.md to docs/kernel/<slug>.md (kebab-case from §8 region_kind): copy full report and add **Proposer:** from `git config user.name` in the header block. Do not redesign architecture — report blockers in HANDOFF. Return HANDOFF block."
 }
 ```
 
-After the chain completes:
+After the subagent completes:
 
-1. Confirm `_workspace/research.md`, `_workspace/architecture.md`, and `docs/kernel/<slug>.md` exist.
-2. Confirm implementation: summarize src/tests files changed and pytest result from implementer HANDOFF.
-3. Summarize: operation, region_kind, key files implemented, proposer name on archived research, open gaps from research §9 / architecture.
+1. Confirm `docs/kernel/<slug>.md` exists (slug from research §8 `region_kind`, kebab-case).
+2. Summarize src/tests files changed and pytest result from implementer HANDOFF.
+3. Summarize: operation, `region_kind`, key files implemented, proposer name on archived research, open gaps from architecture not resolved.
 
 ## Error handling
 
-- If chain stops at step 1: report research failure; do not invoke later agents without valid research.
-- If step 2 fails but research exists: summarize architecture issues; do not run implementer without valid architecture.
-- If step 3 fails but architecture exists: summarize partial implementation, pytest failures, and whether research was archived.
-
-## Re-run / partial
-
-- **Research only:** subagent single mode with `kernel-searcher` and the same task as step 1.
-- **Architecture only** (research already in `_workspace/research.md`): subagent single mode with `kernel-architect`.
-- **Implementation only** (architecture already in `_workspace/architecture.md`): subagent single mode with `kernel-implementer` and the same task as step 3.
+- If implementer reports blockers: summarize partial changes, pytest failures, and whether research was archived.
+- If subagent aborts or times out: report workspace state (`git status`, whether `docs/kernel/<slug>.md` exists) and suggest re-running `/implement-kernel` only.

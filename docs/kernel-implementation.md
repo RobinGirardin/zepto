@@ -52,7 +52,7 @@ For each production kernel:
 4. Set `forward_flops` from the paper/Appendix E leaf, not from summing unfused primitive estimates, unless the backend is literally the eager chain.
 5. Record HBM/IO complexity when the kernel is memory-bound (FlashAttention, fused RMSNorm). Wall-clock speedup is *not* a Zepto output; IO complexity explains *why* peak VRAM drops.
 
-Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`), `region/softmax`, `region/masked_softmax`. Apertus-critical missing regions are called out per kernel below.
+Registered Zepto regions today: `region/linear`, `region/layernorm`, `region/relu`, `region/squared_relu`, `region/rmsnorm`, `region/l2_normalize` (reference + FLA; gated on `requested_capabilities={'fused'}`), `region/depthwise_causal_conv1d` (decomposed + cuda + hub; gated on `requested_capabilities={'fused'}`), `region/gated_rms_norm` (reference + default + hub-fla + fla; gated on `requested_capabilities={'fused'}`; mutually exclusive with decomposed `region/rmsnorm` / `region/silu` on `GatedRMSNorm` provenance), `region/gated_grouped_rms_norm` (reference + default + eager-hf; gated on `requested_capabilities={'fused'}`; SiLU gate **before** grouped RMS — distinct from `region/gated_rms_norm`; Mamba-2 mixer output norm), `region/silu`, `region/softplus`, `region/gelu`, `region/gelu_erf`, `region/xielu` (optional; gated on `requested_capabilities={'fused'}`), `region/softmax`, `region/softmax-one` (reference + megatron sink-softmax leaves), `region/masked_softmax` (including `region/masked_softmax/sink` for Megatron SoftmaxOne torch fallback), `region/gqa-sink`, `region/swiglu` (decomposed default; Liger variants on CUDA with `fused_post_gemm` / `fused_gate_up`), `region/geglu` (decomposed default; erf and Liger variants). Apertus-critical missing regions are called out per kernel below.
 
 ---
 
@@ -294,6 +294,38 @@ Apertus-8B, \(S{=}8192\), one hidden RMSNorm: \(S d e = 64\,\mathrm{MiB}\) bf16.
 
 **Zepto:** add `region/rmsnorm` mirroring `region/layernorm` (which already saves `mean` and `inv_std` and uses \(5n\) FLOPs). RMSNorm should save **`rstd` only** (no mean) and use **\(4n\)** FLOPs. Optional `region/fused_add_rmsnorm` for vLLM-comparable residual fusion.
 
+### L2-normalize (last-dim, no γ)
+
+Registered: `region/l2_normalize/reference`, `region/l2_normalize/fla` (default on generic hardware). Un-averaged sum-of-squares + ε with fp32 reduction — module spec in [`docs/plans/step5-stateful-mixers.md`](plans/step5-stateful-mixers.md) §7.6; full kernel research in [`docs/kernel/l2-normalize.md`](kernel/l2-normalize.md). Fused leaf: **\(3n\)** forward, **\(4n\)** backward, **`SAVE rstd`** when training. When `region/gated_delta_net` wins overlap resolution, standalone Q/K L2 leaves on the same module instance are **subsumed** (block envelope bills the pair once); `region/gated_delta_net/fla_layer_parity` excludes L2 FLOPs when `use_qk_l2norm_in_kernel=True`.
+
+### Depthwise causal Conv1D (+ optional SiLU)
+
+Registered: `region/depthwise_causal_conv1d/decomposed` (default on non-CUDA hardware), `region/depthwise_causal_conv1d/cuda` (Dao `causal-conv1d` parity on CUDA), `region/depthwise_causal_conv1d/hub` (HF Hub routing). Identity module `DepthwiseCausalConv1d` remains the unfused reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe (K=4, SiLU, no bias): **\(12\,SC\)** forward, **\(22\,SC\)** backward when training; elides extended history and per-timestep window temps; **`SAVE pre_activation`** when SiLU + grad. Mutually exclusive with mega-fusion **`region/mamba2_mixer`** on the same mixer conv slot. Full research: [`docs/kernel/depthwise-causal-conv1d.md`](kernel/depthwise-causal-conv1d.md) (see also `_workspace/research.md`).
+
+### Gated delta scan (Gated DeltaNet recurrence)
+
+Registered: `region/gated_delta_scan/reference` (default on non-CUDA hardware), `region/gated_delta_scan` (FLA chunk prefill on CUDA), `region/gated_delta_scan/decode` (single-step recurrent decode when `S=1` and `scan_state_in` / horizon recurrent port). Identity module `GatedDeltaScan` remains the S-unrolled reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(S h (8 d_k d_v + 2 d_v + 1)\)** forward, **\(S h (16 d_k d_v + 4 d_v + 4)\)** backward when training; elides per-step `decayed` / `prediction` / `delta` / `outer` temps; **`SAVE state_checkpoint`** `[S,h,d_k,d_v]` fp32 when training. On a full `GatedDeltaNet` graph with `requested_capabilities={'fused'}`, prefer **`region/gated_delta_net/composed_tier_a`** (prefix envelope, priority 10) so child scan/L2/conv/norm regions do not double-bill; scan leaf does **not** include L2 FLOPs. Full research: [`docs/kernel/gated-delta-scan.md`](kernel/gated-delta-scan.md).
+
+### Gated DeltaNet block envelope
+
+Registered: `region/gated_delta_net/composed_tier_a` (default Tier-A sum on any hardware), `region/gated_delta_net/fla_layer_parity` (CUDA; in-kernel Q/K L2 parity flags), `region/gated_delta_net/decode` (\(S=1\) + conv/scan state ports). Requires `requested_capabilities={'fused'}` plus `conv_state_port` / `recurrent_state_port`. Default block forward/backward equals the kernel-accurate sum in research §4.2 / §5 (three linear GEMMs, conv+SiLU, L2×2, gate glue, scan, gated RMSNorm, o_proj) with **mutual exclusion** vs overlapping Tier-A leaves. **`PERSIST`** conv and scan state outputs once at block boundary (G3). Pin: `module_implementation_pins={"GatedDeltaNet": "region/gated_delta_net/composed_tier_a"}`. Full research: [`docs/kernel/gated-delta-net.md`](kernel/gated-delta-net.md).
+
+### Mamba-2 selective SSM scan
+
+Registered: `region/mamba2_scan/reference` (default on non-CUDA hardware), `region/mamba2_scan` (SSD chunk prefill on CUDA), `region/mamba2_scan/decode` (single-step `selective_state_update` when `S=1` and `scan_state_in` / horizon recurrent port). Identity module `SelectiveSSMScan` remains the S-unrolled reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe (`Mamba2ScanRecipe`): **\(S h (5 p N + N + 2 p + 7)\)** forward, **\(S h (10 p N + 2 p + N + 4)\)** backward when training; elides per-step discretization/state temps; **`SAVE state_checkpoint`** `[S,h,p,N]` fp32 when training; **`PERSIST scan_state_out`** for horizon decode. On a full `Mamba2Mixer` graph with `requested_capabilities={'fused'}`, prefer **`region/mamba2_mixer/composed_tier_a`** or **`region/mamba2_mixer/hub_mega`** (CUDA) so child conv/scan/norm/linear regions do not double-bill. Full research: [`docs/kernel/mamba2-scan.md`](kernel/mamba2-scan.md).
+
+### Mamba-2 mixer block envelope
+
+Registered: `region/mamba2_mixer/composed_tier_a` (default Tier-A sum on any hardware), `region/mamba2_mixer/hub_mega` (CUDA; Hub `mamba2_split_conv1d_scan_combined` boundary **B**), `region/mamba2_mixer/decode` (\(S=1\) + conv/scan state ports). Requires `requested_capabilities={'fused'}` plus `conv_state_port` / `recurrent_state_port`. Default block forward/backward equals the kernel-accurate sum in research §4.1 / §5.2 (in_proj/o_proj GEMMs, depthwise conv+SiLU, selective SSM scan, gated grouped RMSNorm) with **mutual exclusion** vs overlapping Tier-A leaves. **`PERSIST`** conv and scan state outputs once at block boundary (G3). Pin: `module_implementation_pins={"Mamba2Mixer": "region/mamba2_mixer/composed_tier_a"}`. Full research: [`docs/kernel/mamba2-mixer.md`](kernel/mamba2-mixer.md); child leaves: [`docs/kernel/mamba2-scan.md`](kernel/mamba2-scan.md), [`docs/kernel/depthwise-causal-conv1d.md`](kernel/depthwise-causal-conv1d.md), [`docs/kernel/gated-grouped-rms-norm.md`](kernel/gated-grouped-rms-norm.md).
+
+### Gated RMSNorm (Gated DeltaNet output norm)
+
+Registered: `region/gated_rms_norm/reference`, `region/gated_rms_norm` (default on generic hardware), `region/gated_rms_norm/hub-fla` (CUDA hub `kernels-community/fla` / `RMSNormGated`), `region/gated_rms_norm/fla` (FLA Triton `FusedRMSNormGated`; wins on CUDA). Identity module `GatedRMSNorm` remains the decomposed reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(10n\)** forward, **\(14n\)** backward when training (\(n = \lvert \mathrm{value}\rvert\)); elides full-rank RMS/SiLU temps; **`SAVE(rstd)`** only at this leaf (value/gate saved upstream). **Mutually exclusive** with billing the same `GatedRMSNorm` invocation as separate `region/rmsnorm` + `region/silu` — use one fused leaf. GDN stack: scan and output norm bill as separate regions unless scan mega-fusion (`use_gate_in_kernel=True`) subsumes the gate ([`docs/kernel/gated-delta-scan.md`](kernel/gated-delta-scan.md)). Full research: [`docs/kernel/gated-rms-norm.md`](kernel/gated-rms-norm.md).
+
+### Gated grouped RMSNorm (Mamba-2 mixer output norm)
+
+Registered: `region/gated_grouped_rms_norm/reference`, `region/gated_grouped_rms_norm` (default fused leaf), `region/gated_grouped_rms_norm/eager-hf` (HF identity FLOP parity: **\(10n + 2 S G\)** forward). Identity module `GatedGroupedRMSNorm` remains the decomposed reference; fused leaves require `requested_capabilities={'fused'}`. Default recipe: **\(10n\)** forward, **\(14n\)** backward when training; elides `silu_gate`, `gated`, `squared`, `normalized` HBM temps; **`SAVE(group_rstd)`** with shape \((\ldots, G, 1)\) fp32. **Mutually exclusive** with `region/gated_rms_norm`, separate `region/silu` + `region/rmsnorm` on the same provenance, and boundary-**B** mega-fusion (`mamba2_split_conv1d_scan_combined`) when that leaf subsumes the norm. Mamba-2 stack: `region/mamba2_scan` then this leaf then `region/linear` ([`docs/kernel/mamba2-scan.md`](kernel/mamba2-scan.md)). Full research: [`docs/kernel/gated-grouped-rms-norm.md`](kernel/gated-grouped-rms-norm.md).
+
 ---
 
 ## 6. LayerNorm (non-Apertus, existing Zepto region)
@@ -429,7 +461,9 @@ Four **fusion boundaries** recur below. Hub and serving kernels plug into these;
 | Boundary | What is fused | Still writes \(P\) / logits? | Zepto region |
 |----------|---------------|------------------------------|--------------|
 | **A** Standalone softmax | max / exp / sum / div on a materialized tile | **Yes** | `region/softmax` |
+| **A′** Standalone sink softmax (SoftmaxOne) | stable softmax + sink denominator on \((h,S,S)\) | **Yes** (\(P\) only) | `region/softmax-one/*` |
 | **B** Scaled masked softmax | scale + additive mask + A | **Yes** (\(P\) only) | `region/masked_softmax` |
+| **B′** Scaled masked sink softmax | scale + mask + SoftmaxOne (Megatron torch fallback) | **Yes** (\(P\) only) | `region/masked_softmax/sink` |
 | **C** Full attention (online softmax) | \(QK^\top\) + softmax + \(PV\) | **No** \((h,S,S)\) | `region/gqa` variants |
 | **D** LM-head fused CE | GEMM + vocab softmax + CE | **No** full \((S,V)\) | `region/linear_ce` |
 
@@ -452,10 +486,10 @@ Four **fusion boundaries** recur below. Hub and serving kernels plug into these;
 | **Liger `FusedLinearCrossEntropy`** | Token-chunked GEMM + vocab softmax + CE ([`fused_linear_cross_entropy.py`](https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/fused_linear_cross_entropy.py)) | D | Vocab axis \(V\), not keys \(S\); **chunk peak ≠ 0**; see §14 | No |
 | **TRL Hub fused linear CE** | [`trl-lib/fused-linear-ce`](https://huggingface.co/trl-lib/fused-linear-ce) | D | Same op as Liger; **vocab-tiled** rather than token-chunked; see §14.1 | No |
 | **Zepto (today)** | `MatMul → Add(mask) → Softmax` in `GroupedQueryAttention` ([`gqa.py`](../src/zepto/modules/gqa.py), [`softmax.py`](../src/zepto/modules/softmax.py)) | A unfused | Materialized causal mask | Decomposed primitives |
-| **Zepto (registered)** | `region/softmax` (boundary A), `region/masked_softmax` (boundary B) | A / B | Elide `exp_scores` or pre-softmax logits; stable 5× leaf | Fused region leaves |
+| **Zepto (registered)** | `region/softmax` (boundary A), `region/softmax-one/*` (boundary A′), `region/masked_softmax` + `region/masked_softmax/sink` (boundary B / B′), `region/gqa-sink/*` (boundary C with sinks) | A / A′ / B / B′ / C | Elide `exp_scores`, extended `combined_logits`, or whole \((h,S,S)\) tile | Fused region leaves |
 | **Zepto (planned)** | `region/gqa/*`, `region/linear_ce` | C / D | Elide the whole \((h,S,S)\) tile or vocab logits | Fused region leaves |
 
-**Composition rules.** `region/masked_softmax` (boundary B) and `region/gqa` / Flash / Metal-Flash / paged / Sage (boundary C) are **mutually exclusive** on the same attention layer — C replaces score + softmax + context. Liger patches (RMSNorm, CE, SwiGLU, …) compose with FlashAttention Hub kernels per [TRL kernels hub docs](https://huggingface.co/docs/trl/en/kernels_hub); they do not replace attention masked softmax. Boundary **D** (`LigerFusedLinearCrossEntropyLoss`, `trl-lib/fused-linear-ce`) is orthogonal: vocab-axis training CE, not causal masking over keys (§14). AITER `softmax` is boundary **A** on ROCm and does **not** replace C (`aiter-flash-attn`).
+**Composition rules.** `region/masked_softmax` (boundary B) and `region/gqa` / Flash / Metal-Flash / paged / Sage (boundary C) are **mutually exclusive** on the same attention layer — C replaces score + softmax + context. On the same attention layer, `region/softmax-one/*` and `region/masked_softmax/sink` are **mutually exclusive** with `region/gqa-sink/*` (full fused attention wins when the 7-op envelope matches; see [`softmax-one.md`](kernel/softmax-one.md)). `region/softmax-one/*` vs plain `region/softmax` are mutually exclusive on the same logits tile (sink vs no-sink). Liger patches (RMSNorm, CE, SwiGLU, …) compose with FlashAttention Hub kernels per [TRL kernels hub docs](https://huggingface.co/docs/trl/en/kernels_hub); they do not replace attention masked softmax. Boundary **D** (`LigerFusedLinearCrossEntropyLoss`, `trl-lib/fused-linear-ce`) is orthogonal: vocab-axis training CE, not causal masking over keys (§14). AITER `softmax` is boundary **A** on ROCm and does **not** replace C (`aiter-flash-attn`).
 
 #### PyTorch fused `F.softmax` vs decomposed eager
 
@@ -601,10 +635,15 @@ At \(S{=}4096\), \(B{=}4\): one batched \((B,h,S,S)\) buffer is \(4 \times 32 \t
 | Region | Scope | FLOP leaf | VRAM elision |
 |--------|-------|-----------|--------------|
 | `region/softmax` | Standalone `Softmax` / ATen / AITER | **\(5 h S^2\)** (stable softmax) | `exp` buffer; do not assume 1 HBM pass at \(S{=}64k\) |
+| `region/softmax-one/reference` | `AttentionSoftmaxWithSink` fused leaf (Zepto) | **\(5 h S^2 + h S\)** | extended `combined_logits`, decomposed temps |
+| `region/softmax-one/megatron` | Megatron `SoftmaxOne` eager concat+ATen | **\(5 h S (S{+}1)\)** | same elision; ~**\(4 h S\)** fwd delta vs reference |
 | `region/masked_softmax` | GQA score step (Megatron/TE) | **\(5 h S^2\)** (scale+mask+exp+sum+div) | pre-softmax logits (`scores`, `scaled_scores`, `exp_scores`) |
+| `region/masked_softmax/sink` | Megatron `FusedScaleMaskSoftmax` torch fallback with sink | **\(7 h S^2 + 5 h S\)** | same as masked_softmax + sink path |
 | `region/gqa` / Flash / Metal-Flash / Sage | Full attention (boundary C) | §11.3–§11.11 | all \((h,S,S)\) temps |
+| `region/gqa-sink` | GPT-OSS sink softmax (boundary C) | [`gqa-sink-softmax.md`](kernel/gqa-sink-softmax.md) | same as `region/gqa` flash; do not stack with A′/B′ on same layer |
 | `region/gqa/paged` | Decode / paged KV | §11.9 | no \(S\times S\); softmax over \(S_{\mathrm{cache}}\) |
 | `region/linear_ce` | LM-head training CE (boundary D) | \(2 S d V + 3 S V\) | chunk logits, **not** 0; §14 |
+| `region/linear_ce_softcap` | LM-head training CE + tanh cap (boundary D) | \(2 S d V + 10 S V\) | same chunk as §14; [`linear-ce-softcap.md`](kernel/linear-ce-softcap.md) |
 
 Tag `numerics="stable_fp32"` on HF-comparable estimates without inserting Cast ops unless comparing byte-for-byte to eager Transformers. **Implementation order** (gap G4): `region/rmsnorm` → `region/softmax` + `region/masked_softmax` → golden vs Atto at \(S \in \{8192, 65536\}\) → `region/gqa` backend variants (§11.8–§11.11) → `region/linear_ce`.
 
@@ -834,6 +873,8 @@ FA3 removes the **quadratic-in-\(S\)** activation footprint (scores, weights, fp
 2. **Flash path (FA2 or FA3):** **no** \((h,S,S)\) `ALLOCATE`s; bill causal mask **0** bytes; omit `repeat_kv` copy; save \(\Theta(hS)\) \((m,\ell)\) for training backward, not \(P\).
 3. **Do not** multiply eager causal mask by \(L\); **do not** allocate \(M\) for Flash regions ([§12](#12-causal-mask)).
 4. **FLOPs** stay at Appendix E attention (\(4 h S^2 d_h + 3 h S^2\)) for both paths — fusion changes **VRAM**, not leading GEMM FLOPs ([§11.3](#113-flashattention-exact-io-aware)).
+5. **Sliding-window causal:** when `MaterializedSlidingWindowCausalMask` feeds the fused `add`, bill \(N_{\mathrm{pairs}}(S,W) = \sum_i \min(i{+}1, W)\) instead of \(S^2\) for GEMM and online-softmax terms (`effective_attention_pairs` in `recipes/gqa.py`). Full causal (\(W \ge S\)) keeps \(N = S^2\).
+6. **Sink softmax (GPT-OSS):** use `region/gqa-sink` ([`docs/kernel/gqa-sink-softmax.md`](kernel/gqa-sink-softmax.md)) — 7-op boundary C with `attention_softmax_with_sink`; FLOPs \(4 h N d_h + 5 h N + h S\).
 
 ### 11.7 Cost table (one layer, Apertus-8B prefill, bf16)
 
@@ -938,7 +979,68 @@ if fully materialized. At \(S{=}65536\), bf16: **8.0 GiB**; fp32: **16.0 GiB**. 
 
 ---
 
-## 13. xIELU
+## 13. GELU
+
+Standalone elementwise activation leaf (`standalone_activation`); not an attention fusion boundary. Full derivation: [`docs/kernel/gelu.md`](kernel/gelu.md).
+
+\[
+\mathrm{GELU}(x) = \frac{x}{2}\left(1 + \mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right)
+\]
+
+(Hendrycks & Gimpel, 2016). Production stacks use **tanh** (GPT/NewGELU/ViT), **exact erf** (BERT `GELUActivation`), or **quick sigmoid** (CLIP QuickGELU).
+
+| Region id | Variant | Fwd FLOPs/elem | Bwd FLOPs/elem | Save (training) |
+|-----------|---------|----------------|----------------|-----------------|
+| `region/gelu` | tanh | 12 | 20 | input \(X\) |
+| `region/gelu_erf` | exact erf | 8 | 17 | input \(X\) |
+| `region/gelu/quick` | quick sigmoid | 6 | 9 | input \(X\) (recipe only; not registered) |
+
+Fused leaves elide HBM-resident intermediates (\(x^2\), tanh/erf temps, etc.); backward recomputes from saved \(X\) (PyTorch `aten::gelu` policy). GeGLU gate branches compose as `Linear(gate) → region/gelu/* → Multiply`; future `region/geglu/liger` must not double-count standalone GELU.
+
+**Zepto:** `GELUTanh` / `GELUErf` modules; discovery at priority 10 with no capability gate (same policy as SiLU).
+
+### 13.1 Softplus
+
+Standalone elementwise activation leaf (`standalone_activation`); full derivation: [`docs/kernel/softplus.md`](kernel/softplus.md).
+
+\[
+\mathrm{softplus}(x) = \log\bigl(1 + e^{x}\bigr).
+\]
+
+PyTorch defaults \(\beta = 1\), `threshold = 20` (linear branch for large positive \(x\); comparisons not billed).
+
+| Region id | Variant | Fwd FLOPs/elem | Bwd FLOPs/elem | Save (training) |
+|-----------|---------|----------------|----------------|-----------------|
+| `region/softplus` | default | 9 | 7 | input \(X\) |
+| `region/softplus/scalar` | xIELU scalar | 9 | 7 | none (no ALLOCATE/SAVE) |
+
+Fused leaf elides HBM-resident \(e^{X}\) temp; backward recomputes sigmoid factor from saved \(X\) (PyTorch `aten::softplus` policy). Discovery at priority 10 with no capability gate (same policy as SiLU).
+
+**xIELU scalar cross-ref (§14):** two scalar softplus ops per layer (\(c_{\mathrm{sp}} \approx 9\) fwd / 7 bwd each) are \(O(1)\) and negligible vs the tensor xIELU leaf. Inference graphs that pass `effective_alpha_p` / `effective_alpha_n` omit them; training graphs that materialize explicit scalar softplus should use `requested_capabilities={'scalar'}` → `region/softplus/scalar`.
+
+**Zepto:** `Softplus` module (`Exp → Add(1) → Log`); composes with Mish (`softplus + tanh + mul`) and `SqrtSoftplusActivation` (`softplus + sqrt`) as separate sequential leaves.
+
+### 13.2 Squared ReLU (ReLU²)
+
+Standalone elementwise activation leaf (`standalone_activation`); full derivation: [`docs/kernel/squared-relu.md`](kernel/squared-relu.md).
+
+\[
+\mathrm{ReLU}^2(x) = \bigl(\max(x, 0)\bigr)^2.
+\]
+
+HF config key `relu2` (Primer, Nemotron, Persimmon, BitNet, …). Identity chain: `Maximum(X, 0) → Multiply(A, A)`.
+
+| Region id | Variant | Fwd FLOPs/elem | Bwd FLOPs/elem | Save (training) |
+|-----------|---------|----------------|----------------|-----------------|
+| `region/squared_relu` | default | 2 | 3 | input \(X\) |
+
+Fused leaf elides HBM-resident \(\mathrm{ReLU}(X)\) temp; backward recomputes \(\mathrm{ReLU}(X)\) from saved \(X\) (SiLU-style policy). Discovery at priority 10 with no capability gate (`pat-squared-relu-decomposed`).
+
+**Zepto:** pattern-only discovery via `Maximum → Multiply(relu, relu)` compose chain; P2 `ReLUSquared` module + `prov-squared-relu` provenance rule deferred.
+
+---
+
+## 14. xIELU
 
 ### Mathematics
 
@@ -1118,7 +1220,39 @@ Fused nickjbrowning CUDA: output only; optional \(\lvert H \rvert\)-byte mask if
 
 ---
 
-## 14. LM head
+## 14.1 SwiGLU (gated FFN stack)
+
+Llama-class gated MLP: \(\mathrm{SwiGLU}(x) = W_d(\mathrm{SiLU}(W_g x) \odot (W_u x))\). Zepto module: `SwiGLU` (`gate_proj`, `up_proj`, `down_proj`); full research: [`docs/kernel/swiglu.md`](kernel/swiglu.md).
+
+**Kernel-accurate leaf (registered):** forward \(6 S d\, d_{\mathrm{ff}} + 6 S d_{\mathrm{ff}}\); backward \(12 S d\, d_{\mathrm{ff}} + 10 S d_{\mathrm{ff}}\) when `requires_grad`. **Appendix E paper compare:** \(6 S d\, d_{\mathrm{ff}}\) GEMM-only (omits SiLU + gate×mul).
+
+| Variant | impl_id | When selected |
+|---------|---------|---------------|
+| Decomposed (default) | `region/swiglu/decomposed` | Any hardware; may materialize `silu_g` temp |
+| Liger post-GEMM | `region/swiglu/liger` | CUDA + `requested_capabilities={'fused_post_gemm'}` |
+| Liger fused gate-up | `region/swiglu/liger-fused-gate-up` | CUDA + `requested_capabilities={'fused_gate_up'}` |
+
+Identity lowering (no parent region): `region/linear` × 3 + `region/silu` + `Multiply`. Parent `region/swiglu` absorbs all six ops; do not double-bill `region/silu` when Liger variant wins. Ungated `FFN` (xIELU) is a different topology — no `region/swiglu` match.
+
+---
+
+## 14.2 GeGLU (GELU-gated FFN stack)
+
+Gemma-class gated MLP: \(\mathrm{GeGLU}(x) = W_d(\mathrm{GELU}(W_g x) \odot (W_u x))\). Zepto module: `GeGLU` (`gate_proj`, `up_proj`, `down_proj`; `gelu_approx="tanh"` default); full research: [`docs/kernel/geglu.md`](kernel/geglu.md). Cross-ref §13 GELU for standalone gate nonlinearity leaves.
+
+**Kernel-accurate leaf (registered):** forward \(6 S d\, d_{\mathrm{ff}} + 13 S d_{\mathrm{ff}}\) (tanh) / \(+ 9 S d_{\mathrm{ff}}\) (erf); backward \(12 S d\, d_{\mathrm{ff}} + 22 S d_{\mathrm{ff}}\) (tanh) / \(+ 19 S d_{\mathrm{ff}}\) (erf) when `requires_grad`. **Appendix E paper compare:** \(6 S d\, d_{\mathrm{ff}}\) GEMM-only (omits GELU + gate×mul).
+
+| Variant | impl_id | When selected |
+|---------|---------|---------------|
+| Decomposed tanh (default) | `region/geglu/decomposed` | Any hardware; may materialize `gelu_g` temp |
+| Decomposed erf | `region/geglu/decomposed-erf` | `GeGLU(gelu_approx="none")` or erf gate branch |
+| Liger post-GEMM | `region/geglu/liger` | CUDA + `requested_capabilities={'fused_post_gemm'}` |
+
+Identity lowering (no parent region): `region/linear` × 3 + atomic `GeluTanhGate` / `GeluErfGate` + `Multiply`. Parent `region/geglu` absorbs all five ops; do not double-bill `region/gelu` when Liger variant wins. Ungated `FFN` (xIELU) and `SwiGLU` are different topologies — no `region/geglu` match.
+
+---
+
+## 15. LM head
 
 Untied linear \(d \to V\): FLOPs \(2 S d V\). Appendix E `final_logits`. Memory: weight \(V d e\) (another ~1 GiB bf16 at 8B) plus logits \(S V e\). At \(S{=}8192\), \(V{=}131072\), bf16 logits ≈ **2.0 GiB** — often comparable to a single attention matrix at the same \(S\).
 
@@ -1196,9 +1330,20 @@ Same training problem as Liger FLCE ([Hub card](https://huggingface.co/trl-lib/f
 
 Both are `region/linear_ce` variants. Neither is attention masked softmax. Prefer Liger’s closed form when costing `use_liger_kernel=True`; use the vocab-tile formula when costing the Hub kernel.
 
+### 14.2 Capped FLCE (`region/linear_ce_softcap`)
+
+Muse Glimmer / Gemma 4 training applies \(c \cdot \tanh(z/c)\) (and optional output scale) **before** vocab softmax + CE. Zepto module `CappedFusedLinearCrossEntropy` decomposes to 12 ops; fused leaf `region/linear_ce_softcap/*` bills one Liger-style path:
+
+\[
+\mathrm{FLOPs}_{\mathrm{fwd}} = 2 S d V + 10 S V + 2 S,\qquad
+\mathrm{FLOPs}_{\mathrm{bwd}} \approx 6 S d V + 19 S V.
+\]
+
+**Delta vs uncapped `region/linear_ce`:** **\(+7 S V\)** forward on the vocab axis (fused cap leaf). Peak logits VRAM uses the same \(\min(SVe,\, C S d e)\) chunk formula with \(C{=}16\) — cap does not add HBM logits beyond the uncapped FLCE tile. Do **not** sum `region/linear_ce` + `region/logit_softcap` backward leaves (\(15 S V\)) when the parent region matches; use the unified recipe in [`linear-ce-softcap.md`](kernel/linear-ce-softcap.md). Variants: `reference`, `liger` (exclude XPU/MPS), `hub-trl` (CUDA-only; softcap API unverified on Hub).
+
 ---
 
-## 15. KV cache (decode, vLLM / HF `use_cache`)
+## 16. KV cache (decode, vLLM / HF `use_cache`)
 
 Persistent state, not a fused compute kernel:
 
@@ -1216,7 +1361,7 @@ The kernel that **reads** this cache in vLLM-style serving is Hub [`kernels-comm
 
 ---
 
-## 16. End-to-end backend map (Apertus CUDA inference)
+## 17. End-to-end backend map (Apertus CUDA inference)
 
 Typical `from_pretrained(..., attn_implementation="flash_attention_2")` with hub kernels:
 
@@ -1284,7 +1429,7 @@ MPS hub RMSNorm is registered for **inference only**; training uses eager `Llama
 
 ---
 
-## 17. Recommended Zepto leaves (summary)
+## 18. Recommended Zepto leaves (summary)
 
 Use these closed forms when a fused **implementation** is selected. Unfused identity lowering may keep primitive sums for debugging, but must not be compared to vLLM/HF-flash totals.
 
@@ -1305,6 +1450,11 @@ Use these closed forms when a fused **implementation** is selected. Unfused iden
 | Flash GQA (FA2 / FA3 / FA4 / Metal-Flash / Sage) | \(4 h S^2 d_h\) (+ softmax term; §11) | all \((h,S,S)\); see §11.6–§11.11 | row stats \(\Theta(hS)\) |
 | Paged / FlashInfer decode | \(4 h S_{\mathrm{cache}} d_h\) | no \(S\times S\); paged KV is §15 | — (inference) |
 | RoPE apply | \(\approx 6 h_\star S d_h\) | rotate-half temps | — |
+| GELU (tanh) | \(12 S d\) (bwd \(20 S d\)) | tanh/cubic temps | input \(X\) |
+| GELU (erf) | \(8 S d\) (bwd \(17 S d\)) | erf/scaled temps | input \(X\) |
+| Softplus | \(9 S d\) (bwd \(7 S d\)) | \(e^{X}\) temp elided | input \(X\) |
+| Softplus (scalar) | 9 (bwd 7) | none | — |
+| Squared ReLU (ReLU²) | \(2 S d\) (bwd \(3 S d\)) | \(\mathrm{ReLU}(X)\) temp elided | input \(X\) |
 | xIELU | \(8 S d_{\mathrm{ff}}\) (bwd \(10 S d_{\mathrm{ff}}\)) | branch/exp temps | output or sign mask |
 | Repeat-KV | 0 | full repeated K/V if Flash | — |
 | Causal mask (eager) | 0 | — | persistent \(S^2\) |
@@ -1312,7 +1462,7 @@ Use these closed forms when a fused **implementation** is selected. Unfused iden
 
 ### Still to implement in Zepto (softmax-family + related)
 
-Registered today: `region/linear`, `region/layernorm`, `region/relu`, `region/rmsnorm`, `region/xielu`, `region/softmax`, `region/masked_softmax`. The following fused leaves are specified above but **not** yet registered as `RegionImplementation`s:
+Registered today: `region/linear`, `region/layernorm`, `region/relu`, `region/squared_relu`, `region/rmsnorm`, `region/silu`, `region/softplus`, `region/gelu`, `region/gelu_erf`, `region/xielu`, `region/softmax`, `region/softmax-one`, `region/masked_softmax` (incl. `sink`), `region/gqa-sink`, `region/swiglu`, `region/geglu`. The following fused leaves are specified above but **not** yet registered as `RegionImplementation`s:
 
 | Priority | Region id | Spec | Boundary |
 |----------|-----------|------|----------|
@@ -1326,7 +1476,7 @@ Registered today: `region/linear`, `region/layernorm`, `region/relu`, `region/rm
 
 ---
 
-## 18. Bibliography
+## 19. Bibliography
 
 Ainslie, J., Lee-Thorp, J., de Jong, M., Zemlyanskiy, Y., Lebrón, F., and Sanghai, S. (2023). GQA: Training generalized multi-query transformer models from multi-head checkpoints. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245).
 

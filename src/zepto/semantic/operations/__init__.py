@@ -2,19 +2,33 @@
 
 from .base import EstimationOperation, Operation, SemanticOperation
 from .add import Add
+from .bilinear_resize_2d import BilinearResize2D
 from .cast import Cast
 from .concat import Concat
+from .conv2d import Conv2d
+from .conv3d import Conv3d
 from .cos import Cos
 from .divide import Divide
 from .embedding_lookup import EmbeddingLookup
+from .equal import Equal
+from .erf import Erf
 from .exp import Exp
 from .gather import Gather
+from .gelu_gate import GeluErfGate, GeluTanhGate
 from .greater_than import GreaterThan
 from .identity import Identity
 from .linear_matmul import LinearMatMul
 from .log import Log
 from .matmul import MatMul
+from .attention_softmax_with_sink import AttentionSoftmaxWithSink
+from .materialized_bidirectional_mask import MaterializedBidirectionalMask
 from .materialized_causal_mask import MaterializedCausalMask
+from .materialized_sliding_window_bidirectional_mask import (
+    MaterializedSlidingWindowBidirectionalMask,
+)
+from .materialized_sliding_window_causal_mask import (
+    MaterializedSlidingWindowCausalMask,
+)
 from .maximum import Maximum
 from .minimum import Minimum
 from .multiply import Multiply
@@ -24,10 +38,15 @@ from .pow import Pow
 from .reduce_sum import ReduceSum
 from .repeat_kv import RepeatKV
 from .reshape import Reshape
+from .scatter_add import ScatterAdd
+from .scatter_update import ScatterUpdate
+from .sigmoid import Sigmoid
 from .sin import Sin
 from .split import Split
 from .square_root import SquareRoot
 from .subtract import Subtract
+from .tanh import Tanh
+from .topk import TopK
 from .records import (
     AliasSpec,
     BackwardSpec,
@@ -46,18 +65,26 @@ from .where import Where
 
 __all__ = [
     "Add",
+    "AttentionSoftmaxWithSink",
     "AliasSpec",
     "BackwardSpec",
+    "BilinearResize2D",
     "Cast",
     "Concat",
+    "Conv2d",
+    "Conv3d",
     "Cos",
     "DeclarationValidator",
     "Divide",
     "EmbeddingLookup",
+    "Equal",
+    "Erf",
     "EstimationContext",
     "EstimationOperation",
     "Exp",
     "Gather",
+    "GeluErfGate",
+    "GeluTanhGate",
     "GreaterThan",
     "Identity",
     "IncompleteOperationError",
@@ -67,7 +94,10 @@ __all__ = [
     "Log",
     "MatMul",
     "Materialization",
+    "MaterializedBidirectionalMask",
     "MaterializedCausalMask",
+    "MaterializedSlidingWindowBidirectionalMask",
+    "MaterializedSlidingWindowCausalMask",
     "Maximum",
     "Minimum",
     "Multiply",
@@ -82,11 +112,16 @@ __all__ = [
     "ResourceEvent",
     "ResourceEventKind",
     "Reshape",
+    "ScatterAdd",
+    "ScatterUpdate",
     "SemanticOperation",
+    "Sigmoid",
     "Sin",
     "Split",
     "SquareRoot",
     "Subtract",
+    "Tanh",
+    "TopK",
     "Transpose",
     "Where",
 ]

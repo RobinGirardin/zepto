@@ -32,12 +32,14 @@ from .memory import account_memory
 from .flops import account_flops
 from .estimation import estimate, estimate_horizon
 from .horizon import (
+    ConvStateConfig,
     HorizonSimulation,
     HorizonSpec,
     HorizonStep,
     InputsFn,
     KVConfig,
     ModuleFn,
+    RecurrentStateConfig,
     StepKind,
     decode_step,
     inputs_from_shape,
@@ -66,8 +68,10 @@ __all__ = [
     "HorizonSpec",
     "HorizonStep",
     "InputsFn",
+    "ConvStateConfig",
     "KVConfig",
     "ModuleFn",
+    "RecurrentStateConfig",
     "StepKind",
     "decode_step",
     "optimizer_step",

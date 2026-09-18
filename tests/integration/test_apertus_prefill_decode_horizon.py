@@ -9,7 +9,7 @@ from zepto.analysis import (
     reference_invocation,
 )
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.apertus_decoder_block import ApertusDecoderBlock
+from modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.semantic.metadata import DType
 
 _HIDDEN = 128
@@ -78,7 +78,7 @@ def test_apertus_block_prefill_decode_horizon() -> None:
 def test_gqa_decode_uses_paged_flops_from_kv_state() -> None:
     from zepto.analysis import lower
     from zepto.analysis.horizon.state import KVCacheState
-    from zepto.modules.gqa import GroupedQueryAttention
+    from modules.attention.gqa import GroupedQueryAttention
 
     graph = compose_graph(
         lambda _ctx: GroupedQueryAttention(

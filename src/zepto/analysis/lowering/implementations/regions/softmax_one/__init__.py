@@ -1,0 +1,21 @@
+"""Fused attention-sink softmax region implementations."""
+
+from .rules import (
+    SOFTMAX_ONE_OP_SEQUENCES,
+    SOFTMAX_ONE_PATTERN,
+    SOFTMAX_ONE_PROVENANCE,
+)
+from .variants import (
+    FUSED_SOFTMAX_ONE_MEGATRON,
+    FUSED_SOFTMAX_ONE_REFERENCE,
+    SOFTMAX_ONE_REGIONS,
+)
+
+__all__ = [
+    "FUSED_SOFTMAX_ONE_MEGATRON",
+    "FUSED_SOFTMAX_ONE_REFERENCE",
+    "SOFTMAX_ONE_OP_SEQUENCES",
+    "SOFTMAX_ONE_PATTERN",
+    "SOFTMAX_ONE_PROVENANCE",
+    "SOFTMAX_ONE_REGIONS",
+]

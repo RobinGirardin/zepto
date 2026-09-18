@@ -1,0 +1,17 @@
+"""Fused Mamba-2 selective SSM scan region implementations."""
+
+from .rules import MAMBA2_SCAN_PROVENANCE
+from .variants import (
+    FUSED_MAMBA2_SCAN_DECODE,
+    FUSED_MAMBA2_SCAN_REFERENCE,
+    FUSED_MAMBA2_SCAN_SSD_CHUNK,
+    MAMBA2_SCAN_REGIONS,
+)
+
+__all__ = [
+    "FUSED_MAMBA2_SCAN_DECODE",
+    "FUSED_MAMBA2_SCAN_REFERENCE",
+    "FUSED_MAMBA2_SCAN_SSD_CHUNK",
+    "MAMBA2_SCAN_PROVENANCE",
+    "MAMBA2_SCAN_REGIONS",
+]

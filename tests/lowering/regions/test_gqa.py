@@ -8,7 +8,9 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from zepto.modules.gqa import GroupedQueryAttention
+from modules.attention.attention import FlexibleAttention
+from modules.attention.attention_config import llama_gqa
+from modules.attention.gqa import GroupedQueryAttention
 from zepto.semantic import ResourceEventKind
 
 _SEQ = 8
@@ -64,6 +66,47 @@ def _gqa_node(lowered):
     nodes = [n for n in lowered.nodes if n.implementation.startswith("region/gqa")]
     assert len(nodes) == 1
     return nodes[0]
+
+
+def _compose_flexible_llama():
+    return compose_graph(
+        lambda _ctx: FlexibleAttention(
+            llama_gqa(_HIDDEN, _HEADS, _KV_HEADS, head_dim=_HEAD_DIM)
+        ),
+        (
+            Tensor(shape=(_SEQ, _HIDDEN), requires_grad=True),
+            Tensor(shape=(1, _SEQ, _SEQ), requires_grad=False),
+        ),
+    )
+
+
+def test_flexible_llama_discovers_flash_region() -> None:
+    graph = _compose_flexible_llama()
+    registry = LoweringRegistry()
+    register_defaults(registry)
+    regions = _gqa_regions(graph, _flash_context(), registry)
+    assert len(regions) >= 1
+    region = regions[0]
+    assert len(region.operation_ids) == 10
+    families = tuple(
+        graph.node(op_id).operation_family for op_id in region.operation_ids
+    )
+    assert families == _ATTENTION_CORE
+
+
+def test_flexible_llama_fused_lowering_flops_and_allocs() -> None:
+    graph = _compose_flexible_llama()
+    lowered = lower(graph, _flash_context())
+    op = _gqa_node(lowered)
+    assert op.implementation == "region/gqa/flash2"
+    expected = _expected_forward_flops()
+    assert op.forward_flops == expected
+    assert op.backward_flops == 2 * expected
+    allocs = [ev for ev in op.resource_events if ev.kind is ResourceEventKind.ALLOCATE]
+    saves = [ev for ev in op.resource_events if ev.kind is ResourceEventKind.SAVE]
+    assert len(allocs) == 1
+    assert len(saves) == 1
+    assert any("row_stats" in aux for aux in op.auxiliary_edges)
 
 
 def test_compose_gqa_discovers_flash_region() -> None:

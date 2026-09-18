@@ -21,22 +21,31 @@ def discover_regions(
     candidates: list[Region] = []
 
     for kind in registry.registered_region_kinds():
-        descriptor = registry.region_descriptor(kind)
-        prov_rule = descriptor.provenance_rule
-        pat_rule = descriptor.pattern_rule
+        seen_rule_pairs: set[tuple[str, str]] = set()
+        for impl in registry.region_candidates(kind):
+            descriptor = impl.descriptor
+            prov_rule = descriptor.provenance_rule
+            pat_rule = descriptor.pattern_rule
+            pair_key = (
+                prov_rule.id if prov_rule is not None else "",
+                pat_rule.id if pat_rule is not None else "",
+            )
+            if pair_key in seen_rule_pairs:
+                continue
+            seen_rule_pairs.add(pair_key)
 
-        if prov_rule is not None and pat_rule is not None:
-            candidates.extend(
-                _discover_hybrid_regions(graph, context, prov_rule, pat_rule)
-            )
-        elif pat_rule is not None:
-            candidates.extend(
-                PatternRegionMatcher((pat_rule,)).find(graph, context)
-            )
-        elif prov_rule is not None:
-            candidates.extend(
-                ProvenanceRegionMatcher((prov_rule,)).find(graph, context)
-            )
+            if prov_rule is not None and pat_rule is not None:
+                candidates.extend(
+                    _discover_hybrid_regions(graph, context, prov_rule, pat_rule)
+                )
+            elif pat_rule is not None:
+                candidates.extend(
+                    PatternRegionMatcher((pat_rule,)).find(graph, context)
+                )
+            elif prov_rule is not None:
+                candidates.extend(
+                    ProvenanceRegionMatcher((prov_rule,)).find(graph, context)
+                )
 
     return tuple(candidates)
 

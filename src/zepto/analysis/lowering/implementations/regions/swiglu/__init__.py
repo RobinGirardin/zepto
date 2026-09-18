@@ -1,0 +1,18 @@
+"""SwiGLU fused region implementations."""
+
+from .rules import SWIGLU_PATTERN, SWIGLU_PROVENANCE
+from .variants import (
+    FUSED_SWIGLU_DECOMPOSED,
+    FUSED_SWIGLU_LIGER,
+    FUSED_SWIGLU_LIGER_FUSED_GATE_UP,
+    SWIGLU_REGIONS,
+)
+
+__all__ = [
+    "FUSED_SWIGLU_DECOMPOSED",
+    "FUSED_SWIGLU_LIGER",
+    "FUSED_SWIGLU_LIGER_FUSED_GATE_UP",
+    "SWIGLU_PATTERN",
+    "SWIGLU_PROVENANCE",
+    "SWIGLU_REGIONS",
+]

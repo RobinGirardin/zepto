@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from zepto.semantic.metadata import DType
 
@@ -35,6 +35,38 @@ class KVCacheState:
             * self.head_dim
             * itemsize
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Conv1DState:
+    """Rolling depthwise conv buffer for one layer."""
+
+    layer_index: int
+    channels: int
+    kernel_size: int
+    dtype: DType
+
+    @property
+    def bytes(self) -> int:
+        itemsize = self.dtype.itemsize or 0
+        return self.channels * self.kernel_size * itemsize
+
+
+@dataclass(frozen=True, slots=True)
+class RecurrentScanState:
+    """Recurrent scan hidden state for one layer (batch size one)."""
+
+    layer_index: int
+    kind: Literal["gated_delta", "mamba2"]
+    num_heads: int
+    head_dim: int
+    state_dim: int
+    dtype: DType
+
+    @property
+    def bytes(self) -> int:
+        itemsize = self.dtype.itemsize or 0
+        return self.num_heads * self.head_dim * self.state_dim * itemsize
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +104,20 @@ class _KVTemplate:
     num_layers: int
     num_kv_heads: int
     head_dim: int
+    dtype: DType
+
+
+@dataclass(frozen=True, slots=True)
+class _ConvTemplate:
+    layer_indices: tuple[int, ...]
+    channels: int
+    kernel_size: int
+    dtype: DType
+
+
+@dataclass(frozen=True, slots=True)
+class _RecurrentTemplate:
+    layers: tuple[tuple[int, str, int, int, int], ...]
     dtype: DType
 
 
@@ -134,6 +180,8 @@ class StatePortRegistry:
     """Mutable registry of cross-step state injected into invocation contexts."""
 
     kv_template: _KVTemplate | None = None
+    conv_template: _ConvTemplate | None = None
+    recurrent_template: _RecurrentTemplate | None = None
     kv_caches: tuple[KVCacheState, ...] = ()
     grad_accum: GradAccumState | None = None
     optimizer: OptimizerState | None = None
@@ -162,6 +210,35 @@ class StatePortRegistry:
             ),
         )
 
+    def configure_conv_layers(
+        self,
+        *,
+        layer_indices: tuple[int, ...],
+        channels: int,
+        kernel_size: int,
+        dtype: DType,
+    ) -> StatePortRegistry:
+        return replace(
+            self,
+            conv_template=_ConvTemplate(
+                layer_indices=layer_indices,
+                channels=channels,
+                kernel_size=kernel_size,
+                dtype=dtype,
+            ),
+        )
+
+    def configure_recurrent_layers(
+        self,
+        *,
+        specs: tuple[tuple[int, str, int, int, int], ...],
+        dtype: DType,
+    ) -> StatePortRegistry:
+        return replace(
+            self,
+            recurrent_template=_RecurrentTemplate(layers=specs, dtype=dtype),
+        )
+
     def snapshot(self) -> StateSnapshot:
         return StateSnapshot(
             kv_caches=self.kv_caches,
@@ -186,6 +263,10 @@ class StatePortRegistry:
         entries: list[tuple[str, object]] = []
         if self.kv_template is not None and not self.kv_caches:
             entries.append(("kv_template", self.kv_template))
+        if self.conv_template is not None:
+            entries.append(("conv_template", self.conv_template))
+        if self.recurrent_template is not None:
+            entries.append(("recurrent_template", self.recurrent_template))
         for index, kv in enumerate(self.kv_caches):
             entries.append((f"kv_cache:{index}", kv))
         if self.grad_accum is not None:
@@ -227,7 +308,52 @@ class StatePortRegistry:
             )
             registry = replace(registry, kv_caches=(kv,))
 
-        elif step.kind == StepKind.DECODE and registry.kv_caches:
+        if step.kind == StepKind.PREFILL and registry.conv_template is not None:
+            conv_t = registry.conv_template
+            custom = list(registry.custom)
+            existing = {name for name, _ in custom}
+            for layer_index in conv_t.layer_indices:
+                key = f"conv_state:{layer_index}"
+                if key not in existing:
+                    custom.append(
+                        (
+                            key,
+                            Conv1DState(
+                                layer_index=layer_index,
+                                channels=conv_t.channels,
+                                kernel_size=conv_t.kernel_size,
+                                dtype=conv_t.dtype,
+                            ),
+                        )
+                    )
+            registry = replace(registry, custom=tuple(custom))
+
+        if step.kind == StepKind.PREFILL and registry.recurrent_template is not None:
+            rec_t = registry.recurrent_template
+            custom = list(registry.custom)
+            existing = {name for name, _ in custom}
+            for layer_index, kind, num_heads, head_dim, state_dim in rec_t.layers:
+                key = f"scan_state:{layer_index}"
+                if key not in existing:
+                    kind_lit: Literal["gated_delta", "mamba2"] = (
+                        "gated_delta" if kind == "gated_delta" else "mamba2"
+                    )
+                    custom.append(
+                        (
+                            key,
+                            RecurrentScanState(
+                                layer_index=layer_index,
+                                kind=kind_lit,
+                                num_heads=num_heads,
+                                head_dim=head_dim,
+                                state_dim=state_dim,
+                                dtype=rec_t.dtype,
+                            ),
+                        )
+                    )
+            registry = replace(registry, custom=tuple(custom))
+
+        if step.kind == StepKind.DECODE and registry.kv_caches:
             current = registry.kv_caches[0]
             registry = replace(
                 registry,
@@ -236,7 +362,7 @@ class StatePortRegistry:
                 ),
             )
 
-        elif step.kind == StepKind.MICRO_FORWARD:
+        if step.kind == StepKind.MICRO_FORWARD:
             param_bytes = parameter_bytes(lowered)
             accum = registry.grad_accum
             if accum is None:
@@ -251,6 +377,23 @@ class StatePortRegistry:
                     parameter_bytes=param_bytes,
                     micro_batches_seen=accum.micro_batches_seen + 1,
                 ),
+            )
+
+        if step.kind == StepKind.OPTIMIZER:
+            param_bytes = parameter_bytes(lowered)
+            policy = registry.optimizer_policy
+            if policy is None:
+                from ..optimizer import AdamW
+
+                policy = AdamW
+            opt_bytes = (
+                param_bytes * policy.state_bytes_per_parameter
+                + policy.workspace_bytes
+            )
+            registry = replace(
+                registry,
+                optimizer=OptimizerState(policy=policy, bytes=opt_bytes),
+                grad_accum=None,
             )
 
         return registry
