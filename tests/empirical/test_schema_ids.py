@@ -1,0 +1,56 @@
+"""Deterministic empirical dataset IDs and CSV round-trip."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from empirical.schema import (
+    EvaluationRow,
+    OptionRow,
+    configuration_id,
+    draw_id,
+    option_id,
+    parse_evaluation_csv,
+    write_csv_rows,
+    EVALUATION_FIELDNAMES,
+)
+
+
+def test_option_id_stable() -> None:
+    assert option_id("num_layers", 2) == "num_layers=2"
+
+
+def test_configuration_id_order_invariant() -> None:
+    a = {"num_layers": 2, "hidden_size": 32, "vocab_size": 100}
+    b = {"vocab_size": 100, "hidden_size": 32, "num_layers": 2}
+    assert configuration_id("apertus", a) == configuration_id("apertus", b)
+
+
+def test_draw_id_changes_with_workload() -> None:
+    cfg = configuration_id("apertus", {"hidden_size": 32, "num_layers": 2})
+    d1 = draw_id(cfg, seq_len=8, batch_size=1, precision="fp32", draw_seed=1)
+    d2 = draw_id(cfg, seq_len=16, batch_size=1, precision="fp32", draw_seed=1)
+    assert d1 != d2
+    assert len(d1) == 16
+
+
+def test_evaluation_csv_round_trip(tmp_path: Path) -> None:
+    row = EvaluationRow(
+        model_id="apertus",
+        configuration_id="abc",
+        draw_id="def",
+        phase="inference",
+        precision="fp32",
+        seq_len=8,
+        batch_size=1,
+        step=0,
+        zepto_batch_representation="micro_sum",
+        y_flop=100,
+        y_vram=200,
+        target_flop=101,
+        target_vram=201,
+    )
+    path = tmp_path / "evaluation.csv"
+    write_csv_rows(path, EVALUATION_FIELDNAMES, [row.to_csv_row()])
+    loaded = parse_evaluation_csv(path)
+    assert loaded == [row]
