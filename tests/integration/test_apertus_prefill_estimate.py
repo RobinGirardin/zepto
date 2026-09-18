@@ -5,7 +5,7 @@ from __future__ import annotations
 from zepto.analysis import account_memory, estimate, lower, reference_invocation
 from zepto.analysis.horizon.state import StatePortRegistry
 from zepto.compose import Tensor, compose_graph
-from modules.models.apertus import Apertus
+from zepto.modules.models.apertus import Apertus
 from zepto.semantic.metadata import DType
 
 

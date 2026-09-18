@@ -7,7 +7,7 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.linear_ce import DEFAULT_LINEAR_CE_RECIPE
 from zepto.compose import Tensor, compose_graph
-from modules.output.fused_linear_cross_entropy import FusedLinearCrossEntropy
+from zepto.modules.output.fused_linear_cross_entropy import FusedLinearCrossEntropy
 from zepto.semantic import ResourceEventKind
 
 _S, _D, _V = 4, 8, 16

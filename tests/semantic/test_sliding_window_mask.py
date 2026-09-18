@@ -6,7 +6,7 @@ import pytest
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import compose_graph
-from modules.attention.sliding_window_causal_mask import SlidingWindowCausalMask
+from zepto.modules.attention.sliding_window_causal_mask import SlidingWindowCausalMask
 from zepto.semantic import MaterializedSlidingWindowCausalMask, ResourceEventKind
 
 

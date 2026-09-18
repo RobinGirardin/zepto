@@ -11,8 +11,8 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Parameter, Tensor, compose_graph
 from zepto.graph import GraphBuilder, Provenance
-from modules.blocks.apertus_decoder_block import ApertusDecoderBlock
-from modules.layers.rms_norm import RMSNorm
+from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
+from zepto.modules.layers.rms_norm import RMSNorm
 from zepto.semantic import (
     Add,
     Cast,

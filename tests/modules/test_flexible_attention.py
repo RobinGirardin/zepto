@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import Tensor, compose_graph
-from modules.attention.attention import FlexibleAttention
-from modules.attention.attention_config import (
+from zepto.modules.attention.attention import FlexibleAttention
+from zepto.modules.attention.attention_config import (
     AttentionConfig,
     gated_gqa,
     gpt_oss_attention_layer,

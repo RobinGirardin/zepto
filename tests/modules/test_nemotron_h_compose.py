@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Module, Tensor, compose_graph
-from modules.attention.attention_config import AttentionConfig
-from modules.mixers.layer_spec import LayerSpec
-from modules.mixers.mixer_config import Mamba2MixerConfig
-from modules.models.nemotron_h import NemotronH, NemotronHConfig
+from zepto.modules.attention.attention_config import AttentionConfig
+from zepto.modules.mixers.layer_spec import LayerSpec
+from zepto.modules.mixers.mixer_config import Mamba2MixerConfig
+from zepto.modules.models.nemotron_h import NemotronH, NemotronHConfig
 from zepto.semantic.metadata import DType
 
 

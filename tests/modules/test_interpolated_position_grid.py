@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import compose_graph
-from modules.position.interpolated_position_grid import InterpolatedPositionGrid
+from zepto.modules.position.interpolated_position_grid import InterpolatedPositionGrid
 
 
 def test_interpolated_output_shape() -> None:

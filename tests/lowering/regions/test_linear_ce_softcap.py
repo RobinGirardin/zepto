@@ -10,10 +10,10 @@ from zepto.analysis.lowering.recipes.linear_ce_softcap import (
     DEFAULT_LINEAR_CE_SOFTCAP_RECIPE,
 )
 from zepto.compose import Tensor, compose_graph
-from modules.output.capped_fused_linear_cross_entropy import (
+from zepto.modules.output.capped_fused_linear_cross_entropy import (
     CappedFusedLinearCrossEntropy,
 )
-from modules.output.logit_soft_cap import LogitSoftCapConfig
+from zepto.modules.output.logit_soft_cap import LogitSoftCapConfig
 from zepto.semantic import ResourceEventKind
 
 _S, _D, _V = 4, 8, 16

@@ -719,7 +719,7 @@ def test_cast_backward_exposes_grad_input_when_required() -> None:
 
 
 def test_rmsnorm_graph_has_nine_ops_with_casts() -> None:
-    from modules.layers.rms_norm import RMSNorm
+    from zepto.modules.layers.rms_norm import RMSNorm
 
     graph = compose_graph(lambda ctx: RMSNorm(8), (Tensor(shape=(4, 8), dtype=DType.BF16),))
     families = tuple(graph.node(node_id).operation_family for node_id in graph.node_order)
@@ -737,7 +737,7 @@ def test_rmsnorm_graph_has_nine_ops_with_casts() -> None:
 
 
 def test_rmsnorm_normalize_uses_fp32_compute_tensor() -> None:
-    from modules.layers.rms_norm import RMSNorm
+    from zepto.modules.layers.rms_norm import RMSNorm
 
     graph = compose_graph(lambda ctx: RMSNorm(8), (Tensor(shape=(4, 8), dtype=DType.BF16),))
     divide_nodes = [

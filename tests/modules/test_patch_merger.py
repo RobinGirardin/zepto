@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from modules.vision.patch_merger import PatchMerger2x2
+from zepto.modules.vision.patch_merger import PatchMerger2x2
 
 
 def test_qwen_merger_output_width() -> None:

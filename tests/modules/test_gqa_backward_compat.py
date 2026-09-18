@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from modules.attention.attention import FlexibleAttention
-from modules.attention.attention_config import llama_gqa
-from modules.attention.gqa import GroupedQueryAttention
+from zepto.modules.attention.attention import FlexibleAttention
+from zepto.modules.attention.attention_config import llama_gqa
+from zepto.modules.attention.gqa import GroupedQueryAttention
 
 _SEQ = 8
 _HEADS = 4

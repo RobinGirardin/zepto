@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.models.laguna_xs import LagunaXs, LagunaXsConfig
+from zepto.modules.models.laguna_xs import LagunaXs, LagunaXsConfig
 from zepto.semantic.metadata import DType
 
 

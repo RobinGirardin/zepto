@@ -1,9 +1,5 @@
 """Public Zepto package namespace."""
 
-from zepto._import_paths import ensure_import_paths
-
-ensure_import_paths()
-
 from zepto.analysis import *
 from zepto.analysis.accounting import AccountingPolicy, PrecisionPolicy
 from zepto.analysis.estimation import estimate

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import Parameter, Tensor, compose_graph
-from modules.attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
+from zepto.modules.attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
 from zepto.semantic import AttentionSoftmaxWithSink as AttentionSoftmaxWithSinkOp
 
 

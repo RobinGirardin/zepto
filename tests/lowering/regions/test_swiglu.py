@@ -9,8 +9,8 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.analysis.lowering.recipes.swiglu import DEFAULT_SWIGLU_RECIPE
 from zepto.compose import Tensor, compose_graph
-from modules.ffn.ffn import FFN
-from modules.ffn.swiglu import SwiGLU
+from zepto.modules.ffn.ffn import FFN
+from zepto.modules.ffn.swiglu import SwiGLU
 from zepto.semantic import ResourceEventKind
 
 

@@ -1,5 +1,5 @@
 """python -m zepto.benchmark"""
 
-from zepto.benchmark._entry import main
+from zepto.benchmark.cli import main
 
 raise SystemExit(main())

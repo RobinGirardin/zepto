@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from modules.layers.affine_linear import AffineLinear
+from zepto.modules.layers.affine_linear import AffineLinear
 
 
 def _families(graph) -> list[str]:

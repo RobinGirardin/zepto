@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.models.gemma4 import Gemma4, Gemma4Config
+from zepto.modules.models.gemma4 import Gemma4, Gemma4Config
 from zepto.semantic.metadata import DType
 
 

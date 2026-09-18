@@ -8,7 +8,7 @@ from typing import Literal
 from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
-from modules.mixers.mixer_config import Mamba2MixerConfig
+from zepto.modules.mixers.mixer_config import Mamba2MixerConfig
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 

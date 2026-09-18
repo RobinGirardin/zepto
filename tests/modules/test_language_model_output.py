@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor, compose_graph
-from modules.output.language_model_output import (
+from zepto.modules.output.language_model_output import (
     LanguageModelOutput,
     LanguageModelOutputConfig,
 )
-from modules.layers.lm_head import LMHead
-from modules.output.logit_soft_cap import LogitSoftCapConfig
+from zepto.modules.layers.lm_head import LMHead
+from zepto.modules.output.logit_soft_cap import LogitSoftCapConfig
 from zepto.semantic import EmbeddingLookup
 
 

@@ -17,7 +17,7 @@ from zepto.analysis import (
 )
 from zepto.analysis.horizon.spec import HorizonStep
 from zepto.compose import Tensor, compose_graph
-from modules.layers.linear import Linear
+from zepto.modules.layers.linear import Linear
 from zepto.semantic.metadata import DType
 
 _IN_FEATURES = 64

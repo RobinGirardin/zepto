@@ -14,7 +14,7 @@ from zepto.analysis import (
 from zepto.analysis.flops import account_flops as account_step_flops
 from zepto.analysis.horizon.cache import HorizonStructuralCacheStats
 from zepto.compose import Tensor
-from modules.blocks.apertus_decoder_block import ApertusDecoderBlock
+from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.semantic.metadata import DType
 
 _HIDDEN = 64

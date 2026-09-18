@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from modules.models.apertus import APERTUS_8B, Apertus
+from zepto.modules.models.apertus import APERTUS_8B, Apertus
 from zepto.analysis import HorizonSpec, reference_invocation
 from zepto.analysis.horizon.records import HorizonSimulation
 from zepto.analysis.optimizer import AdamW

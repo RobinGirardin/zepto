@@ -9,7 +9,10 @@ description = "Backend-neutral structural graph types for Zepto"
 requires-python = ">=3.11"
 
 [project.scripts]
-zepto-bench = "zepto.benchmark._entry:main"
+zepto-bench = "zepto.benchmark.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

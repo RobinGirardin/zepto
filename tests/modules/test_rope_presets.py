@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from modules.attention.attention import FlexibleAttention
-from modules.attention.attention_config import gated_gqa
-from modules.position.multimodal_rope_materialize import MultimodalRoPEMaterialize
-from modules.position.rope_apply import RoPEApply
-from modules.position.rope_config import (
+from zepto.modules.attention.attention import FlexibleAttention
+from zepto.modules.attention.attention_config import gated_gqa
+from zepto.modules.position.multimodal_rope_materialize import MultimodalRoPEMaterialize
+from zepto.modules.position.rope_apply import RoPEApply
+from zepto.modules.position.rope_config import (
     LayerRoPEBinding,
     gemma4_layer_binding,
     gpt_oss_layer_binding,
@@ -15,7 +15,7 @@ from modules.position.rope_config import (
     muse_glimmer_layer_binding,
     qwen3_vl_mrope,
 )
-from modules.position.rope_materialize import RoPEMaterialize
+from zepto.modules.position.rope_materialize import RoPEMaterialize
 
 _SEQ = 8
 
