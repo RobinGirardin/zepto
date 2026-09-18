@@ -29,7 +29,7 @@ from ....recipes.gqa import (
 from ....region import Region
 from ....registry import RegionImplementationDescriptor
 from ....role import RoleContext
-from .rules import GQA_OP_SEQUENCES, GQA_PATTERN
+from .rules import GQA_OP_SEQUENCES, GQA_PATTERN, GQA_PROVENANCE
 from .shared import attention_dims, resolve_window_size
 
 HardwareGate = Literal["any", "cuda_only"]
@@ -296,7 +296,7 @@ def _descriptor(
         kind="region/gqa",
         priority=priority,
         capabilities=capabilities,
-        provenance_rule=None,
+        provenance_rule=GQA_PROVENANCE,
         pattern_rule=GQA_PATTERN,
     )
 

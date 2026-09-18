@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from zepto.graph.graph import Graph
@@ -16,14 +15,11 @@ from ..lowered import LoweredGraph, LoweredNode, LoweredParameter, StatePortEven
 from .context import InvocationContext
 from .role import RoleContext, resolve_lowered_edge
 from .defaults import DEFAULT_REGISTRY
-from .discovery import discover_regions
 from .helpers import (
     build_estimation_context,
     build_region_estimation_context,
     ensure_lowered_edge,
 )
-from .mask_elision import apply_mask_elision
-from .plan import build_lowering_plan, resolve_overlaps
 from .registry import (
     ImplementationSelection,
     LoweringRegistry,
@@ -33,6 +29,9 @@ from .registry import (
 )
 from .region import Region
 from .validation import LoweredNodeValidator
+
+if TYPE_CHECKING:
+    from .structural import StructuralLowering
 
 _NODE_VALIDATOR = LoweredNodeValidator()
 
@@ -62,64 +61,22 @@ def lower(
     *,
     registry: LoweringRegistry | None = None,
     state_ports: StatePortRegistry | None = None,
+    structural: StructuralLowering | None = None,
 ) -> LoweredGraph:
     """Lower one graph for a concrete invocation context."""
+    from .structural import discover_and_plan, execute_lowering_plan
+
     if state_ports is not None:
         context = state_ports.bind_to_context(context)
 
     active_registry = registry if registry is not None else DEFAULT_REGISTRY
-    state = LoweringState()
-
-    for input_id in graph.inputs:
-        ensure_lowered_edge(
-            input_id,
-            graph,
-            context,
-            state.lowered_edges,
-            state.edge_map,
-        )
-
-    _register_parameters(graph, context, state)
-
-    regions = discover_regions(graph, context, active_registry)
-    winning_regions = resolve_overlaps(graph, regions, context, active_registry)
-    plan = build_lowering_plan(graph, regions, context, active_registry)
-
-    for step in plan.steps:
-        if step.kind == "region":
-            assert step.region is not None
-            lower_region(step.region, graph, context, active_registry, state)
-        else:
-            assert step.operation_id is not None
-            lower_operation(
-                step.operation_id, graph, context, active_registry, state
-            )
-
-    apply_mask_elision(
+    if structural is None:
+        structural = discover_and_plan(graph, context, active_registry)
+    return execute_lowering_plan(
         graph,
-        winning_regions,
-        nodes=state.nodes,
-        node_map=state.node_map,
-    )
-
-    output_edge_ids = tuple(
-        state.edge_map[output_id] for output_id in graph.outputs
-    )
-
-    return LoweredGraph(
-        edges=MappingProxyType(dict(state.lowered_edges)),
-        parameters=MappingProxyType(dict(state.lowered_parameters)),
-        parameter_map=MappingProxyType(dict(state.parameter_map)),
-        nodes=tuple(state.nodes),
-        context=context,
-        edge_map=MappingProxyType(dict(state.edge_map)),
-        node_map=MappingProxyType(dict(state.node_map)),
-        output_edge_ids=output_edge_ids,
-        selections=tuple(state.selections),
-        fusion_map=MappingProxyType(dict(state.fusion_map)),
-        region_map=MappingProxyType(dict(state.region_map)),
-        region_selections=tuple(state.region_selections),
-        state_port_events=tuple(state.state_port_events),
+        context,
+        active_registry,
+        structural,
     )
 
 

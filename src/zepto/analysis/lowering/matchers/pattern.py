@@ -50,6 +50,32 @@ class PatternRegionMatcher:
             return False
         return self._satisfies_constraints(graph, operation_ids, rule)
 
+    def find_chain_within(
+        self,
+        graph: Graph,
+        allowed_operation_ids: tuple[NodeId, ...],
+        rule: PatternMatchRule,
+    ) -> tuple[NodeId, ...] | None:
+        """Find one pattern chain whose ops lie in ``allowed_operation_ids``."""
+        allowed = frozenset(allowed_operation_ids)
+        families = rule.op_families
+        if not families:
+            return None
+        for start_op_id in graph.node_order:
+            if start_op_id not in allowed:
+                continue
+            if graph.node(start_op_id).operation_family != families[0]:
+                continue
+            chain = self._extend_chain(
+                graph, start_op_id, families, rule, allowed=allowed
+            )
+            if chain is None:
+                continue
+            if not self._satisfies_constraints(graph, chain, rule):
+                continue
+            return chain
+        return None
+
     def _match_sequence(
         self,
         graph: Graph,
@@ -97,11 +123,18 @@ class PatternRegionMatcher:
         start_id: NodeId,
         families: tuple[str, ...],
         rule: PatternMatchRule,
+        *,
+        allowed: frozenset[NodeId] | None = None,
     ) -> tuple[NodeId, ...] | None:
         chain = [start_id]
         for step in range(1, len(families)):
             successor = self._find_dataflow_successor(
-                graph, chain, step, families, rule.edge_constraints
+                graph,
+                chain,
+                step,
+                families,
+                rule.edge_constraints,
+                allowed=allowed,
             )
             if successor is None:
                 return None
@@ -117,12 +150,16 @@ class PatternRegionMatcher:
         step_index: int,
         families: tuple[str, ...],
         edges: tuple[tuple[int, int, str], ...],
+        *,
+        allowed: frozenset[NodeId] | None = None,
     ) -> NodeId | None:
         expected_family = families[step_index]
         chain_set = set(chain)
         candidates: list[NodeId] = []
         for op_id in graph.node_order:
             if op_id in chain_set:
+                continue
+            if allowed is not None and op_id not in allowed:
                 continue
             op = graph.node(op_id)
             if op.operation_family != expected_family:

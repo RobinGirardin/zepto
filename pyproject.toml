@@ -8,9 +8,14 @@ version = "0.1.0"
 description = "Backend-neutral structural graph types for Zepto"
 requires-python = ">=3.11"
 
+[project.scripts]
+zepto-bench = "zepto.benchmark._entry:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = "-m 'not benchmark'"
+markers = [
+    "benchmark: slow wall-clock simulation benchmarks (opt-in with -m benchmark)",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]

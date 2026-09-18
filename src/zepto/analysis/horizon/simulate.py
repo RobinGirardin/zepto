@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -10,7 +11,14 @@ from zepto.compose import compose_graph
 from zepto.compose.context import Compose, Module
 from zepto.compose.values import Tensor
 
-from ..lowering import lower
+from ..lowering.defaults import DEFAULT_REGISTRY
+from ..lowering.structural import discover_and_plan, execute_lowering_plan
+from .cache import (
+    HorizonStepDurations,
+    HorizonStructuralCacheStats,
+    StructuralCacheEntry,
+    make_structural_key,
+)
 from .records import HorizonSimulation, InvocationRecord
 from .spec import HorizonSpec, HorizonStep, StepKind
 
@@ -50,19 +58,74 @@ def simulate_horizon(
     context: InvocationContext,
     *,
     registry: LoweringRegistry | None = None,
+    use_structural_cache: bool = True,
+    cache_stats: HorizonStructuralCacheStats | None = None,
+    step_durations: list[HorizonStepDurations] | None = None,
+    profile_discover_on_first_step: bool = False,
 ) -> HorizonSimulation:
     """Compose and lower one graph per horizon step, advancing carried state."""
     port_registry = spec.build_state_registry()
+    active_registry = registry if registry is not None else DEFAULT_REGISTRY
+    structural_cache: dict[object, StructuralCacheEntry] = {}
+    stats = cache_stats if cache_stats is not None else HorizonStructuralCacheStats()
 
     timeline: list[InvocationRecord] = []
     initial = port_registry.snapshot()
 
-    for step in spec.steps:
+    for step_index, step in enumerate(spec.steps):
+        step_start = time.perf_counter()
+        durations = HorizonStepDurations() if step_durations is not None else None
+
         ctx = _merge_context(step, context, port_registry)
         snapshot = port_registry.snapshot()
-        inputs = inputs_fn(step, ctx, snapshot)
-        graph = compose_graph(module_fn, inputs)
-        lowered = lower(graph, ctx, registry=registry)
+        key = make_structural_key(step, ctx)
+
+        if use_structural_cache and key in structural_cache:
+            entry = structural_cache[key]
+            stats.cache_hits += 1
+            stats.compose_skipped += 1
+            graph = entry.graph
+            t_lower = time.perf_counter()
+            lowered = execute_lowering_plan(
+                graph, ctx, active_registry, entry.structural
+            )
+            if durations is not None:
+                durations.lower_seconds = time.perf_counter() - t_lower
+        else:
+            inputs = inputs_fn(step, ctx, snapshot)
+            t_compose = time.perf_counter()
+            graph = compose_graph(module_fn, inputs)
+            if durations is not None:
+                durations.compose_seconds = time.perf_counter() - t_compose
+
+            if use_structural_cache:
+                t_discover = time.perf_counter()
+                structural = discover_and_plan(graph, ctx, active_registry)
+                discover_elapsed = time.perf_counter() - t_discover
+                if (
+                    durations is not None
+                    and profile_discover_on_first_step
+                    and step_index == 0
+                ):
+                    durations.discover_seconds = discover_elapsed
+                t_lower = time.perf_counter()
+                lowered = execute_lowering_plan(
+                    graph, ctx, active_registry, structural
+                )
+                if durations is not None:
+                    durations.lower_seconds = time.perf_counter() - t_lower
+                structural_cache[key] = StructuralCacheEntry(
+                    graph=graph, structural=structural
+                )
+                stats.cache_misses += 1
+            else:
+                from ..lowering import lower
+
+                t_lower = time.perf_counter()
+                lowered = lower(graph, ctx, registry=active_registry)
+                if durations is not None:
+                    durations.lower_seconds = time.perf_counter() - t_lower
+
         port_registry = port_registry.advance(step, lowered)
         timeline.append(
             InvocationRecord(
@@ -72,6 +135,14 @@ def simulate_horizon(
                 state_after=port_registry.snapshot(),
             )
         )
+        if step_durations is not None and durations is not None:
+            durations.step_total_seconds = time.perf_counter() - step_start
+            step_durations.append(durations)
+
+    if cache_stats is not None:
+        cache_stats.cache_hits = stats.cache_hits
+        cache_stats.cache_misses = stats.cache_misses
+        cache_stats.compose_skipped = stats.compose_skipped
 
     return HorizonSimulation(
         spec=spec,
