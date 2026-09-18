@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor
-from .apertus import Apertus
-from .fused_linear_cross_entropy import FusedLinearCrossEntropy
+
+from .models.apertus import Apertus
+from .output.fused_linear_cross_entropy import FusedLinearCrossEntropy
 
 
 class ApertusForCausalLM(Module):
