@@ -57,7 +57,7 @@ class ApertusFamily(ApertusFamilyCore):
 
         return factory
 
-    def zepto_infer_inputs(self, step: "HorizonStep") -> tuple:
+    def zepto_infer_inputs(self, step: "HorizonStep", _ctx, _state) -> tuple:
         from zepto.compose import Tensor
 
         return (Tensor(shape=(step.seq_len,)),)

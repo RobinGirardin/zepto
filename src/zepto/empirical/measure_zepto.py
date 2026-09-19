@@ -50,8 +50,10 @@ def measure_infer_zepto(
     if batch_size == 1:
         module_factory = family.build_zepto_infer_module_factory(opts, seq_len=seq_len)
         step = HorizonStep(kind=StepKind.GENERIC, seq_len=seq_len, batch=1)
-        graph = compose_graph(module_factory, family.zepto_infer_inputs(step))
-        report = estimate(graph, replace(ctx, phase="forward"))
+        forward_ctx = replace(ctx, phase="forward")
+        inputs = family.zepto_infer_inputs(step, forward_ctx, None)
+        graph = compose_graph(module_factory, inputs)
+        report = estimate(graph, forward_ctx)
         return (
             int(report.flops.forward_flops),
             int(report.memory.peak_live_bytes),
