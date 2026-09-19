@@ -32,6 +32,8 @@ class ApertusFamilyCore:
         }
 
     def validate_options(self, opts: dict[str, int]) -> None:
+        if opts["head_dim"] % 2 != 0:
+            raise ValueError("head_dim must be even (HF Apertus twin)")
         if opts["num_heads"] % opts["num_kv_heads"] != 0:
             raise ValueError("num_heads must be divisible by num_kv_heads")
         if opts["hidden_size"] != opts["num_heads"] * opts["head_dim"]:

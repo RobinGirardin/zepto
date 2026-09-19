@@ -80,6 +80,8 @@ class ApertusFamily(ApertusFamilyCore):
             raise ImportError(
                 "transformers with Apertus support is required for HF twin builds"
             )
+        # HF twin: use transformers Apertus defaults (max_position_embeddings,
+        # rope_parameters / YaRN) — do not override with a short context window.
         cfg = ApertusConfig(
             vocab_size=opts["vocab_size"],
             hidden_size=opts["hidden_size"],
@@ -87,7 +89,6 @@ class ApertusFamily(ApertusFamilyCore):
             num_hidden_layers=opts["num_layers"],
             num_attention_heads=opts["num_heads"],
             num_key_value_heads=opts["num_kv_heads"],
-            max_position_embeddings=512,
             tie_word_embeddings=False,
             use_cache=False,
             attention_bias=False,

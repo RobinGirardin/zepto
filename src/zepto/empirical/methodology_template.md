@@ -10,7 +10,7 @@ Each row uses a **family slug** (`model_id`, e.g. `apertus`). Models use **rando
 
 ## Twin contract
 
-- HF: `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward.
+- HF: `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. **Apertus:** stock `ApertusConfig` context and RoPE (transformers defaults for `max_position_embeddings` and `rope_parameters` / YaRN) — not a shortened context window.
 - Zepto: `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`.
 
 ## Phases
