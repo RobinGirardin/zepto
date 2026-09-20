@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from zepto.analysis.horizon.spec import StepKind
+
 
 from zepto.benchmark.apertus_training import (
     DEFAULT_WALL_CLOCK_LIMIT_SECONDS,
@@ -75,7 +77,12 @@ def _cmd_8b(args: argparse.Namespace) -> int:
 
     sim = result.sim
     timing = result.timing
-    last = sim.timeline[-1]
+    last = (
+        sim.timeline[-2]
+        if sim.timeline[-1].step.kind == StepKind.OPTIMIZER
+        else sim.timeline[-1]
+    )
+
     if not last.lowered.nodes:
         print("Benchmark produced no lowered nodes.", file=sys.stderr)
         return 1
