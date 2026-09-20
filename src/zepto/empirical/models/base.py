@@ -40,7 +40,13 @@ class ModelFamily(Protocol):
     ) -> tuple[Tensor, ...]: ...
 
     def build_hf_model(
-        self, opts: dict[str, int], *, precision: str, device: torch.device
+        self,
+        opts: dict[str, int],
+        *,
+        seq_len: int,
+        precision: str,
+        device: torch.device,
+        twin_mode: str = "apertus_parity",
     ) -> nn.Module: ...
 
     def hf_forward_infer(self, model: nn.Module, input_ids: torch.Tensor): ...

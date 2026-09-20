@@ -10,6 +10,7 @@ from zepto.modules.layers.embedding import Embedding
 from zepto.modules.layers.lm_head import LMHead
 from zepto.modules.attention.materialized_causal_mask import MaterializedCausalMask
 from zepto.modules.layers.rms_norm import RMSNorm
+from zepto.modules.position.rope_config import apertus_rope
 from zepto.modules.position.rope_materialize import RoPEMaterialize
 
 
@@ -73,7 +74,11 @@ class Apertus(Module):
 
         self.embedding = Embedding(hidden_size, vocab_size)
         self.causal_mask = MaterializedCausalMask(seq_len)
-        self.rope_materialize = RoPEMaterialize(seq_len, resolved_head_dim)
+        self.rope_materialize = RoPEMaterialize(
+            seq_len,
+            resolved_head_dim,
+            config=apertus_rope(head_dim=resolved_head_dim),
+        )
 
         self.blocks: list[ApertusDecoderBlock] = []
         for index in range(num_layers):

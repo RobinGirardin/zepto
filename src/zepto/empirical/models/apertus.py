@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from zepto.empirical.models.apertus_core import ApertusFamilyCore, OPTION_KEYS
 
@@ -17,6 +17,15 @@ if TYPE_CHECKING:
     from torch import nn
 
     from zepto.analysis.horizon.spec import HorizonStep
+
+TwinMode = Literal["apertus_parity", "transformers_defaults"]
+
+APERTUS_ORIGINAL_MPE = 8192
+
+
+def apertus_hf_max_position_embeddings(seq_len: int) -> int:
+    """HF MPE valid for short scored windows (original MPE must stay below MPE)."""
+    return max(seq_len, APERTUS_ORIGINAL_MPE + 1)
 
 
 def _module_kwargs(opts: dict[str, int], *, seq_len: int) -> dict[str, int]:
@@ -72,7 +81,13 @@ class ApertusFamily(ApertusFamilyCore):
         )
 
     def build_hf_model(
-        self, opts: dict[str, int], *, precision: str, device: "torch.device"
+        self,
+        opts: dict[str, int],
+        *,
+        seq_len: int,
+        precision: str,
+        device: "torch.device",
+        twin_mode: TwinMode = "apertus_parity",
     ) -> "nn.Module":
         import torch
 
@@ -80,20 +95,25 @@ class ApertusFamily(ApertusFamilyCore):
             raise ImportError(
                 "transformers with Apertus support is required for HF twin builds"
             )
-        # HF twin: use transformers Apertus defaults (max_position_embeddings,
-        # rope_parameters / YaRN) — do not override with a short context window.
-        cfg = ApertusConfig(
-            vocab_size=opts["vocab_size"],
-            hidden_size=opts["hidden_size"],
-            intermediate_size=opts["intermediate_size"],
-            num_hidden_layers=opts["num_layers"],
-            num_attention_heads=opts["num_heads"],
-            num_key_value_heads=opts["num_kv_heads"],
-            tie_word_embeddings=False,
-            use_cache=False,
-            attention_bias=False,
-            hidden_act="xielu",
-        )
+        cfg_kwargs: dict = {
+            "vocab_size": opts["vocab_size"],
+            "hidden_size": opts["hidden_size"],
+            "intermediate_size": opts["intermediate_size"],
+            "num_hidden_layers": opts["num_layers"],
+            "num_attention_heads": opts["num_heads"],
+            "num_key_value_heads": opts["num_kv_heads"],
+            "tie_word_embeddings": False,
+            "use_cache": False,
+            "attention_bias": False,
+            "hidden_act": "xielu",
+        }
+        if twin_mode == "apertus_parity":
+            cfg_kwargs["max_position_embeddings"] = apertus_hf_max_position_embeddings(
+                seq_len
+            )
+        elif twin_mode != "transformers_defaults":
+            raise ValueError(f"unknown twin_mode: {twin_mode!r}")
+        cfg = ApertusConfig(**cfg_kwargs)
         if precision == "fp32":
             dtype = torch.float32
         elif precision in ("fp16", "mixed"):
@@ -120,4 +140,10 @@ class ApertusFamily(ApertusFamilyCore):
         return model(input_ids=input_ids, labels=labels, use_cache=False)
 
 
-__all__ = ["ApertusFamily", "OPTION_KEYS"]
+__all__ = [
+    "APERTUS_ORIGINAL_MPE",
+    "ApertusFamily",
+    "OPTION_KEYS",
+    "TwinMode",
+    "apertus_hf_max_position_embeddings",
+]

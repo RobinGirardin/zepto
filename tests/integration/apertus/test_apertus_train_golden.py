@@ -54,6 +54,26 @@ def _compose_inference():
     )
 
 
+def test_apertus_golden_graph_uses_llama3_rope() -> None:
+    captured: dict = {}
+
+    def factory(_ctx):
+        model = ApertusForCausalLM(**GOLDEN)
+        captured["rope"] = model.backbone.rope_materialize.config
+        return model
+
+    compose_graph(
+        factory,
+        (
+            Tensor(shape=(_S,)),
+            Tensor(shape=(_S,), semantic_type="labels", requires_grad=False),
+        ),
+    )
+    rope = captured["rope"]
+    assert rope.rope_type == "llama3"
+    assert rope.rope_theta == 12_000_000.0
+
+
 def test_apertus_for_causal_lm_composes_and_lowers() -> None:
     graph = _compose_training()
     ctx = golden_apertus_ctx()

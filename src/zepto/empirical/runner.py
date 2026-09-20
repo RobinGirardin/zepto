@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -59,6 +59,7 @@ class RunConfig:
     sampler: SamplerConfig
     append_results: bool = False
     log_first_draw_spec: bool = True
+    twin_mode: Literal["apertus_parity", "transformers_defaults"] = "apertus_parity"
 
 
 def _git_commit() -> str | None:
@@ -102,6 +103,7 @@ def _run_meta(config: RunConfig) -> dict[str, Any]:
         "cuda_device_name": cuda_name,
         "cuda_capability": list(cuda_cap) if cuda_cap else None,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "twin_mode": config.twin_mode,
     }
 
 
@@ -186,7 +188,11 @@ def run_draw(
         )
 
     model = family.build_hf_model(
-        opts, precision=draw.precision, device=device
+        opts,
+        seq_len=draw.seq_len,
+        precision=draw.precision,
+        device=device,
+        twin_mode=config.twin_mode,
     )
     input_ids, labels = build_hf_inputs(
         family,

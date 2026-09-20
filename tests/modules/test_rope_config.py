@@ -6,6 +6,7 @@ import pytest
 
 from modules.position.rope_config import (
     RoPEConfig,
+    apertus_rope,
     gemma4_rope_layer,
     gpt_oss_rope,
     laguna_layer_binding,
@@ -14,6 +15,13 @@ from modules.position.rope_config import (
     muse_glimmer_layer_binding,
     muse_glimmer_rope_layer,
 )
+
+
+def test_apertus_rope_llama3() -> None:
+    cfg = apertus_rope(head_dim=128)
+    assert cfg.rope_type == "llama3"
+    assert cfg.rope_theta == 12_000_000.0
+    assert cfg.original_max_position_embeddings == 8192
 
 
 def test_llama_rope_defaults() -> None:

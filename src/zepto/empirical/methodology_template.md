@@ -10,8 +10,11 @@ Each row uses a **family slug** (`model_id`, e.g. `apertus`). Models use **rando
 
 ## Twin contract
 
-- HF: `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. **Apertus:** stock `ApertusConfig` context and RoPE (transformers defaults for `max_position_embeddings` and `rope_parameters` / YaRN) — not a shortened context window.
-- Zepto: `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`.
+Default **`twin_mode=apertus_parity`** (see `run_meta.json`):
+
+- **HF (Apertus):** `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. Checkpoint **llama3** `rope_parameters` (θ=12M, YaRN factor 8, `original_max_position_embeddings=8192`) are kept — do not set `rope_scaling=None`. **`max_position_embeddings`** is set to `max(seq_len, 8193)` so short scored windows validate without shrinking RoPE type (must stay **>** `original_max_position_embeddings`).
+- **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`.
+- **`transformers_defaults`:** optional experiment — omit MPE override and use full default HF context (65536); not comparable to smoke-style short-`S` studies.
 
 ## Phases
 
