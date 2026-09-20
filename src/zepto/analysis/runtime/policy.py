@@ -13,6 +13,11 @@ _CUBLAS_WORKSPACE_SM90_PLUS = 4096 * 8 * 1024
 _CUBLAS_WORKSPACE_PRE_SM90 = 4096 * 1024 * 2 + 16 * 1024 * 8
 
 
+def cublas_workspace_bytes_per_handle(compute_capability: tuple[int, int]) -> int:
+    major, _ = compute_capability
+    return _CUBLAS_WORKSPACE_SM90_PLUS if major >= 9 else _CUBLAS_WORKSPACE_PRE_SM90
+
+
 class RuntimeOverheadPolicy(ABC):
     @abstractmethod
     def workspace_bytes(
@@ -43,10 +48,7 @@ class CudaCublasWorkspacePolicy(RuntimeOverheadPolicy):
         )
         if cap is None:
             return 0
-        major, _ = cap
-        per_handle = (
-            _CUBLAS_WORKSPACE_SM90_PLUS if major >= 9 else _CUBLAS_WORKSPACE_PRE_SM90
-        )
+        per_handle = cublas_workspace_bytes_per_handle(cap)
         handles = _cublas_handle_count(context.phase, step_kind=step_kind)
         return handles * per_handle
 

@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
 from torch.utils.flop_counter import FlopCounterMode
 
 from zepto.empirical.models.base import ModelFamily
+
+
+@dataclass(frozen=True, slots=True)
+class TorchMeasureResult:
+    target_flop: int
+    target_vram_raw: int
+    peak_minus_before: int
+    alloc_before: int
+    target_flop_no_opt: int = 0
 
 
 def _cuda_sync_peak_vram() -> int:
@@ -17,7 +28,7 @@ def measure_infer_torch(
     family: ModelFamily,
     model: torch.nn.Module,
     input_ids: torch.Tensor,
-) -> tuple[int, int]:
+) -> TorchMeasureResult:
     model.eval()
     with torch.no_grad():
         with FlopCounterMode(display=False) as flop_counter:
@@ -28,11 +39,18 @@ def measure_infer_torch(
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
+    alloc_before = int(torch.cuda.memory_allocated())
     with torch.no_grad():
         family.hf_forward_infer(model, input_ids)
     torch.cuda.synchronize()
-    target_vram = _cuda_sync_peak_vram()
-    return target_flop, target_vram
+    target_vram_raw = _cuda_sync_peak_vram()
+    return TorchMeasureResult(
+        target_flop=target_flop,
+        target_vram_raw=target_vram_raw,
+        peak_minus_before=target_vram_raw - alloc_before,
+        alloc_before=alloc_before,
+        target_flop_no_opt=target_flop,
+    )
 
 
 def train_step_forward_backward(
@@ -56,7 +74,7 @@ def measure_train_step_torch(
     input_ids: torch.Tensor,
     labels: torch.Tensor,
     opt: torch.optim.Optimizer,
-) -> tuple[int, int]:
+) -> TorchMeasureResult:
     opt.zero_grad(set_to_none=False)
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
@@ -68,10 +86,34 @@ def measure_train_step_torch(
             input_ids,
             labels,
             opt,
+            include_optimizer_step=False,
+        )
+    torch.cuda.synchronize()
+    target_flop_no_opt = int(flop_counter.get_total_flops())
+
+    opt.zero_grad(set_to_none=False)
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
+    alloc_before = int(torch.cuda.memory_allocated())
+    with FlopCounterMode(display=False) as flop_counter:
+        train_step_forward_backward(
+            family,
+            model,
+            input_ids,
+            labels,
+            opt,
             include_optimizer_step=True,
         )
     torch.cuda.synchronize()
-    return int(flop_counter.get_total_flops()), _cuda_sync_peak_vram()
+    target_vram_raw = _cuda_sync_peak_vram()
+    return TorchMeasureResult(
+        target_flop=int(flop_counter.get_total_flops()),
+        target_vram_raw=target_vram_raw,
+        peak_minus_before=target_vram_raw - alloc_before,
+        alloc_before=alloc_before,
+        target_flop_no_opt=target_flop_no_opt,
+    )
 
 
 def training_warmup_step(

@@ -51,6 +51,7 @@ from .runtime import (
     CudaCublasWorkspacePolicy,
     NullRuntimeOverheadPolicy,
     RuntimeOverheadPolicy,
+    cublas_workspace_bytes_per_handle,
     runtime_workspace_bytes,
 )
 
@@ -59,6 +60,7 @@ __all__ = [
     "AdamW",
     "CostReport",
     "CudaCublasWorkspacePolicy",
+    "cublas_workspace_bytes_per_handle",
     "DEFAULT_REGISTRY",
     "FlopReport",
     "HorizonCostReport",

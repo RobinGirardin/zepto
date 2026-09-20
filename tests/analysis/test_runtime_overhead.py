@@ -7,6 +7,7 @@ from dataclasses import replace
 from zepto.analysis import (
     NullRuntimeOverheadPolicy,
     account_memory,
+    cublas_workspace_bytes_per_handle,
     estimate,
     reference_invocation,
     runtime_workspace_bytes,
@@ -14,7 +15,7 @@ from zepto.analysis import (
 from zepto.analysis.runtime import CudaCublasWorkspacePolicy
 from zepto.compose import compose_graph
 from zepto.compose.values import Tensor as ComposeTensor
-from zepto.modules.linear import Linear
+from zepto.modules import Linear
 
 from test_memory_simulator import (
     _merge_train_lowered,
@@ -23,6 +24,11 @@ from test_memory_simulator import (
 
 PRE_SM90 = 8_519_680
 SM90_PLUS = 33_554_432
+
+
+def test_cublas_workspace_bytes_per_handle() -> None:
+    assert cublas_workspace_bytes_per_handle((7, 5)) == PRE_SM90
+    assert cublas_workspace_bytes_per_handle((9, 0)) == SM90_PLUS
 
 
 def test_missing_capability_workspace_zero() -> None:

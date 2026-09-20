@@ -11,6 +11,8 @@ from typing import Any
 
 import torch
 
+from zepto.analysis.runtime.policy import cublas_workspace_bytes_per_handle
+
 from zepto.empirical import HARNESS_VERSION
 from zepto.empirical.dataset_io import (
     append_evaluation_rows,
@@ -34,6 +36,16 @@ from zepto.empirical.twin_hf import build_hf_inputs
 logger = logging.getLogger(__name__)
 
 METHODOLOGY_TEMPLATE = Path(__file__).resolve().parent / "methodology_template.md"
+
+
+def infer_cublas_vram_correction_bytes(
+    global_draw_index: int,
+    compute_capability: tuple[int, int],
+) -> int:
+    """Extra cuBLAS handle workspace on infer after prior draws ran training."""
+    if global_draw_index <= 0:
+        return 0
+    return cublas_workspace_bytes_per_handle(compute_capability)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,24 +153,26 @@ def run_draw(
     draw,
     device: torch.device,
     cuda_capability: tuple[int, int],
+    global_draw_index: int,
     log_spec: bool = False,
 ) -> list[EvaluationRow]:
     opts = configuration.options
     ctx = build_invocation_context(draw.precision, cuda_capability=cuda_capability)
-    y_flop_i, y_vram_i, batch_rep = measure_infer_zepto(
+    zepto_infer = measure_infer_zepto(
         family,
         opts,
         seq_len=draw.seq_len,
         batch_size=draw.batch_size,
         ctx=ctx,
     )
-    y_flop_t, y_vram_t, _ = measure_train_zepto(
+    zepto_train = measure_train_zepto(
         family,
         opts,
         seq_len=draw.seq_len,
         batch_size=draw.batch_size,
         ctx=ctx,
     )
+    batch_rep = zepto_infer.zepto_batch_representation
     if log_spec:
         logger.info(
             "first draw Zepto train spec: seq_len=%s micro_batches=%s batch=1",
@@ -183,7 +197,10 @@ def run_draw(
         device=device,
     )
 
-    target_flop_i, target_vram_i = measure_infer_torch(family, model, input_ids)
+    torch_infer = measure_infer_torch(family, model, input_ids)
+    infer_correction = infer_cublas_vram_correction_bytes(
+        global_draw_index, cuda_capability
+    )
     rows: list[EvaluationRow] = [
         EvaluationRow(
             model_id=config.model_id,
@@ -195,10 +212,18 @@ def run_draw(
             batch_size=draw.batch_size,
             step=0,
             zepto_batch_representation=batch_rep,
-            y_flop=y_flop_i,
-            y_vram=y_vram_i,
-            target_flop=target_flop_i,
-            target_vram=target_vram_i,
+            y_flop=zepto_infer.y_flop,
+            y_vram=zepto_infer.y_vram,
+            target_flop=torch_infer.target_flop,
+            target_vram=torch_infer.target_vram_raw - infer_correction,
+            target_vram_raw=torch_infer.target_vram_raw,
+            cublas_infer_correction_bytes=infer_correction,
+            y_runtime_workspace=zepto_infer.y_runtime_workspace,
+            y_activations=zepto_infer.y_activations,
+            peak_minus_before=torch_infer.peak_minus_before,
+            alloc_before=torch_infer.alloc_before,
+            target_flop_no_opt=torch_infer.target_flop_no_opt,
+            y_flop_no_opt=zepto_infer.y_flop_no_opt,
         )
     ]
 
@@ -207,7 +232,7 @@ def run_draw(
     training_warmup_step(family, model, input_ids, labels, opt)
 
     for step in range(1, config.training_steps_per_draw + 1):
-        target_flop, target_vram = measure_train_step_torch(
+        torch_train = measure_train_step_torch(
             family, model, input_ids, labels, opt
         )
         rows.append(
@@ -221,10 +246,18 @@ def run_draw(
                 batch_size=draw.batch_size,
                 step=step,
                 zepto_batch_representation=batch_rep,
-                y_flop=y_flop_t,
-                y_vram=y_vram_t,
-                target_flop=target_flop,
-                target_vram=target_vram,
+                y_flop=zepto_train.y_flop,
+                y_vram=zepto_train.y_vram,
+                target_flop=torch_train.target_flop,
+                target_vram=torch_train.target_vram_raw,
+                target_vram_raw=torch_train.target_vram_raw,
+                cublas_infer_correction_bytes=0,
+                y_runtime_workspace=zepto_train.y_runtime_workspace,
+                y_activations=zepto_train.y_activations,
+                peak_minus_before=torch_train.peak_minus_before,
+                alloc_before=torch_train.alloc_before,
+                target_flop_no_opt=torch_train.target_flop_no_opt,
+                y_flop_no_opt=zepto_train.y_flop_no_opt,
             )
         )
 
@@ -269,6 +302,7 @@ def run_study(config: RunConfig) -> Path:
         write_evaluation_rows(output_dir, [])
 
     first_draw_logged = False
+    global_draw_index = 0
     for config_index, configuration in enumerate(configurations):
         draws = sample_draws(
             configuration,
@@ -286,9 +320,11 @@ def run_study(config: RunConfig) -> Path:
                 draw=draw,
                 device=device,
                 cuda_capability=cuda_capability,
+                global_draw_index=global_draw_index,
                 log_spec=log_spec,
             )
             append_evaluation_rows(output_dir, rows)
+            global_draw_index += 1
             if log_spec:
                 first_draw_logged = True
 

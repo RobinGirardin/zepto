@@ -79,6 +79,14 @@ class EvaluationRow:
     y_vram: int
     target_flop: int
     target_vram: int
+    target_vram_raw: int = 0
+    cublas_infer_correction_bytes: int = 0
+    y_runtime_workspace: int = 0
+    y_activations: int = 0
+    peak_minus_before: int = 0
+    alloc_before: int = 0
+    target_flop_no_opt: int = 0
+    y_flop_no_opt: int = 0
 
     def to_csv_row(self) -> dict[str, str | int]:
         row = asdict(self)
@@ -115,11 +123,18 @@ def write_csv_rows(
             writer.writerow({k: row[k] for k in fieldnames})
 
 
+def _parse_int(raw: dict[str, str], key: str, default: int = 0) -> int:
+    if key not in raw or raw[key] == "":
+        return default
+    return int(raw[key])
+
+
 def parse_evaluation_csv(path: Path) -> list[EvaluationRow]:
     with path.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
         out: list[EvaluationRow] = []
         for raw in reader:
+            target_vram = int(raw["target_vram"])
             out.append(
                 EvaluationRow(
                     model_id=raw["model_id"],
@@ -134,7 +149,17 @@ def parse_evaluation_csv(path: Path) -> list[EvaluationRow]:
                     y_flop=int(raw["y_flop"]),
                     y_vram=int(raw["y_vram"]),
                     target_flop=int(raw["target_flop"]),
-                    target_vram=int(raw["target_vram"]),
+                    target_vram=target_vram,
+                    target_vram_raw=_parse_int(raw, "target_vram_raw", target_vram),
+                    cublas_infer_correction_bytes=_parse_int(
+                        raw, "cublas_infer_correction_bytes"
+                    ),
+                    y_runtime_workspace=_parse_int(raw, "y_runtime_workspace"),
+                    y_activations=_parse_int(raw, "y_activations"),
+                    peak_minus_before=_parse_int(raw, "peak_minus_before"),
+                    alloc_before=_parse_int(raw, "alloc_before"),
+                    target_flop_no_opt=_parse_int(raw, "target_flop_no_opt"),
+                    y_flop_no_opt=_parse_int(raw, "y_flop_no_opt"),
                 )
             )
         return out

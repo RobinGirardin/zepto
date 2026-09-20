@@ -29,6 +29,10 @@ def test_infer_batch_two_uses_horizon_inputs_fn() -> None:
     opts = _golden_opts()
     b1 = measure_infer_zepto(family, opts, seq_len=8, batch_size=1, ctx=ctx)
     b2 = measure_infer_zepto(family, opts, seq_len=8, batch_size=2, ctx=ctx)
-    assert b1[2] == b2[2] == "micro_sum"
-    assert b2[0] == b1[0] * 2
-    assert b1[0] > 0 and b1[1] > 0
+    assert (
+        b1.zepto_batch_representation
+        == b2.zepto_batch_representation
+        == "micro_sum"
+    )
+    assert b2.y_flop == b1.y_flop * 2
+    assert b1.y_flop > 0 and b1.y_vram > 0
