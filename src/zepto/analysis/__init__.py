@@ -29,7 +29,11 @@ from .reports import (
     MemoryReport,
 )
 from .memory import account_memory
-from .flops import account_flops
+from .flops import (
+    FCM_OPERATION_FAMILIES,
+    FlopCountingPolicy,
+    account_flops,
+)
 from .estimation import estimate, estimate_horizon
 from .horizon import (
     ConvStateConfig,
@@ -102,6 +106,8 @@ __all__ = [
     "account_flops",
     "account_memory",
     "discover_regions",
+    "FCM_OPERATION_FAMILIES",
+    "FlopCountingPolicy",
     "estimate",
     "estimate_horizon",
     "infer_accounting_role",

@@ -34,3 +34,9 @@ class HorizonFlopReport:
     total_backward_flops: int
     total_flops: int
     per_step: tuple[FlopReport, ...]
+    zepto_forward_flops: int = 0
+    zepto_backward_flops: int = 0
+    zepto_total_flops: int = 0
+    fcm_forward_flops: int = 0
+    fcm_backward_flops: int = 0
+    fcm_total_flops: int = 0

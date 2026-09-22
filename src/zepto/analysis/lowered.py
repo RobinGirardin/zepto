@@ -12,6 +12,8 @@ from zepto.semantic.metadata import TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 
 if TYPE_CHECKING:
+    from zepto.graph.graph import Graph
+
     from .lowering.context import InvocationContext
     from .lowering.plan import LoweringPlan
     from .lowering.region import Region
@@ -95,3 +97,4 @@ class LoweredGraph:
     discovered_regions: tuple[Region, ...] = ()
     winning_regions: tuple[Region, ...] = ()
     lowering_plan: LoweringPlan | None = None
+    source_graph: Graph | None = None

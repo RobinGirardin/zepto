@@ -46,6 +46,7 @@ def make_optimizer_stub_lowered(
         discovered_regions=(),
         winning_regions=(),
         lowering_plan=None,
+        source_graph=None,
     )
     if parameter_bytes(stub) != parameter_bytes(reference):
         raise ValueError("optimizer stub parameter bytes mismatch")

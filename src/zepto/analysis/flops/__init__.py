@@ -1,5 +1,17 @@
 """FLOP accounting."""
 
 from .account import account_flops
+from .policy import (
+    DEFAULT_FLOP_POLICY,
+    FCM_OPERATION_FAMILIES,
+    FlopCountingPolicy,
+    is_fcm_operation_family,
+)
 
-__all__ = ["account_flops"]
+__all__ = [
+    "DEFAULT_FLOP_POLICY",
+    "FCM_OPERATION_FAMILIES",
+    "FlopCountingPolicy",
+    "account_flops",
+    "is_fcm_operation_family",
+]

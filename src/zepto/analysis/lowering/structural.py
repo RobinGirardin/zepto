@@ -113,4 +113,5 @@ def execute_lowering_plan(
         discovered_regions=structural.discovered_regions,
         winning_regions=structural.winning_regions,
         lowering_plan=structural.plan,
+        source_graph=graph,
     )

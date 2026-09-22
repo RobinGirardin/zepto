@@ -169,17 +169,36 @@ def _flops_for_record(
             policy, param_bytes, bytes_per_element=bpe
         )
 
-    return FlopReport(
-        forward_flops=0,
-        backward_flops=0,
-        total_flops=update,
-        by_implementation=(
-            AttributionSlice(
-                key=f"optimizer/{policy.name}",
-                forward_flops=0,
-                backward_flops=update,
-            ),
+    attribution = (
+        AttributionSlice(
+            key=f"optimizer/{policy.name}",
+            forward_flops=0,
+            backward_flops=update,
         ),
+    )
+    counting_policy = record.lowered.context.flop_policy
+    zepto_forward = 0
+    zepto_backward = 0
+    zepto_total = update
+    fcm_forward = 0
+    fcm_backward = 0
+    fcm_total = 0
+    if counting_policy == "flop_counter_mode":
+        fwd, bwd, total = fcm_forward, fcm_backward, fcm_total
+    else:
+        fwd, bwd, total = zepto_forward, zepto_backward, zepto_total
+    return FlopReport(
+        forward_flops=fwd,
+        backward_flops=bwd,
+        total_flops=total,
+        by_implementation=attribution,
+        flop_policy=counting_policy,
+        zepto_forward_flops=zepto_forward,
+        zepto_backward_flops=zepto_backward,
+        zepto_total_flops=zepto_total,
+        fcm_forward_flops=fcm_forward,
+        fcm_backward_flops=fcm_backward,
+        fcm_total_flops=fcm_total,
     )
 
 

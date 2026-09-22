@@ -10,6 +10,7 @@ from ..accounting import AccountingPolicy, PrecisionPolicy
 from zepto.semantic.metadata import DType
 
 if TYPE_CHECKING:
+    from ..flops.policy import FlopCountingPolicy
     from ..runtime.policy import RuntimeOverheadPolicy
 
 
@@ -32,6 +33,7 @@ class InvocationContext:
     optim_prec: int | None = None
     compute_capability: tuple[int, int] | None = None
     runtime_policy: RuntimeOverheadPolicy | None = None
+    flop_policy: FlopCountingPolicy = "zepto"
 
 
 def reference_invocation(
@@ -51,6 +53,7 @@ def reference_invocation(
     attention_backend: str = "eager",
     state: tuple[tuple[str, object], ...] | None = None,
     allow_fallback: bool = True,
+    flop_policy: FlopCountingPolicy = "zepto",
 ) -> InvocationContext:
     """Build a reference lowering context with FP32 defaults."""
     resolved_precision = precision or PrecisionPolicy(default_dtype=default_dtype)
@@ -88,4 +91,5 @@ def reference_invocation(
         optim_prec=optim_prec,
         compute_capability=compute_capability,
         runtime_policy=runtime_policy,
+        flop_policy=flop_policy,
     )
