@@ -24,20 +24,29 @@ def _rotary_dim_from_boundaries(region: Region, graph: Graph) -> int:
     raise ValueError("RoPEApply region missing cos/sin cache inputs")
 
 
-def _headed_outputs(region: Region, graph: Graph) -> list[tuple[int, int, int, bool]]:
-    """Per rotated output: (num_heads, seq_len, rotary_dim, requires_grad)."""
+def _headed_outputs(
+    region: Region, graph: Graph
+) -> list[tuple[int, int, int, int, bool]]:
+    """Per rotated output: (batch, num_heads, seq_len, rotary_dim, requires_grad).
+
+    Rank-3 ``(h, S, d)`` is the unbatched alias (implicit ``batch=1``). Rank-4
+    ``(B, h, S, d)`` keeps the leading batch so apply FLOPs scale with ``B``.
+    """
     rotary_dim = _rotary_dim_from_boundaries(region, graph)
-    headed: list[tuple[int, int, int, bool]] = []
+    headed: list[tuple[int, int, int, int, bool]] = []
     for edge_id in region.boundary_outputs:
         tensor = graph.edge(edge_id).tensor
         shape = tensor.shape
         if len(shape) == 3:
             num_heads, seq_len, _ = shape
+            batch = 1
         elif len(shape) == 4:
-            _, num_heads, seq_len, _ = shape
+            batch, num_heads, seq_len, _ = shape
         else:
             continue
-        headed.append((num_heads, seq_len, rotary_dim, tensor.requires_grad))
+        headed.append(
+            (int(batch), int(num_heads), int(seq_len), rotary_dim, tensor.requires_grad)
+        )
     if not headed:
         raise ValueError("RoPEApply region has no headed boundary outputs")
     return headed
@@ -89,18 +98,20 @@ class RoPEApplyRegionImplementation:
         headed = _headed_outputs(region, graph)
         forward_flops = 0
         backward_flops = 0
-        for num_heads, seq_len, rotary_dim, requires_grad in headed:
-            forward_flops += self.recipe.forward_flops(
+        for batch, num_heads, seq_len, rotary_dim, requires_grad in headed:
+            fwd = self.recipe.forward_flops(
                 num_heads=num_heads,
                 seq_len=seq_len,
                 head_dim=rotary_dim,
             )
-            backward_flops += self.recipe.backward_flops(
+            bwd = self.recipe.backward_flops(
                 num_heads=num_heads,
                 seq_len=seq_len,
                 head_dim=rotary_dim,
                 requires_grad=requires_grad,
             )
+            forward_flops += batch * fwd
+            backward_flops += batch * bwd
 
         output_id = region.boundary_outputs[0]
         lowered_out = edge_map[output_id]

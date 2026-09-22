@@ -94,6 +94,54 @@ def test_rope_apply_region_flops_per_tensor() -> None:
     assert apply_nodes[0].backward_flops == expected
 
 
+def test_rope_apply_region_flops_scale_with_batch() -> None:
+    batch = 2
+
+    def factory(_ctx):
+        mat = RoPEMaterialize(_SEQ, _HEAD_DIM)
+        apply = RoPEApply(_HEAD_DIM)
+
+        class _Harness(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self._q = Tensor(
+                    shape=(batch, _HEADS, _SEQ, _HEAD_DIM), requires_grad=True
+                )
+
+            def forward(self) -> Tensor:
+                cos, sin = mat()
+                return apply(self._q, cos, sin)
+
+        return _Harness()
+
+    graph = compose_graph(factory, ())
+    ctx = reference_invocation()
+    registry = _registry()
+    lowered = lower(graph, ctx, registry=registry)
+    apply_nodes = [
+        n
+        for n in lowered.nodes
+        if n.implementation.startswith("region/rope_apply")
+    ]
+    assert len(apply_nodes) == 1
+    per_seq = DEFAULT_ROPE_APPLY_RECIPE.forward_flops(
+        num_heads=_HEADS, seq_len=_SEQ, head_dim=_HEAD_DIM
+    )
+    expected = batch * per_seq
+    assert apply_nodes[0].forward_flops == expected
+    assert apply_nodes[0].backward_flops == expected
+
+    mat_nodes = [
+        n
+        for n in lowered.nodes
+        if n.implementation.startswith("region/rope_materialize")
+    ]
+    assert len(mat_nodes) == 1
+    assert mat_nodes[0].forward_flops == DEFAULT_ROPE_MATERIALIZE_RECIPE.forward_flops(
+        seq_len=_SEQ, head_dim=_HEAD_DIM
+    )
+
+
 def test_gqa_with_rope_apply_regions() -> None:
     graph = compose_graph(
         lambda _ctx: GroupedQueryAttention(
