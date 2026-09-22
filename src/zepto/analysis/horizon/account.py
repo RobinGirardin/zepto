@@ -113,17 +113,18 @@ class HorizonFlopReducer:
     """Sum FLOPs across horizon steps."""
 
     def reduce(self, sim: HorizonSimulation) -> HorizonFlopReport:
-        from ..flops.account import account_flops
-
         per_step = tuple(_flops_for_record(sim, record) for record in sim.timeline)
-        total_forward = sum(report.forward_flops for report in per_step)
-        total_backward = sum(report.backward_flops for report in per_step)
-        total = sum(report.total_flops for report in per_step)
         return HorizonFlopReport(
-            total_forward_flops=total_forward,
-            total_backward_flops=total_backward,
-            total_flops=total,
+            total_forward_flops=sum(report.forward_flops for report in per_step),
+            total_backward_flops=sum(report.backward_flops for report in per_step),
+            total_flops=sum(report.total_flops for report in per_step),
             per_step=per_step,
+            zepto_forward_flops=sum(report.zepto_forward_flops for report in per_step),
+            zepto_backward_flops=sum(report.zepto_backward_flops for report in per_step),
+            zepto_total_flops=sum(report.zepto_total_flops for report in per_step),
+            fcm_forward_flops=sum(report.fcm_forward_flops for report in per_step),
+            fcm_backward_flops=sum(report.fcm_backward_flops for report in per_step),
+            fcm_total_flops=sum(report.fcm_total_flops for report in per_step),
         )
 
 

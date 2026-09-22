@@ -68,6 +68,13 @@ def test_optimizer_row_flop_report() -> None:
     assert last.total_flops == optimizer_update_flops(
         AdamW, param_bytes, bytes_per_element=bpe
     )
+    assert last.zepto_total_flops == last.total_flops
+    assert last.fcm_forward_flops == 0
+    assert last.fcm_backward_flops == 0
+    assert last.fcm_total_flops == 0
+    assert hf.fcm_total_flops == sum(step.fcm_total_flops for step in hf.per_step)
+    assert hf.zepto_total_flops == sum(step.zepto_total_flops for step in hf.per_step)
+    assert hf.zepto_total_flops > hf.fcm_total_flops
 
 
 def test_optimizer_advances_state() -> None:

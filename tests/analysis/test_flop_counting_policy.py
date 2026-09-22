@@ -5,16 +5,25 @@ from __future__ import annotations
 from dataclasses import replace
 
 from zepto.analysis import (
+    AdamW,
+    HorizonSpec,
+    StepKind,
     account_fcm_flops,
     account_flops,
+    estimate_horizon,
     lower,
     reference_invocation,
+    simulate_horizon,
 )
 from zepto.analysis.lowering.helpers import build_estimation_context
 from zepto.compose import Module, Parameter, Tensor, compose_graph
+from zepto.empirical.models import get_model_family
+from zepto.empirical.parity_ctx import build_invocation_context
 from zepto.modules.layers.linear import Linear
 from zepto.modules.layers.rms_norm import RMSNorm
 from zepto.semantic import Add, LinearMatMul
+from tests.horizon.test_horizon import _linear_inputs, _linear_module
+from tests.integration.apertus.shared import GOLDEN
 
 from test_flop_accounting import _maximum_graph
 
@@ -173,3 +182,87 @@ def test_flop_counter_mode_policy_selects_fcm_on_linear_residual() -> None:
     assert report.backward_flops == report.fcm_backward_flops
     assert report.total_flops == report.fcm_total_flops
     assert report.zepto_forward_flops > report.fcm_forward_flops
+
+
+def test_horizon_training_excludes_adam_from_fcm() -> None:
+    ctx = reference_invocation()
+    spec_opt = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
+    spec_no_opt = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=None)
+    report_opt = estimate_horizon(spec_opt, _linear_module, _linear_inputs, ctx)
+    report_no_opt = estimate_horizon(
+        spec_no_opt, _linear_module, _linear_inputs, ctx
+    )
+
+    assert report_opt.flops.zepto_total_flops > report_opt.flops.fcm_total_flops
+    assert report_opt.flops.fcm_total_flops == report_no_opt.flops.fcm_total_flops
+    assert report_no_opt.flops.zepto_total_flops < report_opt.flops.zepto_total_flops
+    assert report_opt.total_flops == report_opt.flops.zepto_total_flops
+    assert report_opt.flops.fcm_total_flops == sum(
+        step.fcm_total_flops for step in report_opt.flops.per_step
+    )
+    assert report_opt.flops.zepto_total_flops == sum(
+        step.zepto_total_flops for step in report_opt.flops.per_step
+    )
+
+    opt_step = report_opt.flops.per_step[-1]
+    assert opt_step.fcm_forward_flops == 0
+    assert opt_step.fcm_backward_flops == 0
+    assert opt_step.fcm_total_flops == 0
+    assert opt_step.zepto_total_flops > 0
+    assert opt_step.total_flops == opt_step.zepto_total_flops
+
+
+def test_horizon_source_graph_matches_structural_graph() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    for record in sim.timeline:
+        if record.step.kind == StepKind.OPTIMIZER:
+            assert record.lowered.source_graph is None
+        else:
+            assert record.lowered.source_graph is record.graph
+
+
+def test_horizon_fcm_policy_keeps_named_zepto_adam() -> None:
+    ctx = replace(reference_invocation(), flop_policy="flop_counter_mode")
+    spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
+    report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    opt_step = report.flops.per_step[-1]
+
+    assert report.total_flops == report.flops.fcm_total_flops
+    assert report.flops.zepto_total_flops > report.flops.fcm_total_flops
+    assert opt_step.total_flops == 0
+    assert opt_step.zepto_total_flops > 0
+
+
+def test_horizon_apertus_train_fcm_equals_no_opt() -> None:
+    family = get_model_family("apertus")
+    ctx = build_invocation_context("fp32", cuda_capability=(8, 0))
+    opts = family.derive_options(
+        {
+            "head_dim": GOLDEN["head_dim"],
+            "intermediate_size": GOLDEN["intermediate_size"],
+            "num_heads": GOLDEN["num_heads"],
+            "num_kv_heads": GOLDEN["num_kv_heads"],
+            "num_layers": GOLDEN["num_layers"],
+            "vocab_size": GOLDEN["vocab_size"],
+        }
+    )
+    module_fn = family.build_zepto_train_module_factory(opts, seq_len=8)
+    spec_opt = HorizonSpec.training(
+        seq_len=8, batch=1, micro_batches=1, optimizer=AdamW
+    )
+    spec_no_opt = HorizonSpec.training(
+        seq_len=8, batch=1, micro_batches=1, optimizer=None
+    )
+    report_opt = estimate_horizon(
+        spec_opt, module_fn, family.zepto_train_inputs, ctx
+    )
+    report_no_opt = estimate_horizon(
+        spec_no_opt, module_fn, family.zepto_train_inputs, ctx
+    )
+
+    assert report_no_opt.flops.zepto_total_flops < report_opt.flops.zepto_total_flops
+    assert report_opt.flops.fcm_total_flops == report_no_opt.flops.fcm_total_flops
+    assert 0 < report_opt.flops.fcm_total_flops < report_opt.flops.zepto_total_flops
+    assert report_opt.flops.fcm_total_flops < report_no_opt.flops.zepto_total_flops

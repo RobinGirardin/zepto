@@ -340,6 +340,7 @@ class StatePortRegistry:
             optim_prec=base.optim_prec,
             compute_capability=base.compute_capability,
             runtime_policy=base.runtime_policy,
+            flop_policy=base.flop_policy,
         )
 
     def advance(self, step: HorizonStep, lowered: LoweredGraph) -> StatePortRegistry:
