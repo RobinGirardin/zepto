@@ -57,7 +57,7 @@ class Conv1DState:
 
 @dataclass(frozen=True, slots=True)
 class RecurrentScanState:
-    """Recurrent scan hidden state for one layer (batch size one)."""
+    """Recurrent scan hidden state for one layer (bytes scale with ``batch``)."""
 
     layer_index: int
     kind: Literal["gated_delta", "mamba2"]
@@ -81,7 +81,12 @@ class RecurrentScanState:
 
 @dataclass(frozen=True, slots=True)
 class GradAccumState:
-    """Gradient accumulation buffer carried across micro-batch forwards."""
+    """Gradient accumulation buffer carried across micro-batch forwards.
+
+    Bytes equal ``parameter_bytes`` and are independent of parallel batch
+    ``B``. Effective HuggingFace batch is ``G × b`` when using ``batch=b``
+    and ``micro_batches=G``.
+    """
 
     parameter_bytes: int
     micro_batches_seen: int

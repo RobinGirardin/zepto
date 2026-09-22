@@ -43,6 +43,7 @@ from .horizon import (
     StepKind,
     decode_step,
     inputs_from_shape,
+    inputs_from_token_ids,
     optimizer_step,
     simulate_horizon,
 )
@@ -97,5 +98,6 @@ __all__ = [
     "select_implementation",
     "select_region_implementation",
     "inputs_from_shape",
+    "inputs_from_token_ids",
     "simulate_horizon",
 ]

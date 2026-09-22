@@ -2,7 +2,13 @@
 
 from .account import account_horizon_flops, account_horizon_memory
 from .records import HorizonSimulation, InvocationRecord
-from .simulate import InputsFn, ModuleFn, inputs_from_shape, simulate_horizon
+from .simulate import (
+    InputsFn,
+    ModuleFn,
+    inputs_from_shape,
+    inputs_from_token_ids,
+    simulate_horizon,
+)
 from .spec import (
     ConvStateConfig,
     HorizonSpec,
@@ -45,6 +51,7 @@ __all__ = [
     "account_horizon_memory",
     "decode_step",
     "inputs_from_shape",
+    "inputs_from_token_ids",
     "optimizer_step",
     "simulate_horizon",
 ]

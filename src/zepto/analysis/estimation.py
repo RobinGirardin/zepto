@@ -30,7 +30,11 @@ def estimate(
     *,
     return_lowered: bool = False,
 ) -> CostReport | tuple[CostReport, LoweredGraph]:
-    """Compose lowering with memory and FLOP accounting."""
+    """Compose lowering with memory and FLOP accounting.
+
+    Parallel batch comes from **graph tensor shapes** only.
+    ``InvocationContext`` has no ``batch`` field and must not gain one.
+    """
     from .flops import account_flops
     from .memory import account_memory
 
@@ -49,7 +53,20 @@ def estimate_horizon(
     *,
     return_simulation: bool = False,
 ) -> HorizonCostReport | tuple[HorizonCostReport, HorizonSimulation]:
-    """Simulate a horizon and return combined memory and FLOP accounting."""
+    """Simulate a horizon and return combined memory and FLOP accounting.
+
+    ``HorizonStep.batch`` must match the root tensor batch dim produced by
+    ``inputs_fn``; mismatch is a silent caller bug. FLOPs sum over steps;
+    peak VRAM is the max over steps (``HorizonMemoryReducer``).
+
+    Empirical harness contract: use
+    ``HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)`` for
+    HuggingFace ``per_device_train_batch_size=B``. Never set
+    ``micro_batches=B`` with ``batch=1`` for HF VRAM parity unless
+    explicitly documenting a ``micro_sum`` sequential-forwards mode.
+    Decoder models should pass ``inputs_from_token_ids()``, not
+    ``inputs_from_shape``.
+    """
     from .flops import account_flops
     from .horizon import simulate_horizon
     from .memory import account_memory

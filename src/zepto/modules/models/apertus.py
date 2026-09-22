@@ -46,7 +46,12 @@ APERTUS_70B = ApertusConfig(
 
 
 class Apertus(Module):
-    """Full Apertus decoder stack: embed → L blocks → final RMSNorm → LMHead."""
+    """Full Apertus decoder stack: embed → L blocks → final RMSNorm → LMHead.
+
+    Architecture-only constructor: ``seq_len`` sizes the causal mask and
+    RoPE caches. Parallel batch is never a constructor argument; pass
+    ``(B, S)`` (or legacy ``(S,)``) token ids to :meth:`forward`.
+    """
 
     module_kind = "Apertus"
 

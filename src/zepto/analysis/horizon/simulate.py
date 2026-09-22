@@ -43,7 +43,15 @@ else:
 
 
 def inputs_from_shape(hidden: int) -> InputsFn:
-    """Build an inputs_fn for a single (batch, seq, hidden) root input."""
+    """Root input ``(step.batch, step.seq_len, hidden)`` for hidden-state modules.
+
+    Always rank-3, including ``batch=1`` (not the ``(S, H)`` alias). Use this
+    for decoder **blocks** and other modules whose first argument is a hidden
+    activation. Full Embedding-first models need :func:`inputs_from_token_ids`.
+
+    The leading dims **must** match ``step.batch`` and ``step.seq_len``. A
+    mismatch is a silent caller bug: ``simulate_horizon`` will not error.
+    """
 
     def _inputs(
         step: HorizonStep,
@@ -51,6 +59,33 @@ def inputs_from_shape(hidden: int) -> InputsFn:
         _state: StateSnapshot,
     ) -> tuple[Tensor, ...]:
         return (Tensor(shape=(step.batch, step.seq_len, hidden)),)
+
+    return _inputs
+
+
+def inputs_from_token_ids() -> InputsFn:
+    """Root input ``(step.batch, step.seq_len)`` for Embedding-first models.
+
+    Always rank-2, including ``batch=1`` (not the ``(S,)`` alias). Pair with
+    ``HorizonSpec.training(..., batch=B, micro_batches=1)`` for HuggingFace
+    ``per_device_train_batch_size=B``.
+
+    The leading dims **must** match ``step.batch`` and ``step.seq_len``. A
+    mismatch is a silent caller bug: ``simulate_horizon`` will not error.
+    """
+
+    def _inputs(
+        step: HorizonStep,
+        _ctx: InvocationContext,
+        _state: StateSnapshot,
+    ) -> tuple[Tensor, ...]:
+        return (
+            Tensor(
+                shape=(step.batch, step.seq_len),
+                semantic_type="token_ids",
+                requires_grad=False,
+            ),
+        )
 
     return _inputs
 

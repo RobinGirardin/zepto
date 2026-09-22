@@ -13,6 +13,7 @@ from zepto.analysis import (
 )
 from zepto.analysis.flops import account_flops as account_step_flops
 from zepto.analysis.horizon.cache import HorizonStructuralCacheStats
+from zepto.analysis.horizon.spec import HorizonStep
 from zepto.compose import Tensor
 from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.semantic.metadata import DType
@@ -51,6 +52,16 @@ def _block_inputs(step, _ctx, _state):
         Tensor(shape=(1, seq, seq)),
         Tensor(shape=(seq, _HEAD_DIM)),
         Tensor(shape=(seq, _HEAD_DIM)),
+    )
+
+
+def _block_inputs_batched(step, _ctx, _state):
+    B, S = step.batch, step.seq_len
+    return (
+        Tensor(shape=(B, S, _HIDDEN)),
+        Tensor(shape=(1, S, S)),
+        Tensor(shape=(S, _HEAD_DIM)),
+        Tensor(shape=(S, _HEAD_DIM)),
     )
 
 
@@ -123,3 +134,23 @@ def test_decode_flops_grow_with_kv_while_cache_reuses_compose() -> None:
     assert stats.cache_misses == 2
     assert stats.cache_hits == len(spec.steps) - 2
     assert stats.compose_skipped == stats.cache_hits
+
+
+def test_structural_cache_misses_when_only_batch_changes() -> None:
+    ctx = _flash_ctx()
+    spec = HorizonSpec(
+        steps=[
+            HorizonStep(kind=StepKind.GENERIC, seq_len=16, batch=1, name="b1"),
+            HorizonStep(kind=StepKind.GENERIC, seq_len=16, batch=2, name="b2"),
+        ]
+    )
+    stats = HorizonStructuralCacheStats()
+    simulate_horizon(
+        spec,
+        _block_module,
+        _block_inputs_batched,
+        ctx,
+        cache_stats=stats,
+    )
+    assert stats.cache_misses == 2
+    assert stats.cache_hits == 0
