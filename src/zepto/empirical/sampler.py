@@ -13,7 +13,8 @@ from zepto.empirical.schema import (
     draw_id,
 )
 
-Precision = Literal["fp32", "fp16", "mixed"]
+Precision = Literal["fp32", "fp16"]
+_ALLOWED_PRECISIONS: frozenset[str] = frozenset(("fp32", "fp16"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +45,16 @@ class SamplerConfig:
     seq_len: IntRange
     batch_size: IntRange
     architecture: ArchitectureRanges
-    precisions: tuple[Precision, ...] = ("fp32", "fp16", "mixed")
+    precisions: tuple[Precision, ...] = ("fp32", "fp16")
     architecture_mins: dict[str, int] = field(default_factory=dict)
     max_reject_attempts: int = 10_000
+
+    def __post_init__(self) -> None:
+        if not self.precisions:
+            raise ValueError("precisions must not be empty")
+        for precision in self.precisions:
+            if precision not in _ALLOWED_PRECISIONS:
+                raise ValueError(f"unknown precision: {precision!r}")
 
 
 @dataclass(frozen=True, slots=True)

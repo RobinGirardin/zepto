@@ -236,7 +236,7 @@ def run_draw(
     ]
 
     model.train()
-    opt = torch.optim.Adam(model.parameters())
+    opt = torch.optim.AdamW(model.parameters())
     training_warmup_step(family, model, input_ids, labels, opt)
 
     for step in range(1, config.training_steps_per_draw + 1):

@@ -96,3 +96,14 @@ def test_hf_apertus_parity_config_llama3_no_mpe_warning() -> None:
             8, twin_mode="apertus_parity"
         ),
     )
+
+
+def test_hf_build_rejects_mixed_precision() -> None:
+    family = ApertusFamily()
+    with pytest.raises(ValueError, match="unknown precision"):
+        family.build_hf_model(
+            _GOLDEN_OPTS,
+            seq_len=8,
+            precision="mixed",
+            device=__import__("torch").device("cpu"),
+        )

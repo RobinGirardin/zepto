@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
+
+import pytest
+
 from zepto.empirical.models.apertus_core import ApertusFamilyCore
 from zepto.empirical.sampler import ArchitectureRanges, IntRange, SamplerConfig, sample_configurations
 
@@ -62,3 +66,42 @@ def test_rejects_indivisible_gqa() -> None:
         assert "could not sample" in str(exc)
     else:
         raise AssertionError("expected sampling to fail for invalid GQA ratio")
+
+
+def test_default_precisions_are_fp32_and_fp16() -> None:
+    field = next(f for f in fields(SamplerConfig) if f.name == "precisions")
+    assert field.default == ("fp32", "fp16")
+
+
+def test_sampler_config_rejects_mixed_precision() -> None:
+    with pytest.raises(ValueError, match="unknown precision"):
+        SamplerConfig(
+            seq_len=IntRange(8, 8),
+            batch_size=IntRange(1, 1),
+            architecture=ArchitectureRanges(
+                head_dim=IntRange(4, 4),
+                intermediate_size=IntRange(64, 64),
+                num_heads=IntRange(8, 8),
+                num_kv_heads=IntRange(2, 2),
+                num_layers=IntRange(2, 2),
+                vocab_size=IntRange(100, 100),
+            ),
+            precisions=("mixed",),  # type: ignore[arg-type]
+        )
+
+
+def test_sampler_config_rejects_empty_precisions() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        SamplerConfig(
+            seq_len=IntRange(8, 8),
+            batch_size=IntRange(1, 1),
+            architecture=ArchitectureRanges(
+                head_dim=IntRange(4, 4),
+                intermediate_size=IntRange(64, 64),
+                num_heads=IntRange(8, 8),
+                num_kv_heads=IntRange(2, 2),
+                num_layers=IntRange(2, 2),
+                vocab_size=IntRange(100, 100),
+            ),
+            precisions=(),
+        )

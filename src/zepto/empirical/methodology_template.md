@@ -25,7 +25,7 @@ Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studi
 
 **Inference:** `model.eval()`, `torch.no_grad()`, single forward `model(input_ids=..., use_cache=False)`.
 
-**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; Adam on HF; Zepto `AdamW` at the training horizon boundary.
+**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; `torch.optim.AdamW` on HF; Zepto `AdamW` at the training horizon boundary.
 
 ## Ground truth windows
 
@@ -71,11 +71,12 @@ Zepto and HF both run one parallel `(B, S)` pass. Parallel batch is `HorizonStep
 
 ## Precision mapping
 
-| precision | HF module dtype | Zepto context |
-|-----------|-----------------|---------------|
-| fp32 | float32 | `reference_invocation(..., default_dtype=FP32)` |
-| fp16 | float16 | uniform fp16 (`default_dtype=FP16`, 2-byte params and grads) |
-| mixed | float16 params | `PrecisionPolicy.from_byte_sizes(param_bytes=2, grad_bytes=4)` + `optim_prec=4` |
+| precision | HF module dtype | Zepto context | Comparable? |
+|-----------|-----------------|---------------|-------------|
+| fp32 | float32 | `default_dtype=FP32` | yes |
+| fp16 | float16 | uniform fp16 (`from_byte_sizes(2, 2)`) | yes, if no extra master weights |
+
+Empirical studies do **not** sample or measure `"mixed"`. Zepto’s role-split policy (`param_bytes=2, grad_bytes=4`) and HF Trainer AMP (`--fp16` / GradScaler) are **out of scope** until a dedicated follow-up.
 
 Base flags: `hardware=cuda`, device compute capability, eager attention, fused/sdpa/gqa capabilities.
 
@@ -85,4 +86,4 @@ Option A: sequential training on one model+optimizer per draw; `target_*` vary b
 
 ## Known limitations
 
-`FlopCounterMode` may undercount Adam elementwise ops vs Zepto policy FLOPs; cuBLAS workspace; no prefill/decode split; no KV cache.
+`FlopCounterMode` may undercount AdamW elementwise ops vs Zepto policy FLOPs; cuBLAS workspace; no prefill/decode split; no KV cache.

@@ -128,7 +128,7 @@ class ApertusFamily(ApertusFamilyCore):
         cfg = ApertusConfig(**cfg_kwargs)
         if precision == "fp32":
             dtype = torch.float32
-        elif precision in ("fp16", "mixed"):
+        elif precision == "fp16":
             dtype = torch.float16
         else:
             raise ValueError(f"unknown precision: {precision!r}")
