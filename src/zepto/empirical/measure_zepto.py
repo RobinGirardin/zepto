@@ -23,6 +23,8 @@ class ZeptoMeasureResult:
     y_runtime_workspace: int
     y_activations: int
     y_flop_no_opt: int
+    y_flop_fcm: int
+    y_flop_fcm_no_opt: int
 
 
 def _y_runtime_workspace_from_breakdown(breakdown: MemoryBreakdown) -> int:
@@ -60,7 +62,8 @@ def measure_infer_zepto(
     graph = compose_graph(module_factory, inputs)
     report = estimate(graph, forward_ctx)
     bd = report.memory.breakdown
-    y_flop = int(report.flops.forward_flops)
+    y_flop = int(report.flops.zepto_forward_flops)
+    y_flop_fcm = int(report.flops.fcm_forward_flops)
     return ZeptoMeasureResult(
         y_flop=y_flop,
         y_vram=int(report.memory.peak_live_bytes),
@@ -68,6 +71,8 @@ def measure_infer_zepto(
         y_runtime_workspace=_y_runtime_workspace_from_breakdown(bd),
         y_activations=bd.activations,
         y_flop_no_opt=y_flop,
+        y_flop_fcm=y_flop_fcm,
+        y_flop_fcm_no_opt=y_flop_fcm,
     )
 
 
@@ -88,7 +93,8 @@ def measure_train_zepto(
     module_fn = family.build_zepto_train_module_factory(opts, seq_len=seq_len)
     report = estimate_horizon(spec, module_fn, family.zepto_train_inputs, ctx)
     bd = report.memory.breakdown
-    y_flop = int(report.total_flops)
+    y_flop = int(report.flops.zepto_total_flops)
+    y_flop_fcm = int(report.flops.fcm_total_flops)
 
     spec_no_opt = HorizonSpec.training(
         seq_len=seq_len,
@@ -99,7 +105,8 @@ def measure_train_zepto(
     report_no_opt = estimate_horizon(
         spec_no_opt, module_fn, family.zepto_train_inputs, ctx
     )
-    y_flop_no_opt = int(report_no_opt.total_flops)
+    y_flop_no_opt = int(report_no_opt.flops.zepto_total_flops)
+    y_flop_fcm_no_opt = int(report_no_opt.flops.fcm_total_flops)
 
     return ZeptoMeasureResult(
         y_flop=y_flop,
@@ -108,4 +115,6 @@ def measure_train_zepto(
         y_runtime_workspace=_y_runtime_workspace_from_horizon(report),
         y_activations=bd.activations,
         y_flop_no_opt=y_flop_no_opt,
+        y_flop_fcm=y_flop_fcm,
+        y_flop_fcm_no_opt=y_flop_fcm_no_opt,
     )

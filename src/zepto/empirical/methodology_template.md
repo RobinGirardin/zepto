@@ -46,6 +46,10 @@ Draw order: configurations and draws are processed sequentially; index increment
 
 - `target_flop` / `y_flop`: full training cycle including `optimizer.step()` / Zepto `AdamW` horizon boundary.
 - `target_flop_no_opt` / `y_flop_no_opt`: forward + backward only (separate CUDA counter window; Zepto horizon with `optimizer=None`). Inference rows duplicate infer FLOPs in both pairs.
+- `y_flop` = Zepto theoretical FLOP (fused regions + extras + Adam on train).
+- `y_flop_fcm` = same graphs, allowlisted operations only (`matmul` / `linear_matmul` / `conv2d` / `conv3d`), Adam excluded. Hypothesis column vs `target_flop`.
+- `y_flop_fcm_no_opt` = FCM-comparable total of the `optimizer=None` horizon (infer: same as `y_flop_fcm`).
+- `FlopCounterMode` is a GEMM/conv registry, not a complete cost model.
 
 ### Zepto VRAM diagnostics (`evaluation.csv`)
 
@@ -62,7 +66,7 @@ One **unscored** train step: forward + backward + `optimizer.step()` outside `Fl
 
 - **Inference, batch B:** compose `(B, S)` token ids; one `estimate` (single invocation). Does **not** use `HorizonSpec.repeat`.
 - **Training, batch B:** `HorizonSpec.training(seq_len=S, batch=B, micro_batches=1, optimizer=AdamW)` on `ApertusForCausalLM`.
-- `y_flop` ← forward FLOPs (infer) or `report.total_flops` (train); `y_vram` ← `report.memory.peak_live_bytes` (infer) or `report.peak_vram` (train).
+- `y_flop` ← named Zepto totals (`zepto_forward_flops` infer / `zepto_total_flops` train); `y_flop_fcm` ← named FCM fields (`fcm_forward_flops` / `fcm_total_flops`). Do not flip `flop_policy`. `y_vram` ← `report.memory.peak_live_bytes` (infer) or `report.peak_vram` (train).
 - Column `zepto_batch_representation=parallel_batch`.
 
 ## Batch semantics (`parallel_batch`)

@@ -232,6 +232,8 @@ def run_draw(
             alloc_before=torch_infer.alloc_before,
             target_flop_no_opt=torch_infer.target_flop_no_opt,
             y_flop_no_opt=zepto_infer.y_flop_no_opt,
+            y_flop_fcm=zepto_infer.y_flop_fcm,
+            y_flop_fcm_no_opt=zepto_infer.y_flop_fcm_no_opt,
         )
     ]
 
@@ -266,6 +268,8 @@ def run_draw(
                 alloc_before=torch_train.alloc_before,
                 target_flop_no_opt=torch_train.target_flop_no_opt,
                 y_flop_no_opt=zepto_train.y_flop_no_opt,
+                y_flop_fcm=zepto_train.y_flop_fcm,
+                y_flop_fcm_no_opt=zepto_train.y_flop_fcm_no_opt,
             )
         )
 

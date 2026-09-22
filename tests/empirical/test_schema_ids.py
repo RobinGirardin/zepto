@@ -57,11 +57,14 @@ def test_evaluation_csv_round_trip(tmp_path: Path) -> None:
         alloc_before=180,
         target_flop_no_opt=101,
         y_flop_no_opt=100,
+        y_flop_fcm=80,
+        y_flop_fcm_no_opt=80,
     )
     path = tmp_path / "evaluation.csv"
     write_csv_rows(path, EVALUATION_FIELDNAMES, [row.to_csv_row()])
     loaded = parse_evaluation_csv(path)
     assert loaded == [row]
+    assert EVALUATION_FIELDNAMES[-2:] == ("y_flop_fcm", "y_flop_fcm_no_opt")
 
 
 def test_evaluation_csv_legacy_columns_default_extended_fields(
@@ -84,3 +87,5 @@ def test_evaluation_csv_legacy_columns_default_extended_fields(
     assert row.cublas_infer_correction_bytes == 0
     assert row.y_runtime_workspace == 0
     assert row.y_flop_no_opt == 0
+    assert row.y_flop_fcm == 0
+    assert row.y_flop_fcm_no_opt == 0

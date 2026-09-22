@@ -87,6 +87,8 @@ class EvaluationRow:
     alloc_before: int = 0
     target_flop_no_opt: int = 0
     y_flop_no_opt: int = 0
+    y_flop_fcm: int = 0
+    y_flop_fcm_no_opt: int = 0
 
     def to_csv_row(self) -> dict[str, str | int]:
         row = asdict(self)
@@ -160,6 +162,8 @@ def parse_evaluation_csv(path: Path) -> list[EvaluationRow]:
                     alloc_before=_parse_int(raw, "alloc_before"),
                     target_flop_no_opt=_parse_int(raw, "target_flop_no_opt"),
                     y_flop_no_opt=_parse_int(raw, "y_flop_no_opt"),
+                    y_flop_fcm=_parse_int(raw, "y_flop_fcm"),
+                    y_flop_fcm_no_opt=_parse_int(raw, "y_flop_fcm_no_opt"),
                 )
             )
         return out

@@ -32,6 +32,8 @@ def test_infer_zepto_runtime_workspace_nonzero_with_cuda_capability() -> None:
     assert result.y_runtime_workspace > 0
     assert result.y_activations > 0
     assert result.y_flop_no_opt == result.y_flop
+    assert result.y_flop_fcm == result.y_flop_fcm_no_opt
+    assert result.y_flop_fcm < result.y_flop
 
 
 def test_train_zepto_no_opt_flops_below_full_horizon() -> None:
@@ -44,6 +46,8 @@ def test_train_zepto_no_opt_flops_below_full_horizon() -> None:
     assert result.y_runtime_workspace > 0
     assert result.y_flop_no_opt > 0
     assert result.y_flop_no_opt < result.y_flop
+    assert result.y_flop_fcm == result.y_flop_fcm_no_opt
+    assert result.y_flop_fcm < result.y_flop_no_opt
     # G=1 train: peak-relevant workspace is backward's 2 handles, not 1+2+0.
     assert result.y_runtime_workspace >= 2 * 8_519_680
     assert result.y_runtime_workspace < 3 * 8_519_680
