@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from zepto.analysis.flops.fcm import account_fcm_flops
 from zepto.analysis.horizon.records import HorizonSimulation
 from zepto.analysis.lowered import LoweredGraph, LoweredNode
 from zepto.analysis.reports.attribution import AttributionSlice
@@ -74,11 +75,16 @@ def _assemble_flop_report(
 def _account_single_flops(lowered: LoweredGraph) -> FlopReport:
     forward = sum(node.forward_flops for node in lowered.nodes)
     backward = sum(node.backward_flops for node in lowered.nodes)
+    fcm_forward, fcm_backward = (0, 0)
+    if lowered.source_graph is not None:
+        fcm_forward, fcm_backward = account_fcm_flops(
+            lowered.source_graph, lowered.context
+        )
     return _assemble_flop_report(
         zepto_forward=forward,
         zepto_backward=backward,
-        fcm_forward=0,
-        fcm_backward=0,
+        fcm_forward=fcm_forward,
+        fcm_backward=fcm_backward,
         phase=lowered.context.phase,
         policy=lowered.context.flop_policy,
         by_module=_rollup_flops(lowered.nodes, _module_key),

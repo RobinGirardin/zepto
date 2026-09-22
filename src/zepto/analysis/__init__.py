@@ -32,6 +32,7 @@ from .memory import account_memory
 from .flops import (
     FCM_OPERATION_FAMILIES,
     FlopCountingPolicy,
+    account_fcm_flops,
     account_flops,
 )
 from .estimation import estimate, estimate_horizon
@@ -103,6 +104,7 @@ __all__ = [
     "RuntimeOverheadPolicy",
     "Region",
     "SGD",
+    "account_fcm_flops",
     "account_flops",
     "account_memory",
     "discover_regions",
