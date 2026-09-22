@@ -244,3 +244,31 @@ def test_mamba2_mixer_pin_composed_tier_a() -> None:
     )
     lowered = lower(graph, ctx)
     assert lowered.nodes[0].implementation == "region/mamba2_mixer/composed_tier_a"
+
+
+def test_mamba2_mixer_batched_flops_and_aux_scale() -> None:
+    from tests.lowering.regions._batch_helpers import (
+        assert_aux_numel_scales,
+        assert_flops_scales,
+        aux_tensor,
+    )
+
+    cfg = _mini_cfg()
+    batch, seq_len = 2, 4
+    single = lower(_mixer_graph(seq_len=seq_len, cfg=cfg), _fused_context())
+    batched = lower(
+        compose_graph(
+            lambda _ctx: Mamba2Mixer(cfg),
+            (Tensor(shape=(batch, seq_len, cfg.hidden_size), requires_grad=True),),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )
+    assert aux_tensor(single, single.nodes[0], "conv_pre_activation").shape[0] == seq_len
+    assert aux_tensor(batched, batched.nodes[0], "conv_pre_activation").shape[:2] == (
+        batch,
+        seq_len,
+    )
+    assert_aux_numel_scales(batched, batched.nodes[0], single, single.nodes[0], batch)

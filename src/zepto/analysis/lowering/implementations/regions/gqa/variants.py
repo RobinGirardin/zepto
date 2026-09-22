@@ -30,7 +30,12 @@ from ....region import Region
 from ....registry import RegionImplementationDescriptor
 from ....role import RoleContext
 from .rules import GQA_OP_SEQUENCES, GQA_PATTERN, GQA_PROVENANCE
-from .shared import attention_dims, resolve_window_size
+from .shared import (
+    attention_dims,
+    attention_score_shape,
+    flash_row_stats_shape,
+    resolve_window_size,
+)
 
 HardwareGate = Literal["any", "cuda_only"]
 GQARecipeUnion = Union[GQARecipe, GQASDPAMathRecipe]
@@ -170,6 +175,7 @@ class FusedGQARegionImplementation:
             num_heads=num_heads,
             head_dim=head_dim,
             module_path=region.anchor.module_path,
+            batch=batch,
         )
         is_decode = kv_scenario is not None and kv_scenario.is_decode
         flop_seq_len = (
@@ -197,7 +203,7 @@ class FusedGQARegionImplementation:
         if isinstance(recipe, GQASDPAMathRecipe) and recipe.save_P:
             scores_id = f"region:{region.id}:scores"
             p_id = f"region:{region.id}:P"
-            attn_shape = (num_heads, seq_len, seq_len)
+            attn_shape = attention_score_shape(batch, num_heads, seq_len)
             _register_attention_aux(
                 aux_id=scores_id,
                 shape=attn_shape,
@@ -231,7 +237,7 @@ class FusedGQARegionImplementation:
                 saved_stats = f"region:{region.id}:row_stats"
                 _register_attention_aux(
                     aux_id=saved_stats,
-                    shape=(num_heads, seq_len, 2),
+                    shape=flash_row_stats_shape(batch, num_heads, seq_len),
                     semantic_type="flash_row_stats",
                     context=context,
                     lowered_edges=lowered_edges,

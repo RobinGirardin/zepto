@@ -74,6 +74,7 @@ class PatternMatchRule(RegionMatchRule):
     op_families: tuple[str, ...] = ()
     constraints: tuple[PatternConstraint, ...] = ()
     edge_constraints: tuple[tuple[int, int, str], ...] = ()
+    alternate_op_families: tuple[tuple[str, ...], ...] = ()
 
 
 def compute_region_boundaries(

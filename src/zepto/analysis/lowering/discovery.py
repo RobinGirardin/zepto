@@ -7,7 +7,7 @@ from dataclasses import replace
 from zepto.graph.graph import Graph
 from zepto.graph.ids import NodeId
 from .context import InvocationContext
-from .matchers.pattern import PatternRegionMatcher
+from .matchers.pattern import PatternRegionMatcher, pattern_rule_variants
 from .matchers.provenance import ProvenanceRegionMatcher
 from .region import (
     PatternMatchRule,
@@ -75,15 +75,19 @@ def _discover_hybrid_regions(
     refined: list[Region] = []
     for envelope in provenance_matcher.find(graph, context):
         chain: tuple[NodeId, ...] | None = None
-        if len(envelope.operation_ids) == len(pattern_rule.op_families):
-            if pattern_matcher.matches_subgraph(
-                graph, envelope.operation_ids, pattern_rule
-            ):
-                chain = envelope.operation_ids
-        else:
-            chain = pattern_matcher.find_chain_within(
-                graph, envelope.operation_ids, pattern_rule
+        for variant in pattern_rule_variants(pattern_rule):
+            if len(envelope.operation_ids) == len(variant.op_families):
+                if pattern_matcher.matches_subgraph(
+                    graph, envelope.operation_ids, variant
+                ):
+                    chain = envelope.operation_ids
+                    break
+            found = pattern_matcher.find_chain_within(
+                graph, envelope.operation_ids, variant
             )
+            if found is not None:
+                chain = found
+                break
         if chain is None:
             continue
         boundary_inputs, boundary_outputs, parameter_ids = compute_region_boundaries(

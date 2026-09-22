@@ -38,6 +38,24 @@ def attention_dims(output_tensor: Tensor) -> tuple[int, int, int, int]:
     )
 
 
+def attention_score_shape(
+    batch: int, num_heads: int, seq_len: int
+) -> tuple[int, ...]:
+    """SDPA ``P`` / scores: ``(h, S, S)`` or batched ``(B, h, S, S)``."""
+    if batch > 1:
+        return (batch, num_heads, seq_len, seq_len)
+    return (num_heads, seq_len, seq_len)
+
+
+def flash_row_stats_shape(
+    batch: int, num_heads: int, seq_len: int
+) -> tuple[int, ...]:
+    """Flash row stats: ``(h, S, 2)`` or batched ``(B, h, S, 2)``."""
+    if batch > 1:
+        return (batch, num_heads, seq_len, 2)
+    return (num_heads, seq_len, 2)
+
+
 def resolve_window_size(region: Region, graph: Graph) -> int | None:
     """Resolve sliding-window width from the mask edge feeding the fused ``add`` op."""
     if len(region.operation_ids) < 5:

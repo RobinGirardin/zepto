@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from zepto.graph.graph import Graph
 from zepto.graph.ids import NodeId
 from ..context import InvocationContext
@@ -13,6 +15,22 @@ from ..region import (
     compute_region_boundaries,
     make_region_id,
 )
+
+
+def pattern_rule_variants(rule: PatternMatchRule) -> tuple[PatternMatchRule, ...]:
+    """Return pattern rules for each family sequence, longest first."""
+    sequences = (rule.op_families, *rule.alternate_op_families)
+    seen: set[tuple[str, ...]] = set()
+    ordered: list[tuple[str, ...]] = []
+    for sequence in sorted(sequences, key=len, reverse=True):
+        if not sequence or sequence in seen:
+            continue
+        seen.add(sequence)
+        ordered.append(sequence)
+    return tuple(
+        replace(rule, op_families=sequence, alternate_op_families=())
+        for sequence in ordered
+    )
 
 
 class PatternRegionMatcher:
@@ -29,7 +47,8 @@ class PatternRegionMatcher:
         del context
         regions: list[Region] = []
         for rule in self._rules:
-            regions.extend(self._match_sequence(graph, rule))
+            for variant in pattern_rule_variants(rule):
+                regions.extend(self._match_sequence(graph, variant))
         return tuple(regions)
 
     def matches_subgraph(

@@ -8,6 +8,7 @@ from typing import Literal
 from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.modules.mixers.mixer_config import Mamba2MixerConfig
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
@@ -17,10 +18,12 @@ from ....helpers import (
     RegionEstimationContext,
     conv_state_port_events,
     ensure_lowered_edge,
+    mlp_aux_shape,
     recurrent_state_port_events,
     register_auxiliary_edge,
     resolve_conv_scenario,
     resolve_recurrent_scenario,
+    with_batch_prefix,
 )
 from ....recipes.gated_grouped_rms_norm import DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE
 from ....recipes.mamba2_mixer import (
@@ -66,9 +69,9 @@ def _resolve_config(
     graph: Graph,
     hidden: Tensor,
 ) -> Mamba2MixerConfig | str:
-    if len(hidden.shape) != 2:
-        return "Mamba2Mixer expects rank-2 hidden_states"
-    hidden_size = hidden.shape[1]
+    if len(hidden.shape) not in (2, 3):
+        return "Mamba2Mixer expects rank-2 (S, d) or rank-3 (B, S, d) hidden_states"
+    hidden_size = hidden.shape[-1]
     in_proj_size: int | None = None
     intermediate_size: int | None = None
     conv_channels: int | None = None
@@ -165,7 +168,8 @@ def _is_decode_graph(
     region: Region,
     hidden: Tensor,
 ) -> bool:
-    if hidden.shape[0] != 1:
+    batch, seq_len = batch_seq_dims(hidden)
+    if seq_len != 1:
         return False
     if _has_state_inputs(estimation, region):
         return True
@@ -249,7 +253,8 @@ class FusedMamba2MixerRegionImplementation:
         if isinstance(cfg_or_err, str):
             raise ValueError(cfg_or_err)
         cfg = cfg_or_err
-        seq_len = hidden.shape[0]
+        batch, seq_len = batch_seq_dims(hidden)
+        num_tokens = batch * seq_len
         requires_grad = hidden.requires_grad or any(
             graph.edge(edge_id).tensor.requires_grad
             for edge_id in region.boundary_outputs
@@ -275,7 +280,7 @@ class FusedMamba2MixerRegionImplementation:
         ):
             aux_id = f"region:{region.id}:conv_pre_activation"
             pre_act = Tensor(
-                shape=(seq_len, c_c),
+                shape=mlp_aux_shape(hidden, c_c),
                 semantic_type="conv_pre_activation",
                 dtype=DType.BF16,
                 requires_grad=False,
@@ -299,7 +304,7 @@ class FusedMamba2MixerRegionImplementation:
         ):
             aux_id = f"region:{region.id}:scan_state_checkpoint"
             checkpoint = Tensor(
-                shape=(seq_len, h, p, n),
+                shape=mlp_aux_shape(hidden, h, p, n),
                 semantic_type="mamba2_state_checkpoint",
                 dtype=DType.FP32,
                 requires_grad=False,
@@ -320,7 +325,7 @@ class FusedMamba2MixerRegionImplementation:
         if requires_grad and self.recipe.save_group_rstd:
             aux_id = f"region:{region.id}:group_rstd"
             rstd_shape = DEFAULT_GATED_GROUPED_RMS_NORM_RECIPE.group_rstd_shape(
-                (seq_len, cfg.intermediate_size), g
+                mlp_aux_shape(hidden, cfg.intermediate_size), g
             )
             rstd = Tensor(
                 shape=rstd_shape,
@@ -353,14 +358,19 @@ class FusedMamba2MixerRegionImplementation:
                 ResourceEvent(ResourceEventKind.PERSIST, edge_map[conv_state_id]),
             )
         elif decode:
-            conv_scenario = resolve_conv_scenario(context, module_path)
+            conv_scenario = resolve_conv_scenario(
+                context, module_path, batch=batch
+            )
             if conv_scenario is not None:
                 _state_event, allocate, persist, aux_id = conv_state_port_events(
                     region_id=region.id,
                     scenario=conv_scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(conv_scenario.channels, conv_scenario.kernel_size),
+                    shape=with_batch_prefix(
+                        conv_scenario.batch,
+                        (conv_scenario.channels, conv_scenario.kernel_size),
+                    ),
                     semantic_type="conv_state",
                     dtype=DType.BF16,
                     requires_grad=False,
@@ -391,17 +401,22 @@ class FusedMamba2MixerRegionImplementation:
                 ResourceEvent(ResourceEventKind.PERSIST, edge_map[scan_state_id]),
             )
         else:
-            scan_scenario = resolve_recurrent_scenario(context, module_path)
+            scan_scenario = resolve_recurrent_scenario(
+                context, module_path, batch=batch
+            )
             if scan_scenario is not None and scan_scenario.kind == "mamba2":
                 state_event, allocate, persist, aux_id = recurrent_state_port_events(
                     region_id=region.id,
                     scenario=scan_scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(
-                        scan_scenario.num_heads,
-                        scan_scenario.head_dim,
-                        scan_scenario.state_dim,
+                    shape=with_batch_prefix(
+                        scan_scenario.batch,
+                        (
+                            scan_scenario.num_heads,
+                            scan_scenario.head_dim,
+                            scan_scenario.state_dim,
+                        ),
                     ),
                     semantic_type="scan_state",
                     dtype=DType.FP32,
@@ -422,14 +437,14 @@ class FusedMamba2MixerRegionImplementation:
                 auxiliary_edges.append(aux_id)
 
         if decode:
-            forward_flops = self.recipe.decode_forward_flops(cfg)
+            forward_flops = self.recipe.decode_forward_flops(cfg) * batch
             backward_flops = self.recipe.decode_backward_flops(
                 cfg, requires_grad=requires_grad
-            )
+            ) * batch
         else:
-            forward_flops = self.recipe.forward_flops(cfg, seq_len=seq_len)
+            forward_flops = self.recipe.forward_flops(cfg, seq_len=num_tokens)
             backward_flops = self.recipe.backward_flops(
-                cfg, seq_len=seq_len, requires_grad=requires_grad
+                cfg, seq_len=num_tokens, requires_grad=requires_grad
             )
 
         return LoweredNode(

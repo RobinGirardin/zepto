@@ -275,6 +275,28 @@ def test_compose_rmsnorm_discovers_region() -> None:
     assert len([r for r in regions if r.kind == "region/rmsnorm"]) == 1
 
 
+def test_rmsnorm_batched_flops_scale() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    single = lower(
+        compose_graph(
+            lambda ctx: RMSNorm(8),
+            (Tensor(shape=(4, 8), requires_grad=True),),
+        ),
+        reference_invocation(),
+    )
+    batched = lower(
+        compose_graph(
+            lambda ctx: RMSNorm(8),
+            (Tensor(shape=(2, 4, 8), requires_grad=True),),
+        ),
+        reference_invocation(),
+    )
+    rms_single = [n for n in single.nodes if n.implementation.startswith("region/rmsnorm")][0]
+    rms_batched = [n for n in batched.nodes if n.implementation.startswith("region/rmsnorm")][0]
+    assert_flops_scales(rms_batched.forward_flops, rms_single.forward_flops, 2)
+
+
 def test_apertus_decoder_block_discovers_four_rmsnorm_regions() -> None:
     hidden_size = 128
     num_heads = 4

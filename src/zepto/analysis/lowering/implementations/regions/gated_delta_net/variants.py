@@ -8,6 +8,7 @@ from typing import Literal
 from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.modules.mixers.mixer_config import GatedDeltaNetConfig
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
@@ -17,10 +18,12 @@ from ....helpers import (
     RegionEstimationContext,
     conv_state_port_events,
     ensure_lowered_edge,
+    mlp_aux_shape,
     recurrent_state_port_events,
     register_auxiliary_edge,
     resolve_conv_scenario,
     resolve_recurrent_scenario,
+    with_batch_prefix,
 )
 from ....recipes.gated_delta_net import (
     DECODE_GATED_DELTA_NET_RECIPE,
@@ -65,9 +68,9 @@ def _resolve_config(
     graph: Graph,
     hidden: Tensor,
 ) -> GatedDeltaNetConfig | str:
-    if len(hidden.shape) != 2:
-        return "GatedDeltaNet expects rank-2 hidden_states"
-    hidden_size = hidden.shape[1]
+    if len(hidden.shape) not in (2, 3):
+        return "GatedDeltaNet expects rank-2 (S, d) or rank-3 (B, S, d) hidden_states"
+    hidden_size = hidden.shape[-1]
     h_v: int | None = None
     head_dim: int | None = None
     kernel_size = 4
@@ -150,7 +153,8 @@ def _is_decode_graph(
     region: Region,
     hidden: Tensor,
 ) -> bool:
-    if hidden.shape[0] != 1:
+    _batch, seq_len = batch_seq_dims(hidden)
+    if seq_len != 1:
         return False
     if _has_state_inputs(estimation, region):
         return True
@@ -234,7 +238,8 @@ class FusedGatedDeltaNetRegionImplementation:
         if isinstance(cfg_or_err, str):
             raise ValueError(cfg_or_err)
         cfg = cfg_or_err
-        seq_len = hidden.shape[0]
+        batch, seq_len = batch_seq_dims(hidden)
+        num_tokens = batch * seq_len
         requires_grad = hidden.requires_grad or any(
             graph.edge(edge_id).tensor.requires_grad
             for edge_id in region.boundary_outputs
@@ -250,7 +255,7 @@ class FusedGatedDeltaNetRegionImplementation:
             estimation, context, region, hidden
         )
 
-        g = self.recipe._geometry(cfg, seq_len)
+        g = self.recipe._geometry(cfg, num_tokens)
         h_k, h_v, d_k, d_v = g["h_k"], g["h_v"], g["d_k"], g["d_v"]
         channels = g["C"]
 
@@ -258,7 +263,7 @@ class FusedGatedDeltaNetRegionImplementation:
             for tag in ("rstd_q", "rstd_k"):
                 aux_id = f"region:{region.id}:{tag}"
                 rstd_tensor = Tensor(
-                    shape=(seq_len, h_k, 1),
+                    shape=mlp_aux_shape(hidden, h_k, 1),
                     semantic_type="l2_rstd",
                     dtype=DType.FP32,
                     requires_grad=False,
@@ -282,7 +287,7 @@ class FusedGatedDeltaNetRegionImplementation:
         ):
             aux_id = f"region:{region.id}:conv_pre_activation"
             pre_act = Tensor(
-                shape=(seq_len, channels),
+                shape=mlp_aux_shape(hidden, channels),
                 semantic_type="conv_pre_activation",
                 dtype=DType.BF16,
                 requires_grad=False,
@@ -306,7 +311,7 @@ class FusedGatedDeltaNetRegionImplementation:
         ):
             aux_id = f"region:{region.id}:scan_state_checkpoint"
             checkpoint = Tensor(
-                shape=(seq_len, h_v, d_k, d_v),
+                shape=mlp_aux_shape(hidden, h_v, d_k, d_v),
                 semantic_type="gated_delta_state_checkpoint",
                 dtype=DType.FP32,
                 requires_grad=False,
@@ -331,7 +336,7 @@ class FusedGatedDeltaNetRegionImplementation:
         ):
             aux_id = f"region:{region.id}:gated_rms_rstd"
             rstd = Tensor(
-                shape=(seq_len, h_v, 1),
+                shape=mlp_aux_shape(hidden, h_v, 1),
                 semantic_type="gated_rms_rstd",
                 dtype=DType.FP32,
                 requires_grad=False,
@@ -361,14 +366,19 @@ class FusedGatedDeltaNetRegionImplementation:
                 ResourceEvent(ResourceEventKind.PERSIST, edge_map[conv_state_id]),
             )
         elif decode:
-            conv_scenario = resolve_conv_scenario(context, module_path)
+            conv_scenario = resolve_conv_scenario(
+                context, module_path, batch=batch
+            )
             if conv_scenario is not None:
                 _state_event, allocate, persist, aux_id = conv_state_port_events(
                     region_id=region.id,
                     scenario=conv_scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(conv_scenario.channels, conv_scenario.kernel_size),
+                    shape=with_batch_prefix(
+                        conv_scenario.batch,
+                        (conv_scenario.channels, conv_scenario.kernel_size),
+                    ),
                     semantic_type="conv_state",
                     dtype=DType.BF16,
                     requires_grad=False,
@@ -399,17 +409,22 @@ class FusedGatedDeltaNetRegionImplementation:
                 ResourceEvent(ResourceEventKind.PERSIST, edge_map[scan_state_id]),
             )
         else:
-            scan_scenario = resolve_recurrent_scenario(context, module_path)
+            scan_scenario = resolve_recurrent_scenario(
+                context, module_path, batch=batch
+            )
             if scan_scenario is not None and scan_scenario.kind == "gated_delta":
                 state_event, allocate, persist, aux_id = recurrent_state_port_events(
                     region_id=region.id,
                     scenario=scan_scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(
-                        scan_scenario.num_heads,
-                        scan_scenario.head_dim,
-                        scan_scenario.state_dim,
+                    shape=with_batch_prefix(
+                        scan_scenario.batch,
+                        (
+                            scan_scenario.num_heads,
+                            scan_scenario.head_dim,
+                            scan_scenario.state_dim,
+                        ),
                     ),
                     semantic_type="scan_state",
                     dtype=DType.FP32,
@@ -430,14 +445,14 @@ class FusedGatedDeltaNetRegionImplementation:
                 auxiliary_edges.append(aux_id)
 
         if decode:
-            forward_flops = self.recipe.decode_forward_flops(cfg)
+            forward_flops = self.recipe.decode_forward_flops(cfg) * batch
             backward_flops = self.recipe.decode_backward_flops(
                 cfg, requires_grad=requires_grad
-            )
+            ) * batch
         else:
-            forward_flops = self.recipe.forward_flops(cfg, seq_len=seq_len)
+            forward_flops = self.recipe.forward_flops(cfg, seq_len=num_tokens)
             backward_flops = self.recipe.backward_flops(
-                cfg, seq_len=seq_len, requires_grad=requires_grad
+                cfg, seq_len=num_tokens, requires_grad=requires_grad
             )
 
         return LoweredNode(

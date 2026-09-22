@@ -162,3 +162,36 @@ def test_geglu_does_not_match_swiglu() -> None:
     register_defaults(registry)
     regions = discover_regions(graph, reference_invocation(), registry)
     assert not any(r.kind == "region/geglu" for r in regions)
+
+
+def test_geglu_batched_lower_flops_and_aux_scale() -> None:
+    from tests.lowering.regions._batch_helpers import (
+        assert_aux_numel_scales,
+        assert_flops_scales,
+        aux_tensor,
+    )
+
+    batch, seq_len, hidden, intermediate = 2, 4, 8, 16
+    single = lower(
+        _geglu_graph(seq_len=seq_len, hidden_size=hidden, intermediate_size=intermediate),
+        reference_invocation(),
+    )
+    batched = lower(
+        compose_graph(
+            lambda ctx: GeGLU(hidden_size=hidden, intermediate_size=intermediate),
+            (Tensor(shape=(batch, seq_len, hidden), requires_grad=True),),
+        ),
+        reference_invocation(),
+    )
+    assert len(batched.nodes) == 1
+    assert batched.nodes[0].implementation == "region/geglu/decomposed"
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )
+    assert aux_tensor(single, single.nodes[0], ":gate").shape == (seq_len, intermediate)
+    assert aux_tensor(batched, batched.nodes[0], ":gate").shape == (
+        batch,
+        seq_len,
+        intermediate,
+    )
+    assert_aux_numel_scales(batched, batched.nodes[0], single, single.nodes[0], batch)
