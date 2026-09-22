@@ -69,15 +69,21 @@ class ApertusFamily(ApertusFamilyCore):
     def zepto_infer_inputs(self, step: "HorizonStep", _ctx, _state) -> tuple:
         from zepto.compose import Tensor
 
-        return (Tensor(shape=(step.seq_len,)),)
+        return (
+            Tensor(
+                shape=(step.batch, step.seq_len),
+                semantic_type="token_ids",
+                requires_grad=False,
+            ),
+        )
 
     def zepto_train_inputs(self, step: "HorizonStep", _ctx, _state) -> tuple:
         from zepto.compose import Tensor
 
-        seq = step.seq_len
+        token_shape = (step.batch, step.seq_len)
         return (
-            Tensor(shape=(seq,)),
-            Tensor(shape=(seq,), semantic_type="labels", requires_grad=False),
+            Tensor(shape=token_shape, semantic_type="token_ids", requires_grad=False),
+            Tensor(shape=token_shape, semantic_type="labels", requires_grad=False),
         )
 
     def build_hf_model(

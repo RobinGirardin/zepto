@@ -44,7 +44,7 @@ Draw order: configurations and draws are processed sequentially; index increment
 
 ### Zepto VRAM diagnostics (`evaluation.csv`)
 
-- `y_runtime_workspace`: Zepto `memory.breakdown.runtime_workspace + breakdown.workspace` (same sum as smoke notebook `VRAM_workspace`).
+- `y_runtime_workspace`: infer uses `runtime_workspace + workspace` on the single `estimate`. Train uses the **max** of that sum over `report.per_step` (the merged horizon breakdown currently **sums** per-step handles).
 - `y_activations`: Zepto `memory.breakdown.activations`.
 - `peak_minus_before`: `target_vram_raw - alloc_before` at infer/train window start (HF probe).
 - `alloc_before`: HF `memory_allocated()` immediately before scored ops after peak reset.
@@ -55,13 +55,14 @@ One **unscored** train step: forward + backward + `optimizer.step()` outside `Fl
 
 ## Zepto measurement
 
-- **Inference, batch B:** `HorizonSpec.repeat(invocations=B, seq_len=S, batch=1)` (B=1 uses single `estimate` for smoke parity). FLOPs summed across micro-forwards; peak VRAM from horizon peak.
-- **Training, batch B:** `HorizonSpec.training(seq_len=S, micro_batches=B, batch=1, optimizer=AdamW)` on the family training module (e.g. `ApertusForCausalLM`).
+- **Inference, batch B:** compose `(B, S)` token ids; one `estimate` (single invocation). Does **not** use `HorizonSpec.repeat`.
+- **Training, batch B:** `HorizonSpec.training(seq_len=S, batch=B, micro_batches=1, optimizer=AdamW)` on `ApertusForCausalLM`.
 - `y_flop` ← forward FLOPs (infer) or `report.total_flops` (train); `y_vram` ← `report.memory.peak_live_bytes` (infer) or `report.peak_vram` (train).
+- Column `zepto_batch_representation=parallel_batch`.
 
-## Batch semantics (`micro_sum`)
+## Batch semantics (`parallel_batch`)
 
-Zepto sums `B` micro-forwards at batch size 1; HF runs one parallel `(B, S)` forward. FLOP comparability is an **assumption**; VRAM may diverge. Column `zepto_batch_representation=micro_sum` records this.
+Zepto and HF both run one parallel `(B, S)` pass. Parallel batch is `HorizonStep.batch`; gradient accumulation is `micro_batches`. Trial 1's `micro_sum` mode (`batch=1`, `micro_batches=B`, or infer `HorizonSpec.repeat(B, batch=1)`) is a **rejected** sequential-forwards mapping — it is not the measurement contract.
 
 ## Precision mapping
 

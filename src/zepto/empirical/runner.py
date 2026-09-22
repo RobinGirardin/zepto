@@ -177,12 +177,12 @@ def run_draw(
     batch_rep = zepto_infer.zepto_batch_representation
     if log_spec:
         logger.info(
-            "first draw Zepto train spec: seq_len=%s micro_batches=%s batch=1",
+            "first draw Zepto train spec: seq_len=%s batch=%s micro_batches=1",
             draw.seq_len,
             draw.batch_size,
         )
         logger.info(
-            "first draw Zepto infer: seq_len=%s invocations=%s batch=1",
+            "first draw Zepto infer: seq_len=%s batch=%s",
             draw.seq_len,
             draw.batch_size,
         )

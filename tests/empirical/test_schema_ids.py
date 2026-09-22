@@ -44,7 +44,7 @@ def test_evaluation_csv_round_trip(tmp_path: Path) -> None:
         seq_len=8,
         batch_size=1,
         step=0,
-        zepto_batch_representation="micro_sum",
+        zepto_batch_representation="parallel_batch",
         y_flop=100,
         y_vram=200,
         target_flop=101,
