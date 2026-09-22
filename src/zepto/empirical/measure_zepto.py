@@ -31,7 +31,11 @@ def _y_runtime_workspace_from_breakdown(breakdown: MemoryBreakdown) -> int:
 
 
 def _y_runtime_workspace_from_horizon(report: HorizonCostReport) -> int:
-    """Workspace of the peak-relevant step (merged horizon sums handles)."""
+    """Workspace of the peak-relevant step (max of per-step runtime+workspace).
+
+    Horizon ``breakdown.runtime_workspace`` is already the max cuBLAS pool;
+    this still adds graph-local ``workspace`` on that same step.
+    """
     return max(
         _y_runtime_workspace_from_breakdown(step.memory.breakdown)
         for step in report.per_step

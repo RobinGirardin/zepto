@@ -56,8 +56,9 @@ def estimate_horizon(
     """Simulate a horizon and return combined memory and FLOP accounting.
 
     ``HorizonStep.batch`` must match the root tensor batch dim produced by
-    ``inputs_fn``; mismatch is a silent caller bug. FLOPs sum over steps;
-    peak VRAM is the max over steps (``HorizonMemoryReducer``).
+    ``inputs_fn``; ``simulate_horizon`` raises ``ValueError`` on mismatch.
+    FLOPs sum over steps; peak VRAM is the max over steps
+    (``HorizonMemoryReducer``).
 
     Empirical harness contract: use
     ``HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)`` for

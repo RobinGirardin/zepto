@@ -10,7 +10,14 @@ from .memory import MemoryBreakdown, MemoryReport
 
 @dataclass(frozen=True, slots=True)
 class HorizonMemoryReport:
-    """Memory accounting reduced across a horizon timeline."""
+    """Memory accounting reduced across a horizon timeline.
+
+    ``breakdown.runtime_workspace`` is the **max** per-step cuBLAS pool
+    (peak-relevant). Handle pools are ephemeral; summing them would count
+    1+2+0 handles on a G=1 train instead of the 2 at peak. Graph-local
+    ``workspace`` is still summed. ``sum_all_bytes`` already includes
+    per-step runtime.
+    """
 
     peak_live_bytes: int
     sum_all_bytes: int

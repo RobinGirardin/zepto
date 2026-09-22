@@ -265,14 +265,8 @@ class FusedGQARegionImplementation:
         forward_flops *= batch
         backward_flops *= batch
 
-        if context.phase == "backward" and auxiliary_edges:
-            events.append(
-                ResourceEvent(
-                    ResourceEventKind.RELEASE,
-                    auxiliary_edges[0],
-                    phase="backward",
-                )
-            )
+        if context.phase == "backward":
+            events.extend(_backward_release_saved_aux(auxiliary_edges))
 
         return LoweredNode(
             id=f"region:{region.id}",
@@ -289,6 +283,23 @@ class FusedGQARegionImplementation:
             component_type=region.anchor.component_type,
             region_id=region.id,
         )
+
+
+def _backward_release_saved_aux(auxiliary_edges: list[str]) -> list[ResourceEvent]:
+    """RELEASE saved-for-backward attention aux (row-stats / P), never kv_cache."""
+    events: list[ResourceEvent] = []
+    for aux_id in auxiliary_edges:
+        if "kv_cache" in aux_id:
+            continue
+        if "row_stats" in aux_id or ":P" in aux_id:
+            events.append(
+                ResourceEvent(
+                    ResourceEventKind.RELEASE,
+                    aux_id,
+                    phase="backward",
+                )
+            )
+    return events
 
 
 def _descriptor(

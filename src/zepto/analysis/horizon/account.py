@@ -197,11 +197,13 @@ def _merge_breakdowns(
     duplicate_params: int,
     duplicate_state: int,
 ) -> MemoryBreakdown:
+    # runtime_workspace is an ephemeral per-step handle pool: keep the max
+    # (peak-relevant), not the sum of 1+2+0 handles across a train timeline.
     return MemoryBreakdown(
         activations=left.activations + right.activations,
         parameters=left.parameters,
         workspace=left.workspace + right.workspace,
-        runtime_workspace=left.runtime_workspace + right.runtime_workspace,
+        runtime_workspace=max(left.runtime_workspace, right.runtime_workspace),
         saved_for_backward=left.saved_for_backward + right.saved_for_backward,
         persistent_inputs=left.persistent_inputs + right.persistent_inputs,
         gradients=left.gradients + right.gradients,

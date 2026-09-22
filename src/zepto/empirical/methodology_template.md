@@ -49,7 +49,7 @@ Draw order: configurations and draws are processed sequentially; index increment
 
 ### Zepto VRAM diagnostics (`evaluation.csv`)
 
-- `y_runtime_workspace`: infer uses `runtime_workspace + workspace` on the single `estimate`. Train uses the **max** of that sum over `report.per_step` (the merged horizon breakdown currently **sums** per-step handles).
+- `y_runtime_workspace`: infer uses `runtime_workspace + workspace` on the single `estimate`. Train uses that sum on the **peak-relevant** step (`max` over `report.per_step`); merged horizon `breakdown.runtime_workspace` is also that max cuBLAS pool, not 1+2+0 handles.
 - `y_activations`: Zepto `memory.breakdown.activations`.
 - `peak_minus_before`: `target_vram_raw - alloc_before` at infer/train window start (HF probe).
 - `alloc_before`: HF `memory_allocated()` immediately before scored ops after peak reset.

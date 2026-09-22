@@ -7,6 +7,7 @@ from .simulate import (
     ModuleFn,
     inputs_from_shape,
     inputs_from_token_ids,
+    inputs_from_token_ids_and_labels,
     simulate_horizon,
 )
 from .spec import (
@@ -52,6 +53,7 @@ __all__ = [
     "decode_step",
     "inputs_from_shape",
     "inputs_from_token_ids",
+    "inputs_from_token_ids_and_labels",
     "optimizer_step",
     "simulate_horizon",
 ]

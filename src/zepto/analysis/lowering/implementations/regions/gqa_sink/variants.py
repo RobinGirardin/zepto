@@ -25,6 +25,7 @@ from ..gqa.shared import (
 )
 from ..gqa.variants import (
     HardwareGate,
+    _backward_release_saved_aux,
     _check_hardware_gate,
     _register_attention_aux,
     _requires_flash,
@@ -152,14 +153,8 @@ class FusedGQASinkRegionImplementation:
         forward_flops *= batch
         backward_flops *= batch
 
-        if context.phase == "backward" and auxiliary_edges:
-            events.append(
-                ResourceEvent(
-                    ResourceEventKind.RELEASE,
-                    auxiliary_edges[0],
-                    phase="backward",
-                )
-            )
+        if context.phase == "backward":
+            events.extend(_backward_release_saved_aux(auxiliary_edges))
 
         return LoweredNode(
             id=f"region:{region.id}",

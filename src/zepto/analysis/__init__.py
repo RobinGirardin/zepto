@@ -44,6 +44,7 @@ from .horizon import (
     decode_step,
     inputs_from_shape,
     inputs_from_token_ids,
+    inputs_from_token_ids_and_labels,
     optimizer_step,
     simulate_horizon,
 )
@@ -111,5 +112,6 @@ __all__ = [
     "select_region_implementation",
     "inputs_from_shape",
     "inputs_from_token_ids",
+    "inputs_from_token_ids_and_labels",
     "simulate_horizon",
 ]

@@ -51,8 +51,8 @@ def inputs_from_shape(hidden: int) -> InputsFn:
     for decoder **blocks** and other modules whose first argument is a hidden
     activation. Full Embedding-first models need :func:`inputs_from_token_ids`.
 
-    The leading dims **must** match ``step.batch`` and ``step.seq_len``. A
-    mismatch is a silent caller bug: ``simulate_horizon`` will not error.
+    The leading dims **must** match ``step.batch`` and ``step.seq_len``.
+    ``simulate_horizon`` raises ``ValueError`` on mismatch.
     """
 
     def _inputs(
@@ -72,8 +72,8 @@ def inputs_from_token_ids() -> InputsFn:
     ``HorizonSpec.training(..., batch=B, micro_batches=1)`` for HuggingFace
     ``per_device_train_batch_size=B``.
 
-    The leading dims **must** match ``step.batch`` and ``step.seq_len``. A
-    mismatch is a silent caller bug: ``simulate_horizon`` will not error.
+    The leading dims **must** match ``step.batch`` and ``step.seq_len``.
+    ``simulate_horizon`` raises ``ValueError`` on mismatch.
     """
 
     def _inputs(
@@ -90,6 +90,69 @@ def inputs_from_token_ids() -> InputsFn:
         )
 
     return _inputs
+
+
+def inputs_from_token_ids_and_labels() -> InputsFn:
+    """Roots ``(B, S)`` token_ids + ``(B, S)`` labels for *ForCausalLM modules."""
+
+    def _inputs(
+        step: HorizonStep,
+        _ctx: InvocationContext,
+        _state: StateSnapshot,
+    ) -> tuple[Tensor, ...]:
+        shape = (step.batch, step.seq_len)
+        return (
+            Tensor(
+                shape=shape, semantic_type="token_ids", requires_grad=False
+            ),
+            Tensor(
+                shape=shape, semantic_type="labels", requires_grad=False
+            ),
+        )
+
+    return _inputs
+
+
+def _check_root_batch_seq(inputs: tuple[Tensor, ...], step: HorizonStep) -> None:
+    """Raise if ``inputs_fn`` roots disagree with ``step.batch`` / ``step.seq_len``."""
+    if not inputs:
+        return
+    root = inputs[0]
+    _assert_batch_seq_match(root, step, what="inputs_fn root")
+    if len(inputs) >= 2 and inputs[1].semantic_type == "labels":
+        labels = inputs[1]
+        if labels.shape != root.shape:
+            raise ValueError(
+                f"inputs_fn labels shape {labels.shape} does not match "
+                f"token shape {root.shape}"
+            )
+        _assert_batch_seq_match(labels, step, what="inputs_fn labels")
+
+
+def _assert_batch_seq_match(
+    tensor: Tensor, step: HorizonStep, *, what: str
+) -> None:
+    rank = len(tensor.shape)
+    if rank == 1:
+        if step.batch != 1 or tensor.shape[0] != step.seq_len:
+            raise ValueError(
+                f"{what} rank-1 (S,) implies batch=1, seq_len={tensor.shape[0]}; "
+                f"step has batch={step.batch}, seq_len={step.seq_len}"
+            )
+        return
+    if (
+        rank >= 2
+        and tensor.shape[0] == step.batch
+        and tensor.shape[1] == step.seq_len
+    ):
+        return
+    # Legacy unbatched hidden ``(S, H)`` when ``batch=1``.
+    if rank >= 2 and step.batch == 1 and tensor.shape[0] == step.seq_len:
+        return
+    raise ValueError(
+        f"{what} shape {tensor.shape} does not match "
+        f"step.batch={step.batch}, step.seq_len={step.seq_len}"
+    )
 
 
 def simulate_horizon(
@@ -154,6 +217,7 @@ def simulate_horizon(
                 durations.lower_seconds = time.perf_counter() - t_lower
         else:
             inputs = inputs_fn(step, ctx, snapshot)
+            _check_root_batch_seq(inputs, step)
             t_compose = time.perf_counter()
             graph = compose_graph(module_fn, inputs)
             if durations is not None:
