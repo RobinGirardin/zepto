@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor
-from zepto.semantic import LinearMatMul, Reshape, Split, Transpose
+from zepto.semantic import LinearMatMul, Reshape
 
 from .depthwise_causal_conv1d import DepthwiseCausalConv1d
+from zepto.modules._internal._batch import batch_seq_dims, expect_sequence_hidden_states
+from zepto.modules._internal._concat import split_last_channels
 from zepto.modules.layers.gated_grouped_rms_norm import GatedGroupedRMSNorm
 from zepto.modules.layers.linear import Linear
 from .mixer_config import Mamba2MixerConfig
 from .selective_ssm_scan import SelectiveSSMScan
-
-
-def _split_last(value: Tensor, sizes: tuple[int, ...]) -> tuple[Tensor, ...]:
-    transposed = Transpose(permutation=(1, 0))(value)
-    parts = Split(sizes=sizes)(transposed)
-    return tuple(Transpose(permutation=(1, 0))(part) for part in parts)
 
 
 class Mamba2Mixer(Module):
@@ -52,12 +48,11 @@ class Mamba2Mixer(Module):
         scan_state_in: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         cfg = self.config
-        if hidden_states.shape[-1] != cfg.hidden_size:
-            raise ValueError("hidden size mismatch")
-        seq_len = hidden_states.shape[0]
+        rank = expect_sequence_hidden_states(hidden_states, cfg.hidden_size)
+        batch, seq_len = batch_seq_dims(hidden_states)
 
         projected = LinearMatMul()(hidden_states, parameters=(self.in_proj.weight,))  # type: ignore[call-arg]
-        z, u_xbc, delta = _split_last(
+        z, u_xbc, delta = split_last_channels(
             projected,
             (
                 cfg.intermediate_size,
@@ -66,7 +61,7 @@ class Mamba2Mixer(Module):
             ),
         )
         conv_out, conv_state_out = self.conv(u_xbc, conv_state_in)
-        x_flat, b, c = _split_last(
+        x_flat, b, c = split_last_channels(
             conv_out,
             (
                 cfg.intermediate_size,
@@ -74,11 +69,24 @@ class Mamba2Mixer(Module):
                 cfg.num_groups * cfg.state_size,
             ),
         )
-        x = Reshape(shape=(seq_len, cfg.num_heads, cfg.head_dim))(x_flat)
-        b_g = Reshape(shape=(seq_len, cfg.num_groups, cfg.state_size))(b)
-        c_g = Reshape(shape=(seq_len, cfg.num_groups, cfg.state_size))(c)
-        scan_out, scan_state_out = self.scan(x, delta, b_g, c_g, scan_state_in)
-        scan_flat = Reshape(shape=(seq_len, cfg.intermediate_size))(scan_out)
+        if rank == 2:
+            x = Reshape(shape=(seq_len, cfg.num_heads, cfg.head_dim))(x_flat)
+            b_g = Reshape(shape=(seq_len, cfg.num_groups, cfg.state_size))(b)
+            c_g = Reshape(shape=(seq_len, cfg.num_groups, cfg.state_size))(c)
+            scan_out, scan_state_out = self.scan(x, delta, b_g, c_g, scan_state_in)
+            scan_flat = Reshape(shape=(seq_len, cfg.intermediate_size))(scan_out)
+        else:
+            x = Reshape(shape=(batch, seq_len, cfg.num_heads, cfg.head_dim))(x_flat)
+            b_g = Reshape(
+                shape=(batch, seq_len, cfg.num_groups, cfg.state_size)
+            )(b)
+            c_g = Reshape(
+                shape=(batch, seq_len, cfg.num_groups, cfg.state_size)
+            )(c)
+            scan_out, scan_state_out = self.scan(x, delta, b_g, c_g, scan_state_in)
+            scan_flat = Reshape(shape=(batch, seq_len, cfg.intermediate_size))(
+                scan_out
+            )
         gated = self.norm(scan_flat, z)
         output = LinearMatMul()(gated, parameters=(self.o_proj.weight,))  # type: ignore[return-value]
         return output, conv_state_out, scan_state_out

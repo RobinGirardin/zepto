@@ -7,6 +7,7 @@ from typing import Literal
 from zepto.compose import Module, Tensor
 from zepto.semantic import Add, Concat, LinearMatMul, ParameterBias
 
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.modules.layers.affine_linear import AffineLinear
 from zepto.modules.layers.rms_norm import RMSNorm
 
@@ -35,16 +36,22 @@ class MtpInputFusion(Module):
             self.project = None
 
     def forward(self, trunk_hidden: Tensor, token_embed: Tensor) -> Tensor:
-        if len(trunk_hidden.shape) != 2 or len(token_embed.shape) != 2:
-            raise ValueError("trunk_hidden and token_embed must be rank-2 (S, d)")
+        if len(trunk_hidden.shape) not in (2, 3) or len(token_embed.shape) not in (
+            2,
+            3,
+        ):
+            raise ValueError(
+                "trunk_hidden and token_embed must be rank-2 (S, d) or rank-3 (B, S, d)"
+            )
         if trunk_hidden.shape != token_embed.shape:
             raise ValueError(
                 f"shape mismatch: trunk {trunk_hidden.shape} vs embed {token_embed.shape}"
             )
-        if trunk_hidden.shape[1] != self.hidden_size:
+        if trunk_hidden.shape[-1] != self.hidden_size:
             raise ValueError(
-                f"expected hidden dim {self.hidden_size}, got {trunk_hidden.shape[1]}"
+                f"expected hidden dim {self.hidden_size}, got {trunk_hidden.shape[-1]}"
             )
+        batch_seq_dims(trunk_hidden)
         if self.mode == "add":
             fused = Add()(trunk_hidden, token_embed)
             return self.norm(fused)  # type: ignore[return-value]

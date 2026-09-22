@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
 
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.layers.embedding import Embedding
 from zepto.modules.attention.materialized_causal_mask import MaterializedCausalMask
 from zepto.modules.mixers.mixer_presets import qwen35_language_layer_specs
@@ -151,6 +152,7 @@ class Qwen38(Module):
         placeholder_indices: Tensor | None = None,
         vision_pixels: Tensor | None = None,
     ) -> Tensor:
+        expect_token_ids_rank(token_ids)
         hidden = embed_multimodal_sequence(
             self,
             token_ids,
@@ -175,6 +177,8 @@ class Qwen38(Module):
     ) -> tuple[Tensor, Tensor]:
         if self.mtp is None:
             raise ValueError("forward_with_mtp requires include_mtp=True")
+        expect_token_ids_rank(token_ids)
+        expect_token_ids_rank(mtp_token_ids)
         hidden = embed_multimodal_sequence(
             self,
             token_ids,
@@ -209,6 +213,7 @@ class Qwen38(Module):
         vision_pixels: Tensor | None = None,
     ) -> tuple[Tensor, dict[str, Tensor]]:
         """Prefill/decode path with conv and scan carry for stateful mixers."""
+        expect_token_ids_rank(token_ids)
         hidden = embed_multimodal_sequence(
             self,
             token_ids,

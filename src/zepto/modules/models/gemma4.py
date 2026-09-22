@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from zepto.compose import Module, Tensor
 from zepto.semantic import Multiply
 
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.attention.decoder_attention_context import DecoderAttentionContext
 from zepto.modules.layers.embedding import Embedding
 from zepto.modules.multimodal.multimodal_language_model import embed_multimodal_sequence
@@ -147,6 +148,7 @@ class Gemma4(Module):
         placeholder_indices: Tensor | None = None,
         vision_pixels: Tensor | None = None,
     ) -> Tensor:
+        expect_token_ids_rank(token_ids)
         hidden = embed_multimodal_sequence(
             self,
             token_ids,

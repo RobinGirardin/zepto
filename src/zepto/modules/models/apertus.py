@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.modules.layers.embedding import Embedding
 from zepto.modules.layers.lm_head import LMHead
@@ -120,6 +121,7 @@ class Apertus(Module):
 
     def forward(self, token_ids: Tensor) -> Tensor:
         """Run the decoder on ``(S,)`` or batched ``(B, S)`` token ids."""
+        expect_token_ids_rank(token_ids)
         hidden_states = self.embedding(token_ids)
         causal_mask = self.causal_mask()
         rope_cos, rope_sin = self.rope_materialize()
