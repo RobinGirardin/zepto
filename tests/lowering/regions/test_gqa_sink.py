@@ -177,7 +177,27 @@ def test_gpt_oss_even_layer_preset() -> None:
     assert _sink_node(lowered).implementation == "region/gqa-sink/flash2"
 
 
-def test_gpt_oss_odd_layer_full_mask() -> None:
-    graph = _compose_full_sink()
-    lowered = lower(graph, _flash_context())
-    assert _sink_node(lowered).implementation == "region/gqa-sink/flash2"
+def test_sink_backward_does_not_release_kv_cache() -> None:
+    from zepto.analysis.horizon.state import StatePortRegistry
+    from zepto.semantic.metadata import DType
+
+    graph = _compose_sliding_sink()
+    registry = StatePortRegistry.empty().configure_kv(
+        num_layers=1,
+        num_kv_heads=_KV_HEADS,
+        head_dim=_HEAD_DIM,
+        dtype=DType.FP32,
+    )
+    lowered = lower(
+        graph, _flash_context(phase="backward"), state_ports=registry
+    )
+    op = _sink_node(lowered)
+    assert any("kv_cache" in aux for aux in op.auxiliary_edges)
+    released = [
+        ev.value
+        for ev in op.resource_events
+        if ev.kind is ResourceEventKind.RELEASE
+    ]
+    assert released
+    assert not any("kv_cache" in aux_id for aux_id in released)
+    assert any("row_stats" in aux_id for aux_id in released)

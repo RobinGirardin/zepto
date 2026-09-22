@@ -44,3 +44,6 @@ def test_train_zepto_no_opt_flops_below_full_horizon() -> None:
     assert result.y_runtime_workspace > 0
     assert result.y_flop_no_opt > 0
     assert result.y_flop_no_opt < result.y_flop
+    # G=1 train: peak-relevant workspace is backward's 2 handles, not 1+2+0.
+    assert result.y_runtime_workspace >= 2 * 8_519_680
+    assert result.y_runtime_workspace < 3 * 8_519_680

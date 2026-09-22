@@ -219,6 +219,32 @@ def test_gqa_prefill_kv_template_allocates_state() -> None:
     assert "kv_cache" in gqa.auxiliary_edges[0]
 
 
+def test_gqa_backward_does_not_release_kv_cache() -> None:
+    from zepto.analysis.horizon.state import StatePortRegistry
+    from zepto.semantic.metadata import DType
+
+    graph = _compose_gqa()
+    registry = StatePortRegistry.empty().configure_kv(
+        num_layers=1,
+        num_kv_heads=_KV_HEADS,
+        head_dim=_HEAD_DIM,
+        dtype=DType.FP32,
+    )
+    lowered = lower(
+        graph, _flash_context(phase="backward"), state_ports=registry
+    )
+    gqa = _gqa_node(lowered)
+    assert any("kv_cache" in aux for aux in gqa.auxiliary_edges)
+    released = [
+        ev.value
+        for ev in gqa.resource_events
+        if ev.kind is ResourceEventKind.RELEASE
+    ]
+    assert released
+    assert not any("kv_cache" in aux_id for aux_id in released)
+    assert any("row_stats" in aux_id for aux_id in released)
+
+
 def test_gqa_fused_vs_unfused_vram_delta() -> None:
     graph = _compose_gqa()
     unfused = lower(graph, reference_invocation())

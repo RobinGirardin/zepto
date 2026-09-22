@@ -16,6 +16,7 @@ from zepto.analysis import (
     estimate_horizon,
     inputs_from_shape,
     inputs_from_token_ids,
+    inputs_from_token_ids_and_labels,
     reference_invocation,
     simulate_horizon,
 )
@@ -160,6 +161,9 @@ def test_training_horizon_backward_step_includes_double_cublas() -> None:
     backward_step = report.per_step[1]
     assert micro_step.memory.breakdown.runtime_workspace == 8_519_680
     assert backward_step.memory.breakdown.runtime_workspace == 2 * 8_519_680
+    optimizer_mem = report.per_step[2]
+    assert optimizer_mem.memory.breakdown.runtime_workspace == 0
+    assert report.memory.breakdown.runtime_workspace == 2 * 8_519_680
 
 
 def test_inputs_from_shape_helper() -> None:
@@ -182,6 +186,28 @@ def test_inputs_from_token_ids_is_rank_two() -> None:
     tokens = inputs_fn(spec.steps[0], ctx, None)  # type: ignore[arg-type]
     assert tokens[0].shape == (1, 32)
     assert tokens[0].semantic_type == "token_ids"
+
+
+def test_inputs_from_token_ids_and_labels_is_rank_two() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.repeat(1, seq_len=32, batch=4)
+    inputs_fn = inputs_from_token_ids_and_labels()
+    tokens, labels = inputs_fn(spec.steps[0], ctx, None)  # type: ignore[arg-type]
+    assert tokens.shape == (4, 32)
+    assert labels.shape == (4, 32)
+    assert tokens.semantic_type == "token_ids"
+    assert labels.semantic_type == "labels"
+
+
+def test_inputs_fn_batch_mismatch_raises() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=128, batch=4, micro_batches=1)
+
+    def _wrong_batch(_step, _ctx, _state):
+        return (Tensor(shape=(1, 128, _IN_FEATURES)),)
+
+    with pytest.raises(ValueError, match="does not match"):
+        simulate_horizon(spec, _linear_module, _wrong_batch, ctx)
 
 
 def test_horizon_step_rejects_batch_below_one() -> None:

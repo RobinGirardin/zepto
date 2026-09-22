@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from zepto.analysis import (
     NullRuntimeOverheadPolicy,
+    StepKind,
     account_memory,
     cublas_workspace_bytes_per_handle,
     estimate,
@@ -65,13 +66,13 @@ def test_train_phase_doubles_workspace() -> None:
     assert report.breakdown.runtime_workspace == 2 * PRE_SM90
 
 
-def test_backward_step_two_handles() -> None:
+def test_optimizer_step_zero_handles() -> None:
     ctx = reference_invocation(
         hardware="cuda",
         compute_capability=(8, 0),
-        phase="backward",
+        phase="forward",
     )
-    assert runtime_workspace_bytes(ctx) == 2 * PRE_SM90
+    assert runtime_workspace_bytes(ctx, step_kind=StepKind.OPTIMIZER) == 0
 
 
 def test_non_cuda_zero() -> None:
