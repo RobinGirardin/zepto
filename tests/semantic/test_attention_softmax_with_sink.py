@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from zepto.compose import Parameter, Tensor, compose_graph
-from modules.attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
+from zepto.modules.attention.attention_softmax_with_sink import AttentionSoftmaxWithSink
 from zepto.semantic import AttentionSoftmaxWithSink as AttentionSoftmaxWithSinkOp
 
 
@@ -15,6 +15,29 @@ def test_infer_outputs_preserves_shape() -> None:
     op = AttentionSoftmaxWithSinkOp()
     (weights,) = op.infer_outputs((scores,), (sink,))
     assert weights.shape == (8, 16, 16)
+
+
+def test_infer_outputs_rank4_batched() -> None:
+    scores = Tensor(shape=(2, 8, 16, 16), requires_grad=False)
+    sink = Tensor(shape=(8,), semantic_type="attention_sink", requires_grad=False)
+    op = AttentionSoftmaxWithSinkOp()
+    (weights,) = op.infer_outputs((scores,), (sink,))
+    assert weights.shape == (2, 8, 16, 16)
+
+
+def test_forward_flops_formula_batched() -> None:
+    from zepto.semantic import EstimationContext
+    from zepto.analysis.resolved import ResolvedValue
+    from zepto.semantic.metadata import DType, TensorRole
+
+    output = Tensor(shape=(2, 4, 8, 8), requires_grad=False)
+    ctx = EstimationContext(
+        port_values=(
+            ("output", ResolvedValue(tensor=output, role=TensorRole.ACTIVATION, dtype=DType.FP32)),
+        )
+    )
+    op = AttentionSoftmaxWithSinkOp()
+    assert op.forward_flops(ctx) == 2 * (5 * 4 * 8 * 8 + 4 * 8)
 
 
 def test_forward_flops_formula() -> None:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.attention.attention import FlexibleAttention
-from modules.attention.attention_config import gated_gqa
+from zepto.modules.attention.attention import FlexibleAttention
+from zepto.modules.attention.attention_config import gated_gqa
 
 _SEQ = 8
 _HIDDEN = 256

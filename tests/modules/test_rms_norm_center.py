@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from modules.layers.rms_norm import RMSNorm
+from zepto.modules.layers.rms_norm import RMSNorm
 
 
 def test_centered_rmsnorm_includes_subtract_in_graph() -> None:

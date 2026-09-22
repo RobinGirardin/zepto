@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
 
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.attention.attention_config import AttentionConfig, granite_attention_layer
 from zepto.modules.attention.decoder_attention_context import DecoderAttentionContext
 from zepto.modules.layers.embedding import Embedding
@@ -90,6 +91,8 @@ class Granite(Module):
         return cls(config=GRANITE_42_30B, seq_len=seq_len)
 
     def forward(self, token_ids: Tensor) -> Tensor:
+        """Compose on rank-1 ``(S,)`` or rank-2 ``(B, S)`` token ids."""
+        expect_token_ids_rank(token_ids)
         hidden = self.embedding(token_ids)
         for index, block in enumerate(self.blocks):
             ctx = self.attn_context.for_layer(index)

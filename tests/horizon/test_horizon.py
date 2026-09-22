@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from zepto.analysis import (
     AdamW,
     HorizonSpec,
@@ -12,12 +14,13 @@ from zepto.analysis import (
     estimate,
     estimate_horizon,
     inputs_from_shape,
+    inputs_from_token_ids,
     reference_invocation,
     simulate_horizon,
 )
 from zepto.analysis.horizon.spec import HorizonStep
 from zepto.compose import Tensor, compose_graph
-from modules.layers.linear import Linear
+from zepto.modules.layers.linear import Linear
 from zepto.semantic.metadata import DType
 
 _IN_FEATURES = 64
@@ -108,12 +111,12 @@ def test_optimizer_state_persisted() -> None:
 
     report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
 
-    assert len(report.per_step) == 3
+    assert len(report.per_step) == 4
     assert report.state_final.optimizer is not None
     assert report.state_final.optimizer.bytes > 0
     assert report.state_final.grad_accum is None
 
-    backward_step = report.per_step[-1]
+    backward_step = report.per_step[-2]
     assert backward_step.memory.breakdown.state > 0
 
 
@@ -145,7 +148,7 @@ def test_training_horizon_backward_step_includes_double_cublas() -> None:
     )
     spec = HorizonSpec.training(seq_len=128, micro_batches=1, optimizer=AdamW)
     report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
-    assert len(report.per_step) == 2
+    assert len(report.per_step) == 3
     micro_step = report.per_step[0]
     backward_step = report.per_step[1]
     assert micro_step.memory.breakdown.runtime_workspace == 8_519_680
@@ -163,3 +166,77 @@ def test_inputs_from_shape_helper() -> None:
         ctx,
     )
     assert report.total_flops > 0
+
+
+def test_inputs_from_token_ids_is_rank_two() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.repeat(1, seq_len=32, batch=1)
+    inputs_fn = inputs_from_token_ids()
+    tokens = inputs_fn(spec.steps[0], ctx, None)  # type: ignore[arg-type]
+    assert tokens[0].shape == (1, 32)
+    assert tokens[0].semantic_type == "token_ids"
+
+
+def test_horizon_step_rejects_batch_below_one() -> None:
+    with pytest.raises(ValueError, match="batch must be >= 1"):
+        HorizonStep(kind=StepKind.GENERIC, seq_len=8, batch=0)
+
+
+def test_training_horizon_batch_propagates_to_compose() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=128, batch=4, micro_batches=1)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+
+    composed = [
+        record for record in sim.timeline if record.step.kind != StepKind.OPTIMIZER
+    ]
+    assert composed
+    for record in composed:
+        root = record.graph.edge(record.graph.inputs[0]).tensor
+        assert root.shape[:2] == (4, 128)
+
+
+def test_prefill_decode_kv_bytes_scale_with_batch() -> None:
+    ctx = reference_invocation()
+    kv = KVConfig(
+        num_layers=2,
+        num_kv_heads=4,
+        head_dim=64,
+        dtype=DType.FP16,
+    )
+    spec_1 = HorizonSpec.inference(prefill=64, decode_steps=2, batch=1, kv=kv)
+    spec_b = HorizonSpec.inference(prefill=64, decode_steps=2, batch=4, kv=kv)
+
+    report_1 = estimate_horizon(spec_1, _linear_module, _linear_inputs, ctx)
+    report_b = estimate_horizon(spec_b, _linear_module, _linear_inputs, ctx)
+
+    kv_1 = report_1.state_final.kv_caches[0]
+    kv_b = report_b.state_final.kv_caches[0]
+    assert kv_b.batch == 4
+    assert kv_1.batch == 1
+    assert kv_b.seq_len == kv_1.seq_len == 66
+    assert kv_b.bytes == 4 * kv_1.bytes
+
+
+def test_grad_accum_independent_of_parallel_batch() -> None:
+    ctx = reference_invocation()
+    spec_g = HorizonSpec().grad_accum(4, 128, batch=1)
+    spec_b = HorizonSpec().grad_accum(1, 128, batch=4)
+
+    sim_g = simulate_horizon(spec_g, _linear_module, _linear_inputs, ctx)
+    sim_b = simulate_horizon(spec_b, _linear_module, _linear_inputs, ctx)
+
+    assert sim_g.state_final.grad_accum is not None
+    assert sim_b.state_final.grad_accum is not None
+    assert sim_g.state_final.optimizer is None
+    assert sim_b.state_final.optimizer is None
+    assert (
+        sim_g.state_final.grad_accum.bytes == sim_b.state_final.grad_accum.bytes
+    )
+    assert sim_g.state_final.grad_accum.parameter_bytes == (
+        sim_b.state_final.grad_accum.parameter_bytes
+    )
+
+    mem_g = account_memory(sim_g)
+    mem_b = account_memory(sim_b)
+    assert mem_b.peak_live_bytes > mem_g.peak_live_bytes

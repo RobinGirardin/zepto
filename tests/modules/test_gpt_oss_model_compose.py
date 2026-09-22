@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from modules.attention.decoder_attention_context import DecoderAttentionContext
-from modules.models.gpt_oss import GptOss, GptOssConfig
-from modules.position.rope_config import gpt_oss_layer_binding
+from zepto.modules.attention.decoder_attention_context import DecoderAttentionContext
+from zepto.modules.models.gpt_oss import GptOss, GptOssConfig
+from zepto.modules.position.rope_config import gpt_oss_layer_binding
 
 
 def _tiny_gpt_oss(seq_len: int) -> GptOss:

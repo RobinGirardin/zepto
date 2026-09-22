@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.semantic import EmbeddingLookup
 
 
@@ -26,10 +27,7 @@ class Embedding(Module):
         )
 
     def forward(self, token_ids: Tensor) -> Tensor:
-        if len(token_ids.shape) != 1:
-            raise ValueError(
-                f"Embedding token_ids must be rank-1 (S,), got {token_ids.shape}"
-            )
+        expect_token_ids_rank(token_ids)
         return EmbeddingLookup()(
             token_ids,
             parameters=(self.weight,),

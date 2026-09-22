@@ -128,6 +128,19 @@ _Avoid_: Persistent tensor role
 A timeline that composes invocation-specific lowered graphs and simulates repeated use and state transitions, such as KV-cache growth or gradient accumulation.
 _Avoid_: Long traversal, giant graph
 
+## Parallel batch vs gradient accumulation
+
+| Symbol | Zepto field | HuggingFace analogue | Meaning |
+|--------|-------------|----------------------|---------|
+| **B** | `HorizonStep.batch` | `per_device_train_batch_size` (single pass) | Parallel batch width of one compose/lowering: tensor leading dim before `S`. |
+| **S** | `HorizonStep.seq_len` | sequence length in the batch | Tokens per sequence in that step. |
+| **G** | `HorizonSpec` via `grad_accum(micro_batches=G, …)` | `gradient_accumulation_steps` | Count of sequential `MICRO_FORWARD` steps before one `BACKWARD` + optimizer. |
+| **b** | `batch` on each micro-forward | micro-batch size per accum step | Tensor width **per** micro-forward when using grad accum. |
+
+HF single batched step: `HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)`. HF with grad accum: `batch=b, micro_batches=G` (effective batch ≈ `G × b`). Do **not** map HF batch size to `micro_batches=B` with `batch=1` — that is sequential `(1, S)` forwards (`micro_sum`), not HF `(B, S)` VRAM.
+
+Decoder roots are rank-2 token ids `(B, S)` (`inputs_from_token_ids`); hidden-state modules use `(B, S, H)` (`inputs_from_shape`). `InvocationContext` has no `batch` field — shapes are authoritative. See ADR-0010.
+
 ## Estimation
 
 **Estimation context**:

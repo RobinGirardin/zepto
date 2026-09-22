@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.moe.gpt_oss.gpt_oss_expert import GptOssExpert
+from zepto.modules.moe.gpt_oss.gpt_oss_expert import GptOssExpert
 
 
 def test_gpt_oss_expert_op_sequence() -> None:

@@ -8,7 +8,7 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from modules.layers.xielu import XIELU
+from zepto.modules.layers.xielu import XIELU
 from zepto.semantic import ResourceEventKind
 
 
@@ -137,3 +137,25 @@ def test_xielu_fused_vs_unfused_vram_delta() -> None:
     assert unfused_allocs == 13
     assert fused_allocs == 2
     assert sum(n.forward_flops for n in unfused.nodes) > fused.nodes[0].forward_flops
+
+
+def test_xielu_batched_flops_scale() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    single = lower(
+        compose_graph(
+            lambda ctx: XIELU(),
+            (Tensor(shape=(4, 8), requires_grad=True),),
+        ),
+        _fused_context(),
+    )
+    batched = lower(
+        compose_graph(
+            lambda ctx: XIELU(),
+            (Tensor(shape=(2, 4, 8), requires_grad=True),),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, 2
+    )

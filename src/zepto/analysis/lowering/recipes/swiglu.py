@@ -9,6 +9,7 @@ from dataclasses import dataclass
 class SwiGLURecipe:
     """Fused SwiGLU MLP stack costing for ``region/swiglu/*``.
 
+    ``seq_len`` is the token count (``S`` or ``B·S``), not the sequence axis alone.
     Forward: 6*S*d*d_ff + 6*S*d_ff (three GEMMs + SiLU+gate×up elementwise).
     Backward: 12*S*d*d_ff + 10*S*d_ff when requires_grad else 0.
     Paper-comparable (Appendix E): 6*S*d*d_ff / 12*S*d*d_ff (GEMM-only).

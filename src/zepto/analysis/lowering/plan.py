@@ -85,14 +85,11 @@ def _matcher_priority(region: Region) -> int:
     return 0
 
 
-def build_lowering_plan(
+def build_lowering_plan_from_winners(
     graph: Graph,
-    regions: tuple[Region, ...],
-    context: InvocationContext,
-    registry: LoweringRegistry,
+    winners: tuple[Region, ...],
 ) -> LoweringPlan:
-    """Build an ordered non-overlapping lowering schedule."""
-    winners = resolve_overlaps(graph, regions, context, registry)
+    """Build an ordered schedule from already-resolved winning regions."""
     region_starts: dict[NodeId, Region] = {}
     region_by_op: dict[NodeId, str] = {}
     consumed: set[NodeId] = set()
@@ -120,3 +117,14 @@ def build_lowering_plan(
         consumed=frozenset(consumed),
         region_by_op=region_by_op,
     )
+
+
+def build_lowering_plan(
+    graph: Graph,
+    regions: tuple[Region, ...],
+    context: InvocationContext,
+    registry: LoweringRegistry,
+) -> LoweringPlan:
+    """Build an ordered non-overlapping lowering schedule."""
+    winners = resolve_overlaps(graph, regions, context, registry)
+    return build_lowering_plan_from_winners(graph, winners)

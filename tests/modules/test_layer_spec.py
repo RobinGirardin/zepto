@@ -1,10 +1,10 @@
 from zepto.compose import Tensor, compose_graph
-from modules.blocks.hybrid_decoder_block import HybridDecoderBlock
-from modules.mixers.layer_spec import LayerSpec
-from modules.mixers.mixer_config import Mamba2MixerConfig
-from modules.mixers.mixer_presets import nemotron_h_layer_specs, qwen35_language_layer_specs
-from modules.moe.moe_presets import nemotron_moe_block
-from modules.blocks.qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
+from zepto.modules.blocks.hybrid_decoder_block import HybridDecoderBlock
+from zepto.modules.mixers.layer_spec import LayerSpec
+from zepto.modules.mixers.mixer_config import Mamba2MixerConfig
+from zepto.modules.mixers.mixer_presets import nemotron_h_layer_specs, qwen35_language_layer_specs
+from zepto.modules.moe.moe_presets import nemotron_moe_block
+from zepto.modules.blocks.qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
 
 
 def test_qwen_preset_length_and_ffn() -> None:

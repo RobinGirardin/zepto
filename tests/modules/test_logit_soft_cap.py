@@ -6,7 +6,7 @@ from zepto.analysis import lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_identity_defaults
 from zepto.compose import Tensor, compose_graph
-from modules.output.logit_soft_cap import LogitSoftCap, LogitSoftCapConfig
+from zepto.modules.output.logit_soft_cap import LogitSoftCap, LogitSoftCapConfig
 
 
 def test_logit_soft_cap_shape_preserved() -> None:

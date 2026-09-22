@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
+from zepto.modules._internal._batch import expect_logits_rank
 from zepto.semantic import Divide, Multiply, Tanh
 
 
@@ -23,7 +24,7 @@ class LogitSoftCapConfig:
 
 
 class LogitSoftCap(Module):
-    """Apply ``output_scale * cap * tanh(logits / cap)`` on rank-2 logits."""
+    """Apply ``output_scale * cap * tanh(logits / cap)`` on ``(S, V)`` or ``(B, S, V)``."""
 
     module_kind = "LogitSoftCap"
 
@@ -38,10 +39,7 @@ class LogitSoftCap(Module):
         )
 
     def forward(self, logits: Tensor) -> Tensor:
-        if len(logits.shape) != 2:
-            raise ValueError(
-                f"LogitSoftCap expects rank-2 logits (S, V), got {logits.shape}"
-            )
+        expect_logits_rank(logits)
         scaled = Divide()(logits, self._cap)
         bounded = Tanh()(scaled)
         capped = Multiply()(bounded, self._cap)

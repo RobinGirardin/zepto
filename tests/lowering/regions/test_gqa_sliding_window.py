@@ -7,10 +7,10 @@ from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.gqa import effective_attention_pairs, gqa_forward_flops
 from zepto.compose import Module, Tensor, compose_graph
-from modules.attention.attention import FlexibleAttention
-from modules.attention.attention_config import llama_gqa
-from modules.attention.materialized_causal_mask import MaterializedCausalMask
-from modules.attention.sliding_window_causal_mask import SlidingWindowCausalMask
+from zepto.modules.attention.attention import FlexibleAttention
+from zepto.modules.attention.attention_config import llama_gqa
+from zepto.modules.attention.materialized_causal_mask import MaterializedCausalMask
+from zepto.modules.attention.sliding_window_causal_mask import SlidingWindowCausalMask
 from zepto.semantic import ResourceEventKind
 
 _SEQ = 8

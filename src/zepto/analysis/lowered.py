@@ -13,6 +13,8 @@ from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 
 if TYPE_CHECKING:
     from .lowering.context import InvocationContext
+    from .lowering.plan import LoweringPlan
+    from .lowering.region import Region
     from .lowering.registry import ImplementationSelection, RegionImplementationSelection
 
 
@@ -90,3 +92,6 @@ class LoweredGraph:
     region_map: Mapping[str, tuple[NodeId, ...]] = MappingProxyType({})
     region_selections: tuple[RegionImplementationSelection, ...] = ()
     state_port_events: tuple[StatePortEvent, ...] = ()
+    discovered_regions: tuple[Region, ...] = ()
+    winning_regions: tuple[Region, ...] = ()
+    lowering_plan: LoweringPlan | None = None

@@ -15,7 +15,10 @@ from ....context import InvocationContext
 from ....helpers import (
     RegionEstimationContext,
     ensure_lowered_edge,
+    mlp_aux_shape,
     register_auxiliary_edge,
+    token_count,
+    unpack_hidden,
 )
 from ....recipes.swiglu import (
     DEFAULT_SWIGLU_RECIPE,
@@ -54,17 +57,14 @@ def _extract_dims(
     graph: Graph,
     input_tensor: Tensor,
 ) -> tuple[int, int, int]:
-    if len(input_tensor.shape) != 2:
-        raise ValueError("SwiGLU region expects rank-2 input (S, d)")
-    seq_len, hidden_size = int(input_tensor.shape[0]), int(input_tensor.shape[1])
+    _batch, _seq_len, hidden_size = unpack_hidden(input_tensor)
+    num_tokens = token_count(input_tensor)
     gate_op = graph.node(region.operation_ids[0])
     if not gate_op.output_edges:
         raise ValueError("gate_proj missing output edge")
     gate_tensor = graph.edge(gate_op.output_edges[0]).tensor
-    if len(gate_tensor.shape) != 2:
-        raise ValueError("gate_proj output must be rank-2")
-    intermediate_size = int(gate_tensor.shape[1])
-    return seq_len, hidden_size, intermediate_size
+    intermediate_size = int(gate_tensor.shape[-1])
+    return num_tokens, hidden_size, intermediate_size
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +146,7 @@ class FusedSwiGLURegionImplementation:
             register_auxiliary_edge(
                 gate_up_id,
                 Tensor(
-                    shape=(seq_len, 2 * intermediate_size),
+                    shape=mlp_aux_shape(input_tensor, 2 * intermediate_size),
                     semantic_type="swiglu_gate_up_fused",
                     requires_grad=input_tensor.requires_grad,
                     persistent=False,
@@ -167,7 +167,7 @@ class FusedSwiGLURegionImplementation:
                 register_auxiliary_edge(
                     gate_id,
                     Tensor(
-                        shape=(seq_len, intermediate_size),
+                        shape=mlp_aux_shape(input_tensor, intermediate_size),
                         semantic_type="swiglu_gate",
                         requires_grad=input_tensor.requires_grad,
                         persistent=False,
@@ -187,7 +187,7 @@ class FusedSwiGLURegionImplementation:
                 register_auxiliary_edge(
                     up_id,
                     Tensor(
-                        shape=(seq_len, intermediate_size),
+                        shape=mlp_aux_shape(input_tensor, intermediate_size),
                         semantic_type="swiglu_up",
                         requires_grad=input_tensor.requires_grad,
                         persistent=False,
@@ -208,7 +208,7 @@ class FusedSwiGLURegionImplementation:
             register_auxiliary_edge(
                 silu_id,
                 Tensor(
-                    shape=(seq_len, intermediate_size),
+                    shape=mlp_aux_shape(input_tensor, intermediate_size),
                     semantic_type="swiglu_silu_g",
                     requires_grad=input_tensor.requires_grad,
                     persistent=False,
@@ -225,7 +225,7 @@ class FusedSwiGLURegionImplementation:
         register_auxiliary_edge(
             h_id,
             Tensor(
-                shape=(seq_len, intermediate_size),
+                shape=mlp_aux_shape(input_tensor, intermediate_size),
                 semantic_type="swiglu_hidden",
                 requires_grad=input_tensor.requires_grad,
                 persistent=False,

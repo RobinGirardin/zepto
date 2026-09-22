@@ -10,10 +10,10 @@ from zepto.analysis.lowering.recipes.linear_ce_softcap import (
     DEFAULT_LINEAR_CE_SOFTCAP_RECIPE,
 )
 from zepto.compose import Tensor, compose_graph
-from modules.output.capped_fused_linear_cross_entropy import (
+from zepto.modules.output.capped_fused_linear_cross_entropy import (
     CappedFusedLinearCrossEntropy,
 )
-from modules.output.logit_soft_cap import LogitSoftCapConfig
+from zepto.modules.output.logit_soft_cap import LogitSoftCapConfig
 from zepto.semantic import ResourceEventKind
 
 _S, _D, _V = 4, 8, 16
@@ -124,3 +124,33 @@ def test_linear_ce_softcap_fwd_delta_vs_linear_ce() -> None:
         _S, _D, _V
     )
     assert delta == 7 * _S * _V
+
+
+def test_linear_ce_softcap_batched_discovers_and_scales() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    batch = 2
+    graph = compose_graph(
+        lambda ctx: CappedFusedLinearCrossEntropy(
+            hidden_size=_D,
+            vocab_size=_V,
+            soft_cap=LogitSoftCapConfig(cap=20.0),
+        ),
+        (
+            Tensor(shape=(batch, _S, _D), requires_grad=True),
+            Tensor(shape=(batch, _S), semantic_type="labels", requires_grad=False),
+        ),
+    )
+    registry = LoweringRegistry()
+    register_defaults(registry)
+    regions = discover_regions(graph, _fused_context(), registry)
+    softcap = [r for r in regions if r.kind == "region/linear_ce_softcap"]
+    assert len(softcap) == 1
+    assert len(softcap[0].operation_ids) == 14
+    lowered = lower(graph, _fused_context())
+    assert len(lowered.nodes) == 1
+    assert len(lowered.fusion_map) == 14
+    single = lower(_compose_linear_ce_softcap(), _fused_context())
+    assert_flops_scales(
+        lowered.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )

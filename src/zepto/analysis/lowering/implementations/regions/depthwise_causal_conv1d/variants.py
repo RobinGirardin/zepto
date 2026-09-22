@@ -8,6 +8,7 @@ from typing import Literal
 from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.helpers import numel
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
@@ -95,7 +96,8 @@ def _is_decode(
 ) -> bool:
     if estimation.input_tensors.get("input1") is not None:
         return True
-    return value_tensor.shape[0] == 1 and len(value_tensor.shape) == 2
+    _batch, seq_len = batch_seq_dims(value_tensor)
+    return seq_len == 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +181,10 @@ class FusedDepthwiseCausalConv1dRegionImplementation:
         decode = _is_decode(estimation, value_tensor)
 
         if decode:
-            scenario = resolve_conv_scenario(context, region.anchor.module_path)
+            batch, _seq_len = batch_seq_dims(value_tensor)
+            scenario = resolve_conv_scenario(
+                context, region.anchor.module_path, batch=batch
+            )
             if scenario is not None:
                 state_event, allocate, persist, aux_id = conv_state_port_events(
                     region_id=region.id,

@@ -23,12 +23,14 @@ class KVCacheState:
     head_dim: int
     seq_len: int
     dtype: DType
+    batch: int = 1
 
     @property
     def bytes(self) -> int:
         itemsize = self.dtype.itemsize or 0
         return (
             2
+            * self.batch
             * self.num_layers
             * self.num_kv_heads
             * self.seq_len
@@ -45,16 +47,17 @@ class Conv1DState:
     channels: int
     kernel_size: int
     dtype: DType
+    batch: int = 1
 
     @property
     def bytes(self) -> int:
         itemsize = self.dtype.itemsize or 0
-        return self.channels * self.kernel_size * itemsize
+        return self.batch * self.channels * self.kernel_size * itemsize
 
 
 @dataclass(frozen=True, slots=True)
 class RecurrentScanState:
-    """Recurrent scan hidden state for one layer (batch size one)."""
+    """Recurrent scan hidden state for one layer (bytes scale with ``batch``)."""
 
     layer_index: int
     kind: Literal["gated_delta", "mamba2"]
@@ -62,16 +65,28 @@ class RecurrentScanState:
     head_dim: int
     state_dim: int
     dtype: DType
+    batch: int = 1
 
     @property
     def bytes(self) -> int:
         itemsize = self.dtype.itemsize or 0
-        return self.num_heads * self.head_dim * self.state_dim * itemsize
+        return (
+            self.batch
+            * self.num_heads
+            * self.head_dim
+            * self.state_dim
+            * itemsize
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class GradAccumState:
-    """Gradient accumulation buffer carried across micro-batch forwards."""
+    """Gradient accumulation buffer carried across micro-batch forwards.
+
+    Bytes equal ``parameter_bytes`` and are independent of parallel batch
+    ``B``. Effective HuggingFace batch is ``G × b`` when using ``batch=b``
+    and ``micro_batches=G``.
+    """
 
     parameter_bytes: int
     micro_batches_seen: int
@@ -305,6 +320,7 @@ class StatePortRegistry:
                 head_dim=template.head_dim,
                 seq_len=step.seq_len,
                 dtype=template.dtype,
+                batch=step.batch,
             )
             registry = replace(registry, kv_caches=(kv,))
 
@@ -323,6 +339,7 @@ class StatePortRegistry:
                                 channels=conv_t.channels,
                                 kernel_size=conv_t.kernel_size,
                                 dtype=conv_t.dtype,
+                                batch=step.batch,
                             ),
                         )
                     )
@@ -348,6 +365,7 @@ class StatePortRegistry:
                                 head_dim=head_dim,
                                 state_dim=state_dim,
                                 dtype=rec_t.dtype,
+                                batch=step.batch,
                             ),
                         )
                     )
@@ -380,16 +398,16 @@ class StatePortRegistry:
             )
 
         if step.kind == StepKind.OPTIMIZER:
-            param_bytes = parameter_bytes(lowered)
             policy = registry.optimizer_policy
             if policy is None:
                 from ..optimizer import AdamW
 
                 policy = AdamW
-            opt_bytes = (
-                param_bytes * policy.state_bytes_per_parameter
-                + policy.workspace_bytes
-            )
+            trainable = trainable_parameter_elements(lowered)
+            opt_bytes = policy.state_bytes(
+                trainable_elements=trainable,
+                context=lowered.context,
+            ) + policy.update_workspace_bytes(context=lowered.context)
             registry = replace(
                 registry,
                 optimizer=OptimizerState(policy=policy, bytes=opt_bytes),

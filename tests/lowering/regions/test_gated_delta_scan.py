@@ -15,9 +15,9 @@ from zepto.analysis.horizon.state import RecurrentScanState
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from modules.mixers.gated_delta_net import GatedDeltaNet
-from modules.mixers.gated_delta_scan import GatedDeltaScan
-from modules.mixers.mixer_config import GatedDeltaNetConfig
+from zepto.modules.mixers.gated_delta_net import GatedDeltaNet
+from zepto.modules.mixers.gated_delta_scan import GatedDeltaScan
+from zepto.modules.mixers.mixer_config import GatedDeltaNetConfig
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 
@@ -210,3 +210,38 @@ def test_gated_delta_scan_horizon_integration() -> None:
     assert len(report.per_step) == 5
     assert report.state_final.custom
     assert report.per_step[1].flops.forward_flops < report.per_step[0].flops.forward_flops
+
+
+def test_gated_delta_scan_batched_flops_and_checkpoint_shape() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales, aux_tensor
+
+    batch, seq_len, h, dk, dv = 2, 4, 2, 8, 8
+    single = lower(
+        _scan_graph(seq_len=seq_len, num_heads=h, key_dim=dk, value_dim=dv),
+        _fused_context(),
+    )
+    batched = lower(
+        compose_graph(
+            lambda _ctx: GatedDeltaScan(
+                num_heads=h, key_head_dim=dk, value_head_dim=dv
+            ),
+            (
+                Tensor(shape=(batch, seq_len, h, dk), requires_grad=True),
+                Tensor(shape=(batch, seq_len, h, dk), requires_grad=True),
+                Tensor(shape=(batch, seq_len, h, dv), requires_grad=True),
+                Tensor(shape=(batch, seq_len, h), requires_grad=True),
+                Tensor(shape=(batch, seq_len, h), requires_grad=True),
+            ),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )
+    assert aux_tensor(batched, batched.nodes[0], "state_checkpoint").shape == (
+        batch,
+        seq_len,
+        h,
+        dk,
+        dv,
+    )

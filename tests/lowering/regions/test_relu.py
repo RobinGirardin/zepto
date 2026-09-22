@@ -6,7 +6,7 @@ from zepto.analysis import discover_regions, lower, reference_invocation
 from zepto.analysis.lowering import LoweringRegistry
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from modules.layers.relu import ReLU
+from zepto.modules.layers.relu import ReLU
 from zepto.semantic import ResourceEventKind
 
 

@@ -14,9 +14,16 @@ empirical = [
     "transformers",
 ]
 
+[project.scripts]
+zepto-bench = "zepto.benchmark.cli:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
 testpaths = ["tests"]
+addopts = "-m 'not benchmark'"
+markers = [
+    "benchmark: slow wall-clock simulation benchmarks (opt-in with -m benchmark)",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

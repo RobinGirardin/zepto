@@ -18,6 +18,7 @@ from ....helpers import (
     recurrent_state_port_events,
     register_auxiliary_edge,
     resolve_recurrent_scenario,
+    with_batch_prefix,
 )
 from ....recipes.mamba2_scan import (
     DECODE_MAMBA2_SCAN_RECIPE,
@@ -80,37 +81,72 @@ def _input_tensors(
 
 def _resolve_scan_geometry(
     input_tensors: Mapping[str, Tensor],
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
+    rank4 = [t for t in input_tensors.values() if len(t.shape) == 4]
     rank3 = [t for t in input_tensors.values() if len(t.shape) == 3]
     rank2 = [t for t in input_tensors.values() if len(t.shape) == 2]
+
+    if rank4:
+        deltas = [t for t in rank3]
+        if not deltas:
+            raise ValueError("mamba2 scan region requires delta (B, S, h)")
+        delta = max(deltas, key=lambda t: t.shape[-1])
+        batch, seq_len, num_heads = (int(dim) for dim in delta.shape)
+        x_candidates = [
+            t for t in rank4 if t.shape[:3] == (batch, seq_len, num_heads)
+        ]
+        if not x_candidates:
+            raise ValueError(
+                "mamba2 scan region requires rank-4 x tensor (B, S, h, p)"
+            )
+        x = x_candidates[0]
+        head_dim = int(x.shape[3])
+        bc = [
+            t
+            for t in rank4
+            if t.shape[0] == batch
+            and t.shape[1] == seq_len
+            and t.shape[2] != num_heads
+        ]
+        if not bc:
+            raise ValueError(
+                "mamba2 scan region requires rank-4 b tensor (B, S, G, N)"
+            )
+        b = bc[0]
+        num_groups = int(b.shape[2])
+        state_size = int(b.shape[3])
+        if num_heads % num_groups != 0:
+            raise ValueError("num_heads must be divisible by num_groups")
+        return batch, seq_len, num_heads, head_dim, state_size, num_groups
+
     if not rank2 or not rank3:
         raise ValueError("mamba2 scan region requires delta (S, h) and x/B/C tensors")
     delta = max(rank2, key=lambda t: t.shape[1])
-    seq_len, num_heads = delta.shape
+    seq_len, num_heads = (int(dim) for dim in delta.shape)
     seq_rank3 = [t for t in rank3 if t.shape[0] == seq_len]
     x_candidates = [t for t in seq_rank3 if t.shape[1] == num_heads]
     if not x_candidates:
         raise ValueError("mamba2 scan region requires rank-3 x tensor (S, h, p)")
     x = x_candidates[0]
-    head_dim = x.shape[2]
+    head_dim = int(x.shape[2])
     bc = [t for t in seq_rank3 if t.shape[1] != num_heads]
     if not bc:
         bc = [t for t in seq_rank3 if t is not x]
     if not bc:
         raise ValueError("mamba2 scan region requires rank-3 b tensor (S, G, N)")
     b = bc[0]
-    num_groups = b.shape[1]
-    state_size = b.shape[2]
+    num_groups = int(b.shape[1])
+    state_size = int(b.shape[2])
     if num_heads % num_groups != 0:
         raise ValueError("num_heads must be divisible by num_groups")
-    return seq_len, num_heads, head_dim, state_size, num_groups
+    return 1, seq_len, num_heads, head_dim, state_size, num_groups
 
 
 def _scan_dims(
     estimation: RegionEstimationContext,
     graph: Graph,
     region: Region,
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     return _resolve_scan_geometry(_input_tensors(estimation, graph, region))
 
 
@@ -119,10 +155,13 @@ def _has_scan_state_in(
     *,
     seq_len: int,
 ) -> bool:
-    return any(
-        len(t.shape) == 3 and t.shape[0] != seq_len
-        for t in estimation.input_tensors.values()
-    )
+    for tensor in estimation.input_tensors.values():
+        rank = len(tensor.shape)
+        if rank == 3 and tensor.shape[0] != seq_len:
+            return True
+        if rank == 4 and tensor.shape[1] != seq_len:
+            return True
+    return False
 
 
 def _is_decode_graph(
@@ -134,7 +173,7 @@ def _is_decode_graph(
     graph: Graph,
 ) -> bool:
     try:
-        seq_len, _, _, _, _ = _scan_dims(estimation, graph, region)
+        _batch, seq_len, _, _, _, _ = _scan_dims(estimation, graph, region)
     except ValueError:
         return False
     if seq_len != 1:
@@ -224,9 +263,10 @@ class FusedMamba2ScanRegionImplementation:
                 edge_id, graph, context, lowered_edges, edge_map
             )
 
-        seq_len, num_heads, head_dim, state_size, _num_groups = _scan_dims(
+        batch, seq_len, num_heads, head_dim, state_size, _num_groups = _scan_dims(
             estimation, graph, region
         )
+        num_tokens = batch * seq_len
         value_requires_grad = any(
             graph.edge(edge_id).tensor.requires_grad
             for edge_id in region.boundary_inputs
@@ -279,7 +319,9 @@ class FusedMamba2ScanRegionImplementation:
         ):
             checkpoint_id = f"region:{region.id}:state_checkpoint"
             checkpoint_tensor = Tensor(
-                shape=(seq_len, num_heads, head_dim, state_size),
+                shape=with_batch_prefix(
+                    batch, (seq_len, num_heads, head_dim, state_size)
+                ),
                 semantic_type="mamba2_state_checkpoint",
                 dtype=DType.FP32,
                 requires_grad=False,
@@ -314,7 +356,7 @@ class FusedMamba2ScanRegionImplementation:
 
         if decode:
             scenario = resolve_recurrent_scenario(
-                context, region.anchor.module_path
+                context, region.anchor.module_path, batch=batch
             )
             if scenario is not None and scenario.kind == "mamba2":
                 state_event, allocate, persist, aux_id = recurrent_state_port_events(
@@ -322,10 +364,13 @@ class FusedMamba2ScanRegionImplementation:
                     scenario=scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(
-                        scenario.num_heads,
-                        scenario.head_dim,
-                        scenario.state_dim,
+                    shape=with_batch_prefix(
+                        scenario.batch,
+                        (
+                            scenario.num_heads,
+                            scenario.head_dim,
+                            scenario.state_dim,
+                        ),
                     ),
                     semantic_type="scan_state",
                     dtype=DType.FP32,
@@ -346,13 +391,13 @@ class FusedMamba2ScanRegionImplementation:
                 auxiliary_edges.append(aux_id)
 
         forward_flops = self.recipe.forward_flops(
-            seq_len=seq_len,
+            seq_len=num_tokens,
             num_heads=num_heads,
             head_dim=head_dim,
             state_size=state_size,
         )
         backward_flops = self.recipe.backward_flops(
-            seq_len=seq_len,
+            seq_len=num_tokens,
             num_heads=num_heads,
             head_dim=head_dim,
             state_size=state_size,

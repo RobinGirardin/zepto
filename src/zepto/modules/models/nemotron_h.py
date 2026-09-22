@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
 
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.layers.embedding import Embedding
 from zepto.modules.blocks.hybrid_decoder_block import HybridDecoderBlock
 from zepto.modules.mixers.layer_spec import LayerSpec
@@ -112,6 +113,8 @@ class NemotronH(Module):
         return out  # type: ignore[return-value]
 
     def forward(self, token_ids: Tensor) -> Tensor:
+        """Compose on rank-1 ``(S,)`` or rank-2 ``(B, S)`` token ids."""
+        expect_token_ids_rank(token_ids)
         hidden = self.embedding(token_ids)
         for index, block in enumerate(self.blocks):
             hidden = self._run_block(block, index, hidden)
@@ -128,6 +131,8 @@ class NemotronH(Module):
         mtp_token_ids: Tensor,
         trunk_hidden: Tensor,
     ) -> tuple[Tensor, Tensor]:
+        expect_token_ids_rank(token_ids)
+        expect_token_ids_rank(mtp_token_ids)
         primary = self.forward(token_ids)
         assert self.mtp is not None
         aux = self.mtp_forward(trunk_hidden, mtp_token_ids)
@@ -140,6 +145,7 @@ class NemotronH(Module):
         conv_states: tuple[Tensor | None, ...] | None = None,
         scan_states: tuple[Tensor | None, ...] | None = None,
     ) -> tuple[Tensor, dict[str, Tensor]]:
+        expect_token_ids_rank(token_ids)
         hidden = self.embedding(token_ids)
         conv_states = conv_states or (None,) * len(self.blocks)
         scan_states = scan_states or (None,) * len(self.blocks)

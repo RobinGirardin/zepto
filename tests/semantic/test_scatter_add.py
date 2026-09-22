@@ -41,7 +41,7 @@ def test_duplicate_indices_allowed() -> None:
 
 def test_mismatch_raises() -> None:
     op = ScatterAdd(axis=0)
-    with pytest.raises(ValueError, match="must match len"):
+    with pytest.raises(ValueError, match="must match index count"):
         op.infer_outputs(
             (
                 Tensor(shape=(8, 64)),
@@ -53,7 +53,7 @@ def test_mismatch_raises() -> None:
 
 def test_wrong_index_rank_raises() -> None:
     op = ScatterAdd(axis=0)
-    with pytest.raises(ValueError, match="rank-1"):
+    with pytest.raises(ValueError, match="cannot scatter along batch axis"):
         op.infer_outputs(
             (
                 Tensor(shape=(8, 64)),
@@ -61,6 +61,31 @@ def test_wrong_index_rank_raises() -> None:
                 Tensor(shape=(3, 64)),
             )
         )
+
+
+def test_batched_input_rank1_indices_on_token_axis() -> None:
+    """MoE-style: base (B, S, d), rank-1 indices, updates (K, S, d) on axis 0."""
+    op = ScatterAdd(axis=0)
+    (output,) = op.infer_outputs(
+        (
+            Tensor(shape=(2, 8, 64)),
+            Tensor(shape=(3,), semantic_type="routing_index"),
+            Tensor(shape=(3, 8, 64)),
+        )
+    )
+    assert output.shape == (2, 8, 64)
+
+
+def test_batched_rank2_indices() -> None:
+    op = ScatterAdd(axis=1)
+    (output,) = op.infer_outputs(
+        (
+            Tensor(shape=(2, 8, 64)),
+            Tensor(shape=(2, 3), semantic_type="routing_index"),
+            Tensor(shape=(2, 3, 64)),
+        )
+    )
+    assert output.shape == (2, 8, 64)
 
 
 def test_compose_chain() -> None:

@@ -329,6 +329,17 @@ def compose_graph(
 ) -> Graph:
     """Build a graph by eagerly composing one module.
 
+    Canonical decoder roots:
+
+    - Language model (Embedding-first): ``Tensor(shape=(B, S),
+      semantic_type="token_ids")``. Legacy rank-1 ``(S,)`` remains valid
+      (implicit ``B=1``).
+    - Hidden-state entry (block tests): ``(B, S, d)`` or legacy ``(S, d)``.
+
+    ``seq_len`` on model constructors materializes the causal mask and RoPE
+    caches; it is not a batch argument. Parallel batch is the leading dim of
+    these input tensors.
+
     Args:
         module_or_factory: Root module or a factory that receives the active
             compose context and returns a module. Factories are required

@@ -92,3 +92,32 @@ class SGDPolicy(OptimizerPolicy):
 
 AdamW: AdamWPolicy = AdamWPolicy()
 SGD: SGDPolicy = SGDPolicy()
+
+
+def optimizer_update_flops(
+    policy: OptimizerPolicy,
+    parameter_bytes: int,
+    *,
+    bytes_per_element: int,
+    context: InvocationContext | None = None,
+) -> int:
+    """Elementwise optimizer update FLOPs from stored parameter bytes.
+
+    Mixed dtypes across parameters are not supported yet; callers should derive
+    ``bytes_per_element`` from the first parameter in the lowered graph.
+    """
+    if parameter_bytes == 0:
+        return 0
+    if bytes_per_element <= 0:
+        raise ValueError("bytes_per_element must be positive")
+    num_elements = parameter_bytes // bytes_per_element
+    if num_elements == 0:
+        return 0
+    if context is None:
+        from .lowering.context import reference_invocation
+
+        context = reference_invocation()
+    return policy.update_flops(
+        trainable_elements=num_elements,
+        context=context,
+    )

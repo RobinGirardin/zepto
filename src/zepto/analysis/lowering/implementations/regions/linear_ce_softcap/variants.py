@@ -16,6 +16,7 @@ from ....helpers import (
     RegionEstimationContext,
     ensure_lowered_edge,
     register_auxiliary_edge,
+    unpack_hidden,
 )
 from ....recipes.linear_ce_softcap import (
     DEFAULT_LINEAR_CE_SOFTCAP_RECIPE,
@@ -24,7 +25,11 @@ from ....recipes.linear_ce_softcap import (
 from ....region import Region
 from ....registry import RegionImplementationDescriptor
 from ....role import RoleContext
-from .rules import LINEAR_CE_SOFTCAP_PATTERN, LINEAR_CE_SOFTCAP_PROVENANCE
+from .rules import (
+    LINEAR_CE_SOFTCAP_OP_SEQUENCES,
+    LINEAR_CE_SOFTCAP_PATTERN,
+    LINEAR_CE_SOFTCAP_PROVENANCE,
+)
 
 HardwareGate = Literal["any", "cuda_only", "exclude_xpu_mps"]
 
@@ -65,12 +70,10 @@ class FusedLinearCESoftcapRegionImplementation:
     ) -> str | None:
         if region.anchor.component_type != "CappedFusedLinearCrossEntropy":
             return "not a CappedFusedLinearCrossEntropy module invocation"
-        if len(region.operation_ids) != len(LINEAR_CE_SOFTCAP_PATTERN.op_families):
-            return "linear_ce_softcap fusion expects 12 ops"
         families = tuple(
             graph.node(op_id).operation_family for op_id in region.operation_ids
         )
-        if families != LINEAR_CE_SOFTCAP_PATTERN.op_families:
+        if families not in LINEAR_CE_SOFTCAP_OP_SEQUENCES:
             return "unexpected operation sequence"
         if reason := _requires_fused(context):
             return reason
@@ -96,7 +99,8 @@ class FusedLinearCESoftcapRegionImplementation:
             )
 
         hidden_tensor = graph.edge(region.boundary_inputs[0]).tensor
-        s, d = hidden_tensor.shape
+        _batch, _seq_len, d = unpack_hidden(hidden_tensor)
+        s = _batch * _seq_len
         v = self.weight_vocab_size(region, graph)
         elem = _elem_bytes(hidden_tensor)
 

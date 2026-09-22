@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
 
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.blocks.attention_moe_decoder_block import AttentionMoEDecoderBlock
 from zepto.modules.attention.decoder_attention_context import DecoderAttentionContext
 from zepto.modules.layers.embedding import Embedding
@@ -71,6 +72,8 @@ class GptOss(Module):
         return cls(config=GPT_OSS_20B, seq_len=seq_len)
 
     def forward(self, token_ids: Tensor) -> Tensor:
+        """Compose on rank-1 ``(S,)`` or rank-2 ``(B, S)`` token ids."""
+        expect_token_ids_rank(token_ids)
         hidden = self.embedding(token_ids)
         for index, block in enumerate(self.blocks):
             ctx = self.attn_context.for_layer(index)

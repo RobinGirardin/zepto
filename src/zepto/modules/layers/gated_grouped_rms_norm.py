@@ -5,6 +5,7 @@ from __future__ import annotations
 from zepto.compose import Module, Parameter, Tensor
 from zepto.semantic import Add, Cast, Divide, Multiply, ReduceSum, Reshape, Sigmoid, SquareRoot
 
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.modules._internal._helpers import (
     RMSNORM_COMPUTE_DTYPE,
     activation_dtype,
@@ -55,10 +56,11 @@ class GatedGroupedRMSNorm(Module):
         silu_gate = Multiply()(gate_fp32, sig)  # type: ignore[call-arg]
         gated = Multiply()(value_fp32, silu_gate)  # type: ignore[call-arg]
 
-        seq_len = value.shape[0] if len(value.shape) == 2 else value.shape[1]
-        grouped = Reshape(shape=(seq_len, self.num_groups, self.group_width))(
-            gated
-        )
+        batch, seq_len = batch_seq_dims(value)
+        token_count = batch * seq_len
+        grouped = Reshape(
+            shape=(token_count, self.num_groups, self.group_width)
+        )(gated)
         group_axis = 2
         squared = Multiply()(grouped, grouped)
         variance = Divide()(
@@ -67,7 +69,10 @@ class GatedGroupedRMSNorm(Module):
         )
         denom = SquareRoot()(Add()(variance, self._eps))
         normalized = Divide()(grouped, denom)
-        flat = Reshape(shape=(seq_len, self.hidden_size))(normalized)
+        if batch == 1:
+            flat = Reshape(shape=(seq_len, self.hidden_size))(normalized)
+        else:
+            flat = Reshape(shape=(batch, seq_len, self.hidden_size))(normalized)
         flat = Cast(to_dtype=restore_dtype)(flat)  # type: ignore[assignment]
         return scale_by_parameter(flat, self.weight)  # type: ignore[return-value]
 

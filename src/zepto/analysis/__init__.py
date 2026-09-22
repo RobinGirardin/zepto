@@ -43,10 +43,11 @@ from .horizon import (
     StepKind,
     decode_step,
     inputs_from_shape,
+    inputs_from_token_ids,
     optimizer_step,
     simulate_horizon,
 )
-from .optimizer import AdamW, OptimizerPolicy, SGD
+from .optimizer import AdamW, OptimizerPolicy, SGD, optimizer_update_flops
 from .runtime import (
     CudaCublasWorkspacePolicy,
     NullRuntimeOverheadPolicy,
@@ -88,6 +89,7 @@ __all__ = [
     "MemoryReport",
     "NullRuntimeOverheadPolicy",
     "OptimizerPolicy",
+    "optimizer_update_flops",
     "PrecisionPolicy",
     "RegionImplementationDescriptor",
     "RegionImplementationSelection",
@@ -108,5 +110,6 @@ __all__ = [
     "select_implementation",
     "select_region_implementation",
     "inputs_from_shape",
+    "inputs_from_token_ids",
     "simulate_horizon",
 ]

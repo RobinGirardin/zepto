@@ -9,7 +9,7 @@ from zepto.semantic import Add, Exp, GreaterThan, Minimum, Multiply, Subtract, W
 class XIELU(Module):
     """xIELU activation matching HuggingFace ``XIELUActivation`` eager Python path.
 
-    Piecewise over rank-2 ``(S, d_ff)``. Trainable ``alpha_p`` / ``alpha_n`` are
+    Piecewise over ``(S, d_ff)`` or batched ``(B, S, d_ff)``. Trainable ``alpha_p`` / ``alpha_n`` are
     registered as parameters; structural graph inputs ``effective_alpha_p`` and
     ``effective_alpha_n`` stand in for ``softplus(parameter)`` during composition
     (mirrors Atto folding softplus FLOPs into the leaf).
@@ -43,9 +43,9 @@ class XIELU(Module):
         self.alpha_n = Parameter(shape=(1,), semantic_type="weight")
 
     def forward(self, value: Tensor) -> Tensor:
-        if len(value.shape) != 2:
+        if len(value.shape) < 2:
             raise ValueError(
-                f"XIELU expects rank-2 input (S, d_ff), got {value.shape}"
+                f"XIELU expects rank ≥ 2 with last dim d_ff, got {value.shape}"
             )
 
         is_positive = GreaterThan()(value, self._zero)

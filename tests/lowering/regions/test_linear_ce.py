@@ -7,7 +7,7 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.linear_ce import DEFAULT_LINEAR_CE_RECIPE
 from zepto.compose import Tensor, compose_graph
-from modules.output.fused_linear_cross_entropy import FusedLinearCrossEntropy
+from zepto.modules.output.fused_linear_cross_entropy import FusedLinearCrossEntropy
 from zepto.semantic import ResourceEventKind
 
 _S, _D, _V = 4, 8, 16
@@ -105,3 +105,29 @@ def test_linear_ce_peak_logits_chunk_formula() -> None:
     peak = recipe.peak_logits_bytes(s, d, v, elem_bytes=2)
     assert peak == 2**30  # 1.0 GiB at Apertus-8B with C=16
     assert recipe.chunk_size(s, d, v) == 4096
+
+
+def test_linear_ce_batched_discovers_and_scales() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    batch = 2
+    graph = compose_graph(
+        lambda ctx: FusedLinearCrossEntropy(hidden_size=_D, vocab_size=_V),
+        (
+            Tensor(shape=(batch, _S, _D), requires_grad=True),
+            Tensor(shape=(batch, _S), semantic_type="labels", requires_grad=False),
+        ),
+    )
+    registry = LoweringRegistry()
+    register_defaults(registry)
+    regions = discover_regions(graph, _fused_context(), registry)
+    linear_ce = [r for r in regions if r.kind == "region/linear_ce"]
+    assert len(linear_ce) == 1
+    assert len(linear_ce[0].operation_ids) == 10
+    lowered = lower(graph, _fused_context())
+    assert len(lowered.nodes) == 1
+    assert len(lowered.fusion_map) == 10
+    single = lower(_compose_linear_ce(), _fused_context())
+    assert_flops_scales(
+        lowered.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )

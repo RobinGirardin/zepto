@@ -8,7 +8,7 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.analysis.lowering.recipes.depthwise_causal_conv1d import DepthwiseCausalConv1dRecipe
 from zepto.compose import Tensor, compose_graph
-from modules.mixers.depthwise_causal_conv1d import DepthwiseCausalConv1d
+from zepto.modules.mixers.depthwise_causal_conv1d import DepthwiseCausalConv1d
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 
@@ -128,3 +128,36 @@ def test_depthwise_causal_conv1d_bias_and_no_activation_recipe() -> None:
     )
     assert recipe.forward_flops_per_element() == 8
     assert recipe.backward_flops_per_element() == 14
+
+
+def test_depthwise_causal_conv1d_batched_prefill_flops_scale() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    batch, seq_len, channels = 2, 4, 8
+    single = lower(_prefill_graph(seq_len=seq_len, channels=channels), _fused_context())
+    batched = lower(
+        compose_graph(
+            lambda ctx: DepthwiseCausalConv1d(
+                channels=channels, kernel_size=4, activation="silu"
+            ),
+            (Tensor(shape=(batch, seq_len, channels), requires_grad=True),),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )
+
+
+def test_depthwise_causal_conv1d_batched_decode() -> None:
+    batch, channels = 2, 8
+    graph = compose_graph(
+        lambda ctx: DepthwiseCausalConv1d(
+            channels=channels,
+            kernel_size=4,
+            activation="silu",
+        ),
+        (Tensor(shape=(batch, 1, channels), requires_grad=True),),
+    )
+    lowered = lower(graph, _fused_context())
+    assert lowered.nodes[0].forward_flops == 12 * batch * channels

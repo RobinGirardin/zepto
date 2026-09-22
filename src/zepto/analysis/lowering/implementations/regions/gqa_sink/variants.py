@@ -18,7 +18,11 @@ from ....helpers import (
 from ....recipes.gqa_sink import DEFAULT_GQA_SINK_RECIPE, GQASinkRecipe
 from ....region import Region
 from ....registry import RegionImplementationDescriptor
-from ..gqa.shared import attention_dims, resolve_window_size
+from ..gqa.shared import (
+    attention_dims,
+    flash_row_stats_shape,
+    resolve_window_size,
+)
 from ..gqa.variants import (
     HardwareGate,
     _check_hardware_gate,
@@ -100,6 +104,7 @@ class FusedGQASinkRegionImplementation:
             num_heads=num_heads,
             head_dim=head_dim,
             module_path=region.anchor.module_path,
+            batch=batch,
         )
         is_decode = kv_scenario is not None and kv_scenario.is_decode
         flop_seq_len = kv_scenario.cache_seq_len if is_decode else seq_len
@@ -127,7 +132,7 @@ class FusedGQASinkRegionImplementation:
             saved_stats = f"region:{region.id}:row_stats"
             _register_attention_aux(
                 aux_id=saved_stats,
-                shape=(num_heads, seq_len, 2),
+                shape=flash_row_stats_shape(batch, num_heads, seq_len),
                 semantic_type="flash_row_stats",
                 context=context,
                 lowered_edges=lowered_edges,

@@ -28,8 +28,8 @@ from zepto.analysis.lowering.recipes import (
     GatedDeltaNetRecipe,
 )
 from zepto.compose import Tensor, compose_graph
-from modules.mixers.gated_delta_net import GatedDeltaNet
-from modules.mixers.mixer_config import GatedDeltaNetConfig
+from zepto.modules.mixers.gated_delta_net import GatedDeltaNet
+from zepto.modules.mixers.mixer_config import GatedDeltaNetConfig
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 
@@ -255,3 +255,21 @@ def test_gated_delta_net_horizon_still_runs() -> None:
 
     report = estimate_horizon(spec, module_fn, inputs_fn, ctx)
     assert len(report.per_step) == 5
+
+
+def test_gated_delta_net_batched_flops_scale() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    cfg = _mini_cfg()
+    batch, seq_len = 2, 4
+    single = lower(_gdn_graph(seq_len=seq_len, cfg=cfg), _fused_context())
+    batched = lower(
+        compose_graph(
+            lambda _ctx: GatedDeltaNet(cfg),
+            (Tensor(shape=(batch, seq_len, cfg.hidden_size), requires_grad=True),),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import estimate, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.vision.vision_presets import MuseGlimmerVisionTower
+from zepto.modules.vision.vision_presets import MuseGlimmerVisionTower
 
 
 def test_muse_vision_estimate_families() -> None:

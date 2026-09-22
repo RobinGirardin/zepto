@@ -61,3 +61,8 @@ than being embedded in operation declarations. The policy describes optimizer
 state tensors, their precision and persistence, and update-time resource
 behavior.
 
+Horizon FLOP accounting for optimizer steps uses ``OptimizerPolicy.flops_per_parameter``
+times trainable parameter element count rather than summing lowered model nodes.
+The optimizer timeline row carries no model compute nodes; update cost is attributed
+under ``optimizer/<policy name>`` in flop reports.
+

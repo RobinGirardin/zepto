@@ -7,7 +7,7 @@ from zepto.analysis.horizon.state import RecurrentScanState
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults
 from zepto.compose import Tensor, compose_graph
-from modules.mixers.selective_ssm_scan import SelectiveSSMScan
+from zepto.modules.mixers.selective_ssm_scan import SelectiveSSMScan
 from zepto.semantic import ResourceEventKind
 from zepto.semantic.metadata import DType
 
@@ -190,3 +190,34 @@ def test_mamba2_scan_prefill_rejects_decode_graph_on_ssd_variant() -> None:
     ctx = _fused_context(hardware="cuda")
     lowered = lower(graph, ctx)
     assert lowered.region_selections[0].chosen.id == "region/mamba2_scan/decode"
+
+
+def test_mamba2_scan_batched_flops_and_checkpoint_shape() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales, aux_tensor
+
+    batch, seq_len, h, p, n, g = 2, 4, 4, 8, 16, 2
+    single = lower(_scan_graph(seq_len=seq_len, num_heads=h, head_dim=p, state_size=n, num_groups=g), _fused_context())
+    batched = lower(
+        compose_graph(
+            lambda _ctx: SelectiveSSMScan(
+                num_heads=h, head_dim=p, state_size=n, num_groups=g
+            ),
+            (
+                Tensor(shape=(batch, seq_len, h, p), requires_grad=True),
+                Tensor(shape=(batch, seq_len, h), requires_grad=True),
+                Tensor(shape=(batch, seq_len, g, n), requires_grad=True),
+                Tensor(shape=(batch, seq_len, g, n), requires_grad=True),
+            ),
+        ),
+        _fused_context(),
+    )
+    assert_flops_scales(
+        batched.nodes[0].forward_flops, single.nodes[0].forward_flops, batch
+    )
+    assert aux_tensor(batched, batched.nodes[0], "state_checkpoint").shape == (
+        batch,
+        seq_len,
+        h,
+        p,
+        n,
+    )

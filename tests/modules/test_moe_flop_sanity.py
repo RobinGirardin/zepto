@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zepto.analysis import lower, reference_invocation
 from zepto.compose import Tensor, compose_graph
-from modules.moe.moe_presets import (
+from zepto.modules.moe.moe_presets import (
     gpt_oss_moe_block,
     laguna_sparse_moe_block,
     nemotron_moe_block,

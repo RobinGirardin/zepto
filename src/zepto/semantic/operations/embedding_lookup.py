@@ -11,7 +11,10 @@ GRAD_WEIGHT = "grad_weight"
 
 
 class EmbeddingLookup(Operation):
-    """Gather rows from ``weight`` ``(d, V)`` using ``token_ids`` ``(S,)`` → ``(S, d)``."""
+    """Gather rows from ``weight`` ``(d, V)`` using token indices.
+
+    Supports ``token_ids`` ``(S,)`` → ``(S, d)`` and batched ``(B, S)`` → ``(B, S, d)``.
+    """
 
     @property
     def family(self) -> str:
@@ -80,15 +83,20 @@ class EmbeddingLookup(Operation):
             raise ValueError(
                 f"embedding_lookup weight must be rank-2 (d, V), got {weight.shape}"
             )
-        if len(token_ids.shape) != 1:
-            raise ValueError(
-                f"embedding_lookup token_ids must be rank-1 (S,), got {token_ids.shape}"
-            )
         hidden_size, _vocab = weight.shape
-        seq_len = token_ids.shape[0]
+        if len(token_ids.shape) == 1:
+            out_shape = (token_ids.shape[0], hidden_size)
+        elif len(token_ids.shape) == 2:
+            batch, seq_len = token_ids.shape
+            out_shape = (batch, seq_len, hidden_size)
+        else:
+            raise ValueError(
+                "embedding_lookup token_ids must be rank-1 (S,) or rank-2 (B, S), "
+                f"got {token_ids.shape}"
+            )
         return (
             Tensor(
-                shape=(seq_len, hidden_size),
+                shape=out_shape,
                 dtype=weight.dtype,
                 semantic_type="tensor",
                 requires_grad=token_ids.requires_grad or weight.requires_grad,

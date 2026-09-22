@@ -16,6 +16,60 @@ def _normalize_axis(axis: int, rank: int) -> int:
     return resolved
 
 
+def _scatter_index_count(indices: Tensor, base: Tensor, axis: int, *, family: str) -> int:
+    """Number of indexed positions along ``axis`` (rank-1 or batched rank-2 indices)."""
+    if not indices.shape:
+        return 0
+    rank = len(indices.shape)
+    if rank == 1:
+        return indices.shape[0]
+    if rank == 2:
+        if len(base.shape) < 2:
+            raise ValueError(
+                f"{family} rank-2 indices (B, N) require input rank >= 2"
+            )
+        if axis == 0:
+            raise ValueError(
+                f"{family} rank-2 indices (B, N) cannot scatter along batch axis 0"
+            )
+        if indices.shape[0] != base.shape[0]:
+            raise ValueError(
+                f"{family} indices batch dim {indices.shape[0]} must match "
+                f"input batch dim {base.shape[0]}"
+            )
+        return indices.shape[1]
+    raise ValueError(
+        f"{family} indices must be rank-1 (N,) or rank-2 (B, N), got rank {rank}"
+    )
+
+
+def _validate_scatter_shapes(
+    base: Tensor,
+    indices: Tensor,
+    updates: Tensor,
+    axis: int,
+    *,
+    family: str,
+) -> None:
+    if not base.shape or not updates.shape:
+        raise ValueError(f"{family} requires ranked input and updates tensors")
+    if len(updates.shape) != len(base.shape):
+        raise ValueError(f"{family} updates rank must match input rank")
+    index_count = _scatter_index_count(indices, base, axis, family=family)
+    for dim, (u, b) in enumerate(zip(updates.shape, base.shape, strict=True)):
+        if dim == axis:
+            if indices.shape and u != index_count:
+                raise ValueError(
+                    f"{family} updates size on axis {axis} ({u}) must "
+                    f"match index count ({index_count})"
+                )
+        elif u != b:
+            raise ValueError(
+                f"{family} updates shape {updates.shape} incompatible with "
+                f"input shape {base.shape} on dim {dim}"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ScatterAdd(Operation):
     """Add ``updates`` into ``input`` at ``indices`` along ``axis``.
@@ -49,29 +103,10 @@ class ScatterAdd(Operation):
         parameters: tuple[Tensor, ...] = (),
     ) -> tuple[Tensor, ...]:
         base, indices, updates = inputs
-        if not base.shape or not updates.shape:
-            raise ValueError("scatter_add requires ranked input and updates tensors")
         axis = _normalize_axis(self.axis, len(base.shape))
-        if indices.shape and len(indices.shape) != 1:
-            raise ValueError(
-                "scatter_add indices must be rank-1 (v1 MoE contract)"
-            )
-        if len(updates.shape) != len(base.shape):
-            raise ValueError(
-                "scatter_add updates rank must match input rank"
-            )
-        for dim, (u, b) in enumerate(zip(updates.shape, base.shape)):
-            if dim == axis:
-                if indices.shape and u != indices.shape[0]:
-                    raise ValueError(
-                        f"scatter_add updates size on axis {axis} ({u}) must "
-                        f"match len(indices) ({indices.shape[0] if indices.shape else 0})"
-                    )
-            elif u != b:
-                raise ValueError(
-                    f"scatter_add updates shape {updates.shape} incompatible with "
-                    f"input shape {base.shape} on dim {dim}"
-                )
+        _validate_scatter_shapes(
+            base, indices, updates, axis, family="scatter_add"
+        )
         return (
             Tensor(
                 shape=base.shape,

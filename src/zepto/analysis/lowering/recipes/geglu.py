@@ -9,6 +9,7 @@ from dataclasses import dataclass
 class GeGLURecipe:
     """Fused GeGLU MLP stack costing for ``region/geglu/*``.
 
+    ``seq_len`` is the token count (``S`` or ``B·S``), not the sequence axis alone.
     Forward: 6*S*d*d_ff + forward_flops_per_element * S * d_ff
     Backward: 12*S*d*d_ff + backward_flops_per_element * S * d_ff if requires_grad else 0
     Paper-comparable: 6*S*d*d_ff / 12*S*d*d_ff (GEMM-only; Appendix E).

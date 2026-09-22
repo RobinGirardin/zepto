@@ -8,11 +8,14 @@ from zepto.analysis.reports.flops import FlopReport
 from zepto.analysis.reports.memory import MemoryBreakdown, MemoryReport
 
 from ..memory.simulator import ResourceEventSimulator
+from ..optimizer import AdamW, optimizer_update_flops
+from ..reports.attribution import AttributionSlice
 from ..reports.horizon import HorizonFlopReport, HorizonMemoryReport
+from ..resolved import ResolvedValue
 from ..runtime import runtime_workspace_bytes
-from .records import HorizonSimulation
+from .records import HorizonSimulation, InvocationRecord
 from .spec import StepKind
-from .state import snapshot_state_bytes, trainable_parameter_elements
+from .state import parameter_bytes, snapshot_state_bytes, trainable_parameter_elements
 from .training_boundary import training_boundary_cost
 
 
@@ -112,11 +115,10 @@ class HorizonFlopReducer:
     def reduce(self, sim: HorizonSimulation) -> HorizonFlopReport:
         from ..flops.account import account_flops
 
-        per_step = tuple(account_flops(record.lowered) for record in sim.timeline)
+        per_step = tuple(_flops_for_record(sim, record) for record in sim.timeline)
         total_forward = sum(report.forward_flops for report in per_step)
         total_backward = sum(report.backward_flops for report in per_step)
         total = sum(report.total_flops for report in per_step)
-        total += _optimizer_boundary_flops(sim)
         return HorizonFlopReport(
             total_forward_flops=total_forward,
             total_backward_flops=total_backward,
@@ -125,28 +127,68 @@ class HorizonFlopReducer:
         )
 
 
+def _bytes_per_element(lowered) -> int:
+    from ..lowered import LoweredGraph
+
+    if not isinstance(lowered, LoweredGraph):
+        raise TypeError("expected LoweredGraph")
+    if not lowered.parameters:
+        return 0
+    param = next(iter(lowered.parameters.values()))
+    accounting = lowered.context.accounting
+    total_bytes = accounting.bytes_for(
+        ResolvedValue(
+            tensor=param.tensor,
+            role=param.role,
+            dtype=param.tensor.dtype,
+        )
+    )
+    numel = 1
+    for dim in param.tensor.shape:
+        numel *= dim
+    if numel <= 0:
+        return 0
+    return total_bytes // numel
+
+
+def _flops_for_record(
+    sim: HorizonSimulation, record: InvocationRecord
+) -> FlopReport:
+    from ..flops.account import account_flops
+
+    if record.step.kind != StepKind.OPTIMIZER:
+        return account_flops(record.lowered)
+
+    policy = sim.spec.optimizer_policy or AdamW
+    param_bytes = parameter_bytes(record.lowered)
+    bpe = _bytes_per_element(record.lowered)
+    if bpe == 0:
+        update = 0
+    else:
+        update = optimizer_update_flops(
+            policy, param_bytes, bytes_per_element=bpe
+        )
+
+    return FlopReport(
+        forward_flops=0,
+        backward_flops=0,
+        total_flops=update,
+        by_implementation=(
+            AttributionSlice(
+                key=f"optimizer/{policy.name}",
+                forward_flops=0,
+                backward_flops=update,
+            ),
+        ),
+    )
+
+
 def account_horizon_memory(sim: HorizonSimulation) -> HorizonMemoryReport:
     return HorizonMemoryReducer().reduce(sim)
 
 
 def account_horizon_flops(sim: HorizonSimulation) -> HorizonFlopReport:
     return HorizonFlopReducer().reduce(sim)
-
-
-def _optimizer_boundary_flops(sim: HorizonSimulation) -> int:
-    """Sum optimizer update FLOPs once per backward when a policy is set."""
-    if sim.spec.optimizer_policy is None:
-        return 0
-    total = 0
-    for record in sim.timeline:
-        if record.step.kind != StepKind.BACKWARD:
-            continue
-        trainable = trainable_parameter_elements(record.lowered)
-        total += sim.spec.optimizer_policy.update_flops(
-            trainable_elements=trainable,
-            context=record.lowered.context,
-        )
-    return total
 
 
 def _merge_breakdowns(

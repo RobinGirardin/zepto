@@ -11,8 +11,8 @@ from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
 from zepto.analysis.lowering.implementations import register_defaults, register_identity_defaults
 from zepto.compose import Parameter, Tensor, compose_graph
 from zepto.graph import GraphBuilder, Provenance
-from modules.blocks.apertus_decoder_block import ApertusDecoderBlock
-from modules.layers.rms_norm import RMSNorm
+from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
+from zepto.modules.layers.rms_norm import RMSNorm
 from zepto.semantic import (
     Add,
     Cast,
@@ -273,6 +273,28 @@ def test_compose_rmsnorm_discovers_region() -> None:
     register_defaults(registry)
     regions = discover_regions(graph, reference_invocation(), registry)
     assert len([r for r in regions if r.kind == "region/rmsnorm"]) == 1
+
+
+def test_rmsnorm_batched_flops_scale() -> None:
+    from tests.lowering.regions._batch_helpers import assert_flops_scales
+
+    single = lower(
+        compose_graph(
+            lambda ctx: RMSNorm(8),
+            (Tensor(shape=(4, 8), requires_grad=True),),
+        ),
+        reference_invocation(),
+    )
+    batched = lower(
+        compose_graph(
+            lambda ctx: RMSNorm(8),
+            (Tensor(shape=(2, 4, 8), requires_grad=True),),
+        ),
+        reference_invocation(),
+    )
+    rms_single = [n for n in single.nodes if n.implementation.startswith("region/rmsnorm")][0]
+    rms_batched = [n for n in batched.nodes if n.implementation.startswith("region/rmsnorm")][0]
+    assert_flops_scales(rms_batched.forward_flops, rms_single.forward_flops, 2)
 
 
 def test_apertus_decoder_block_discovers_four_rmsnorm_regions() -> None:

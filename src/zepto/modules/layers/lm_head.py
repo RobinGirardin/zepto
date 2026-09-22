@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor
+from zepto.modules._internal._batch import expect_sequence_hidden_states
 from zepto.semantic import LinearMatMul
 
 
@@ -36,16 +37,7 @@ class LMHead(Module):
         self.weight = resolved
 
     def forward(self, hidden_states: Tensor) -> Tensor:
-        if len(hidden_states.shape) != 2:
-            raise ValueError(
-                f"LMHead expects rank-2 hidden states (S, d), "
-                f"got {hidden_states.shape}"
-            )
-        if hidden_states.shape[1] != self.hidden_size:
-            raise ValueError(
-                f"LMHead hidden dim mismatch: expected {self.hidden_size}, "
-                f"got {hidden_states.shape[1]}"
-            )
+        expect_sequence_hidden_states(hidden_states, self.hidden_size)
         return LinearMatMul()(
             hidden_states,
             parameters=(self.weight,),

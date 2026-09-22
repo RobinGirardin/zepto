@@ -9,6 +9,21 @@ from .helpers import allocate, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
 
 
+def _batched_attention_dims(shape: tuple[int, ...]) -> tuple[int, int, int]:
+    """Return ``(batch, heads, seq_len)`` for rank-3 or rank-4 attention scores."""
+    rank = len(shape)
+    if rank == 3:
+        heads, seq_len, _ = shape
+        return 1, heads, seq_len
+    if rank == 4:
+        batch, heads, seq_len, _ = shape
+        return batch, heads, seq_len
+    raise ValueError(
+        "attention_softmax_with_sink expects rank-3 (h, S, S) or rank-4 (B, h, S, S) "
+        f"scores, got shape {shape}"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class AttentionSoftmaxWithSink(Operation):
     """Stable softmax over attention scores with a learned sink per query head.
@@ -56,11 +71,7 @@ class AttentionSoftmaxWithSink(Operation):
         parameters: tuple[Tensor, ...] = (),
     ) -> tuple[Tensor, ...]:
         (scores,) = inputs
-        if len(scores.shape) != 3:
-            raise ValueError(
-                "attention_softmax_with_sink expects rank-3 scores (h, S, S), "
-                f"got shape {scores.shape}"
-            )
+        _batched_attention_dims(scores.shape)
         if len(parameters) != 1:
             raise ValueError("attention_softmax_with_sink requires a sink parameter")
         return (scores,)
@@ -80,14 +91,9 @@ class AttentionSoftmaxWithSink(Operation):
         output = context.tensor_for("output")
         if output is None:
             raise ValueError("Estimation context must provide an 'output' port")
-        rank = len(output.shape)
-        if rank != 3:
-            raise ValueError(
-                f"attention_softmax_with_sink output must be rank-3, got {rank}"
-            )
-        heads, seq_len, _ = output.shape
-        standard = 5 * heads * seq_len * seq_len
-        sink = heads * seq_len
+        batch, heads, seq_len = _batched_attention_dims(output.shape)
+        standard = 5 * batch * heads * seq_len * seq_len
+        sink = batch * heads * seq_len
         return standard + sink
 
     def backward_flops(self, context: EstimationContext) -> int:
@@ -98,16 +104,7 @@ class AttentionSoftmaxWithSink(Operation):
         output = context.tensor_for("output")
         if output is None:
             raise ValueError("Estimation context must provide an 'output' port")
-        rank = len(output.shape)
-        if rank == 3:
-            heads, seq_len, _ = output.shape
-            batch = 1
-        elif rank == 4:
-            batch, heads, seq_len, _ = output.shape
-        else:
-            raise ValueError(
-                f"attention_softmax_with_sink output must be rank-3 or rank-4, got {rank}"
-            )
+        batch, heads, seq_len = _batched_attention_dims(output.shape)
         scores = context.tensor_for("scores")
         requires_grad = scores.requires_grad if scores is not None else False
         bwd = MEGATRON_SOFTMAX_ONE_RECIPE.backward_flops(

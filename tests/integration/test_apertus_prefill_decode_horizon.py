@@ -9,7 +9,7 @@ from zepto.analysis import (
     reference_invocation,
 )
 from zepto.compose import Tensor, compose_graph
-from modules.blocks.apertus_decoder_block import ApertusDecoderBlock
+from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.semantic.metadata import DType
 
 _HIDDEN = 128
@@ -49,6 +49,16 @@ def _block_inputs(step, _ctx, _state):
     )
 
 
+def _block_inputs_batched(step, _ctx, _state):
+    B, S = step.batch, step.seq_len
+    return (
+        Tensor(shape=(B, S, _HIDDEN)),
+        Tensor(shape=(1, S, S)),
+        Tensor(shape=(S, _HEAD_DIM)),
+        Tensor(shape=(S, _HEAD_DIM)),
+    )
+
+
 def test_apertus_block_prefill_decode_horizon() -> None:
     ctx = _flash_ctx()
     spec = HorizonSpec.inference(
@@ -78,7 +88,7 @@ def test_apertus_block_prefill_decode_horizon() -> None:
 def test_gqa_decode_uses_paged_flops_from_kv_state() -> None:
     from zepto.analysis import lower
     from zepto.analysis.horizon.state import KVCacheState
-    from modules.attention.gqa import GroupedQueryAttention
+    from zepto.modules.attention.gqa import GroupedQueryAttention
 
     graph = compose_graph(
         lambda _ctx: GroupedQueryAttention(
@@ -106,5 +116,78 @@ def test_gqa_decode_uses_paged_flops_from_kv_state() -> None:
     gqa = next(n for n in lowered.nodes if n.implementation.startswith("region/gqa"))
 
     expected_paged = 4 * _NUM_HEADS * cache_len * _HEAD_DIM + 5 * _NUM_HEADS * cache_len
+    assert gqa.forward_flops == expected_paged
+    assert gqa.backward_flops == 0
+
+
+def test_apertus_block_prefill_decode_horizon_batched() -> None:
+    B = 2
+    prefill = 64
+    decode_steps = 4
+    ctx = _flash_ctx()
+    spec = HorizonSpec.inference(
+        prefill=prefill,
+        decode_steps=decode_steps,
+        batch=B,
+        kv=KVConfig(
+            num_layers=1,
+            num_kv_heads=_NUM_KV,
+            head_dim=_HEAD_DIM,
+            dtype=DType.FP16,
+        ),
+    )
+
+    report, sim = estimate_horizon(
+        spec, _block_module, _block_inputs_batched, ctx, return_simulation=True
+    )
+
+    itemsize = DType.FP16.itemsize or 0
+    prefill_kv = sim.timeline[0].state_after.kv_caches[0]
+    assert prefill_kv.batch == B
+    assert prefill_kv.seq_len == prefill
+    assert prefill_kv.bytes == (
+        2 * B * 1 * _NUM_KV * prefill * _HEAD_DIM * itemsize
+    )
+
+    final_kv = report.state_final.kv_caches[0]
+    assert final_kv.batch == B
+    assert final_kv.seq_len == prefill + decode_steps
+    assert report.peak_vram > 0
+
+
+def test_gqa_decode_paged_flops_scale_with_query_batch() -> None:
+    from zepto.analysis import lower
+    from zepto.analysis.horizon.state import KVCacheState
+    from zepto.modules.attention.gqa import GroupedQueryAttention
+
+    B = 2
+    graph = compose_graph(
+        lambda _ctx: GroupedQueryAttention(
+            _HIDDEN, _NUM_HEADS, _NUM_KV, head_dim=_HEAD_DIM
+        ),
+        (
+            Tensor(shape=(B, 1, _HIDDEN), requires_grad=False),
+            Tensor(shape=(1, 1, 1), requires_grad=False),
+        ),
+    )
+    cache_len = 128
+    kv = KVCacheState(
+        num_layers=1,
+        num_kv_heads=_NUM_KV,
+        head_dim=_HEAD_DIM,
+        seq_len=cache_len,
+        dtype=DType.FP16,
+        batch=B,
+    )
+    ctx = reference_invocation(
+        requested_capabilities=frozenset({"fused", "flash"}),
+        default_dtype=DType.FP16,
+        state=(("kv_cache:0", kv),),
+    )
+    lowered = lower(graph, ctx)
+    gqa = next(n for n in lowered.nodes if n.implementation.startswith("region/gqa"))
+
+    # FLOPs use attention_dims(output) batch, not KVCacheState.batch alone.
+    expected_paged = B * (4 * _NUM_HEADS * cache_len * _HEAD_DIM + 5 * _NUM_HEADS * cache_len)
     assert gqa.forward_flops == expected_paged
     assert gqa.backward_flops == 0

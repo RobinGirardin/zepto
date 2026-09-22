@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from modules.position.learned_position_embedding_2d import LearnedPositionEmbedding2D
+from zepto.modules.position.learned_position_embedding_2d import LearnedPositionEmbedding2D
 from zepto.semantic import Add
 
 

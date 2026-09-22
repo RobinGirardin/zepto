@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from modules.attention.attention_config import granite_attention_layer
-from modules.attention.materialized_causal_mask import MaterializedCausalMask
-from modules.position.rope_apply import RoPEApply
-from modules.position.rope_materialize import RoPEMaterialize
-from modules.blocks.sandwich_norm_swiglu_decoder_block import (
+from zepto.modules.attention.attention_config import granite_attention_layer
+from zepto.modules.attention.materialized_causal_mask import MaterializedCausalMask
+from zepto.modules.position.rope_apply import RoPEApply
+from zepto.modules.position.rope_materialize import RoPEMaterialize
+from zepto.modules.blocks.sandwich_norm_swiglu_decoder_block import (
     SandwichNormSwiGLUDecoderBlock,
 )
 

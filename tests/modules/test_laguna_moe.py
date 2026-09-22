@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from zepto.compose import Tensor, compose_graph
-from modules.moe.laguna.laguna_sparse_moe_block import LagunaSparseMoEBlock
-from modules.moe.moe_routing import UniformRoutingProfile
+from zepto.modules.moe.laguna.laguna_sparse_moe_block import LagunaSparseMoEBlock
+from zepto.modules.moe.moe_routing import UniformRoutingProfile
 
 
 def _families(graph) -> tuple[str, ...]:

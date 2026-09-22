@@ -24,9 +24,11 @@ class MtpMlpBlock(Module):
         self.down_proj = Linear(intermediate_size, hidden_size)
 
     def forward(self, u: Tensor) -> Tensor:
-        if len(u.shape) != 2:
-            raise ValueError(f"MtpMlpBlock expects rank-2 input (S, d), got {u.shape}")
-        if u.shape[1] != self.hidden_size:
+        if len(u.shape) not in (2, 3):
+            raise ValueError(
+                f"MtpMlpBlock expects rank-2 (S, d) or rank-3 (B, S, d), got {u.shape}"
+            )
+        if u.shape[-1] != self.hidden_size:
             raise ValueError(
                 f"hidden dim mismatch: expected {self.hidden_size}, got {u.shape[1]}"
             )

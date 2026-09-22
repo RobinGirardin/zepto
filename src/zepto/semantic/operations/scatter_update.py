@@ -7,7 +7,7 @@ from ..ports import Port
 from .base import Operation
 from .helpers import allocate, numel
 from .records import BackwardSpec, EstimationContext, OperationResult, ResourceEvent
-from .scatter_add import _normalize_axis
+from .scatter_add import _normalize_axis, _validate_scatter_shapes
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,25 +42,10 @@ class ScatterUpdate(Operation):
         parameters: tuple[Tensor, ...] = (),
     ) -> tuple[Tensor, ...]:
         base, indices, updates = inputs
-        if not base.shape or not updates.shape:
-            raise ValueError("scatter_update requires ranked input and updates tensors")
         axis = _normalize_axis(self.axis, len(base.shape))
-        if indices.shape and len(indices.shape) != 1:
-            raise ValueError("scatter_update indices must be rank-1")
-        if len(updates.shape) != len(base.shape):
-            raise ValueError("scatter_update updates rank must match input rank")
-        for dim, (u, b) in enumerate(zip(updates.shape, base.shape)):
-            if dim == axis:
-                if indices.shape and u != indices.shape[0]:
-                    raise ValueError(
-                        f"scatter_update updates size on axis {axis} ({u}) must "
-                        f"match len(indices) ({indices.shape[0] if indices.shape else 0})"
-                    )
-            elif u != b:
-                raise ValueError(
-                    f"scatter_update updates shape {updates.shape} incompatible with "
-                    f"input shape {base.shape} on dim {dim}"
-                )
+        _validate_scatter_shapes(
+            base, indices, updates, axis, family="scatter_update"
+        )
         return (
             Tensor(
                 shape=base.shape,
@@ -80,10 +65,7 @@ class ScatterUpdate(Operation):
         return ()
 
     def forward_flops(self, context: EstimationContext) -> int:
-        updates = context.tensor_for("updates")
-        if updates is None:
-            raise ValueError("Estimation context must provide an 'updates' port")
-        return numel(updates)
+        return 0
 
     def backward_flops(self, context: EstimationContext) -> int:
         return 0

@@ -29,6 +29,12 @@ def account_flops(
 
 
 def _account_single_flops(lowered: LoweredGraph) -> FlopReport:
+    if not lowered.nodes:
+        return FlopReport(
+            forward_flops=0,
+            backward_flops=0,
+            total_flops=0,
+        )
     forward = sum(node.forward_flops for node in lowered.nodes)
     backward = sum(node.backward_flops for node in lowered.nodes)
     total = _select_total(forward, backward, lowered.context.phase)

@@ -10,6 +10,7 @@ from zepto.graph.edge import Edge
 from zepto.graph.graph import Graph
 from zepto.graph.ids import EdgeId
 from zepto.graph.node import Node
+from zepto.modules._internal._batch import batch_seq_dims
 from zepto.semantic.metadata import TensorRole
 from zepto.semantic.operations.records import EstimationContext, ResourceEvent, ResourceEventKind
 from zepto.semantic.ports import ValueKind
@@ -350,6 +351,41 @@ def build_region_estimation_context(
     )
 
 
+def unpack_hidden(hidden: Tensor) -> tuple[int, int, int]:
+    """Return ``(B, S, d)`` for rank-2 ``(S, d)`` or rank-3 ``(B, S, d)``."""
+    rank = len(hidden.shape)
+    if rank == 2:
+        seq_len, hidden_size = hidden.shape
+        return 1, int(seq_len), int(hidden_size)
+    if rank == 3:
+        batch, seq_len, hidden_size = hidden.shape
+        return int(batch), int(seq_len), int(hidden_size)
+    raise ValueError(
+        f"expected rank-2 (S, d) or rank-3 (B, S, d), got {hidden.shape}"
+    )
+
+
+def token_count(hidden: Tensor) -> int:
+    """Return ``B·S`` for rank-2 ``(S, …)`` or rank-3 ``(B, S, …)``."""
+    batch, seq_len = batch_seq_dims(hidden)
+    return batch * seq_len
+
+
+def mlp_aux_shape(hidden: Tensor, *trailing: int) -> tuple[int, ...]:
+    """MLP aux layout: ``(S, …)`` or ``(B, S, …)`` matching the boundary rank."""
+    batch, seq_len, _hidden = unpack_hidden(hidden)
+    if len(hidden.shape) == 2:
+        return (seq_len, *trailing)
+    return (batch, seq_len, *trailing)
+
+
+def with_batch_prefix(batch: int, shape: tuple[int, ...]) -> tuple[int, ...]:
+    """Keep the legacy unbatched layout when ``batch == 1``."""
+    if batch > 1:
+        return (batch, *shape)
+    return shape
+
+
 @dataclass(frozen=True, slots=True)
 class KVScenario:
     """Resolved KV cache geometry for state-aware GQA lowering."""
@@ -360,6 +396,7 @@ class KVScenario:
     dtype_itemsize: int
     is_decode: bool
     layer_index: int | None = None
+    batch: int = 1
 
 
 def kv_cache_from_state(
@@ -402,6 +439,7 @@ def resolve_kv_scenario(
     num_heads: int,
     head_dim: int,
     module_path: tuple[str, ...],
+    batch: int = 1,
 ) -> KVScenario | None:
     """Resolve KV geometry when horizon state is present on the invocation."""
     from zepto.analysis.horizon.state import KVCacheState as KVState
@@ -417,11 +455,13 @@ def resolve_kv_scenario(
         dtype_itemsize = kv_state.dtype.itemsize or 0
         cache_seq_len = kv_state.seq_len
         is_decode = query_seq_len == 1 and cache_seq_len > query_seq_len
+        resolved_batch = kv_state.batch
     else:
         num_kv_heads = template.num_kv_heads  # type: ignore[union-attr]
         dtype_itemsize = template.dtype.itemsize or 0  # type: ignore[union-attr]
         cache_seq_len = query_seq_len
         is_decode = False
+        resolved_batch = batch
 
     return KVScenario(
         num_kv_heads=num_kv_heads,
@@ -430,6 +470,7 @@ def resolve_kv_scenario(
         dtype_itemsize=dtype_itemsize,
         is_decode=is_decode,
         layer_index=layer_index_from_module_path(module_path),
+        batch=resolved_batch,
     )
 
 
@@ -437,6 +478,7 @@ def layer_kv_bytes(scenario: KVScenario, *, seq_len: int) -> int:
     """Bytes for one layer's K+V cache at the given sequence length."""
     return (
         2
+        * scenario.batch
         * scenario.num_kv_heads
         * seq_len
         * scenario.head_dim
@@ -475,7 +517,9 @@ def register_kv_cache_aux(
     lowered_edges: dict[str, object],
 ) -> None:
     """Register a lowering-local KV cache auxiliary edge."""
-    shape = (scenario.num_kv_heads, seq_len, scenario.head_dim)
+    shape = with_batch_prefix(
+        scenario.batch, (scenario.num_kv_heads, seq_len, scenario.head_dim)
+    )
     register_auxiliary_edge(
         aux_id,
         Tensor(
@@ -500,6 +544,7 @@ class ConvScenario:
     channels: int
     kernel_size: int
     dtype_itemsize: int
+    batch: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -512,6 +557,7 @@ class RecurrentScenario:
     head_dim: int
     state_dim: int
     dtype_itemsize: int
+    batch: int = 1
 
 
 def _conv_state_from_context(
@@ -551,6 +597,8 @@ def _scan_state_from_context(
 def resolve_conv_scenario(
     context: InvocationContext,
     module_path: tuple[str, ...],
+    *,
+    batch: int = 1,
 ) -> ConvScenario | None:
     """Resolve conv buffer geometry when horizon state is present."""
     from zepto.analysis.horizon.state import Conv1DState, _ConvTemplate
@@ -572,6 +620,7 @@ def resolve_conv_scenario(
             channels=conv_state.channels,
             kernel_size=conv_state.kernel_size,
             dtype_itemsize=conv_state.dtype.itemsize or 0,
+            batch=conv_state.batch,
         )
     assert template is not None
     return ConvScenario(
@@ -579,12 +628,15 @@ def resolve_conv_scenario(
         channels=template.channels,
         kernel_size=template.kernel_size,
         dtype_itemsize=template.dtype.itemsize or 0,
+        batch=batch,
     )
 
 
 def resolve_recurrent_scenario(
     context: InvocationContext,
     module_path: tuple[str, ...],
+    *,
+    batch: int = 1,
 ) -> RecurrentScenario | None:
     """Resolve recurrent scan geometry when horizon state is present."""
     from zepto.analysis.horizon.state import RecurrentScanState, _RecurrentTemplate
@@ -608,6 +660,7 @@ def resolve_recurrent_scenario(
             head_dim=scan_state.head_dim,
             state_dim=scan_state.state_dim,
             dtype_itemsize=scan_state.dtype.itemsize or 0,
+            batch=scan_state.batch,
         )
     assert template is not None
     for spec in template.layers:
@@ -619,6 +672,7 @@ def resolve_recurrent_scenario(
                 head_dim=spec[3],
                 state_dim=spec[4],
                 dtype_itemsize=template.dtype.itemsize or 0,
+                batch=batch,
             )
     return None
 
@@ -630,7 +684,12 @@ def conv_state_port_events(
 ) -> tuple[StatePortEvent, ResourceEvent, ResourceEvent, str]:
     """Build state-port and resource events for one layer's conv buffer."""
     aux_id = f"region:{region_id}:conv_state"
-    byte_count = scenario.channels * scenario.kernel_size * scenario.dtype_itemsize
+    byte_count = (
+        scenario.batch
+        * scenario.channels
+        * scenario.kernel_size
+        * scenario.dtype_itemsize
+    )
     layer = scenario.layer_index
     port_name = f"conv_state:{layer}" if layer is not None else aux_id
     state_event = StatePortEvent(
@@ -652,7 +711,8 @@ def recurrent_state_port_events(
     """Build state-port and resource events for one layer's scan state."""
     aux_id = f"region:{region_id}:scan_state"
     byte_count = (
-        scenario.num_heads
+        scenario.batch
+        * scenario.num_heads
         * scenario.head_dim
         * scenario.state_dim
         * scenario.dtype_itemsize

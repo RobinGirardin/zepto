@@ -19,6 +19,7 @@ from ....helpers import (
     recurrent_state_port_events,
     register_auxiliary_edge,
     resolve_recurrent_scenario,
+    with_batch_prefix,
 )
 from ....recipes.gated_delta_scan import (
     DECODE_GATED_DELTA_SCAN_RECIPE,
@@ -38,6 +39,7 @@ _ALLOWED_OP_FAMILIES = frozenset(
         "concat",
         "split",
         "reshape",
+        "transpose",
         "exp",
         "multiply",
         "matmul",
@@ -75,9 +77,28 @@ def _input_tensors(
 
 def _resolve_scan_geometry(
     input_tensors: Mapping[str, Tensor],
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
+    rank4 = [t for t in input_tensors.values() if len(t.shape) == 4]
     rank3 = [t for t in input_tensors.values() if len(t.shape) == 3]
     rank2 = [t for t in input_tensors.values() if len(t.shape) == 2]
+
+    if rank4:
+        rank3_prefix = [t for t in rank3]
+        if rank3_prefix:
+            beta = max(rank3_prefix, key=lambda t: t.shape[1] * t.shape[-1])
+            batch, seq_len, num_heads = (int(dim) for dim in beta.shape)
+            qkv = [
+                t for t in rank4 if t.shape[:3] == (batch, seq_len, num_heads)
+            ]
+            if qkv:
+                key_dim = int(qkv[0].shape[3])
+                value_dim = max(int(t.shape[3]) for t in qkv)
+                return batch, seq_len, num_heads, key_dim, value_dim
+        query = max(rank4, key=lambda t: t.shape[1])
+        batch, seq_len, num_heads, key_dim = (int(dim) for dim in query.shape)
+        value_dim = max(int(t.shape[-1]) for t in rank4)
+        return batch, seq_len, num_heads, key_dim, value_dim
+
     if not rank3:
         raise ValueError("gated delta scan region requires rank-3 Q/K/V tensors")
     counts: Counter[int] = Counter()
@@ -87,17 +108,17 @@ def _resolve_scan_geometry(
         counts[tensor.shape[0]] += 1
     seq_len = max(counts, key=lambda dim: counts[dim])
     seq_rank3 = [t for t in rank3 if t.shape[0] == seq_len]
-    num_heads = seq_rank3[0].shape[1]
-    key_dim = seq_rank3[0].shape[2]
-    value_dim = max(t.shape[2] for t in seq_rank3)
-    return seq_len, num_heads, key_dim, value_dim
+    num_heads = int(seq_rank3[0].shape[1])
+    key_dim = int(seq_rank3[0].shape[2])
+    value_dim = max(int(t.shape[2]) for t in seq_rank3)
+    return 1, seq_len, num_heads, key_dim, value_dim
 
 
 def _scan_dims(
     estimation: RegionEstimationContext,
     graph: Graph,
     region: Region,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     return _resolve_scan_geometry(
         _input_tensors(estimation, graph, region)
     )
@@ -116,7 +137,7 @@ def _is_decode_graph(
     graph: Graph,
 ) -> bool:
     try:
-        seq_len, _, _, _ = _scan_dims(estimation, graph, region)
+        _batch, seq_len, _, _, _ = _scan_dims(estimation, graph, region)
     except ValueError:
         return False
     if seq_len != 1:
@@ -206,9 +227,10 @@ class FusedGatedDeltaScanRegionImplementation:
                 edge_id, graph, context, lowered_edges, edge_map
             )
 
-        seq_len, num_heads, key_dim, value_dim = _scan_dims(
+        batch, seq_len, num_heads, key_dim, value_dim = _scan_dims(
             estimation, graph, region
         )
+        num_tokens = batch * seq_len
         value_requires_grad = any(
             graph.edge(edge_id).tensor.requires_grad
             for edge_id in region.boundary_inputs
@@ -261,7 +283,9 @@ class FusedGatedDeltaScanRegionImplementation:
         ):
             checkpoint_id = f"region:{region.id}:state_checkpoint"
             checkpoint_tensor = Tensor(
-                shape=(seq_len, num_heads, key_dim, value_dim),
+                shape=with_batch_prefix(
+                    batch, (seq_len, num_heads, key_dim, value_dim)
+                ),
                 semantic_type="gated_delta_state_checkpoint",
                 dtype=DType.FP32,
                 requires_grad=False,
@@ -296,7 +320,7 @@ class FusedGatedDeltaScanRegionImplementation:
 
         if decode:
             scenario = resolve_recurrent_scenario(
-                context, region.anchor.module_path
+                context, region.anchor.module_path, batch=batch
             )
             if scenario is not None and scenario.kind == "gated_delta":
                 state_event, allocate, persist, aux_id = recurrent_state_port_events(
@@ -304,10 +328,13 @@ class FusedGatedDeltaScanRegionImplementation:
                     scenario=scenario,
                 )
                 port_tensor = Tensor(
-                    shape=(
-                        scenario.num_heads,
-                        scenario.head_dim,
-                        scenario.state_dim,
+                    shape=with_batch_prefix(
+                        scenario.batch,
+                        (
+                            scenario.num_heads,
+                            scenario.head_dim,
+                            scenario.state_dim,
+                        ),
                     ),
                     semantic_type="scan_state",
                     dtype=DType.FP32,
@@ -328,13 +355,13 @@ class FusedGatedDeltaScanRegionImplementation:
                 auxiliary_edges.append(aux_id)
 
         forward_flops = self.recipe.forward_flops(
-            seq_len=seq_len,
+            seq_len=num_tokens,
             num_heads=num_heads,
             key_dim=key_dim,
             value_dim=value_dim,
         )
         backward_flops = self.recipe.backward_flops(
-            seq_len=seq_len,
+            seq_len=num_tokens,
             num_heads=num_heads,
             key_dim=key_dim,
             value_dim=value_dim,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zepto.compose import Module, Tensor
+from zepto.modules._internal._batch import expect_token_ids_rank
 from zepto.modules.blocks.apertus_decoder_block import ApertusDecoderBlock
 from zepto.modules.layers.embedding import Embedding
 from zepto.modules.layers.lm_head import LMHead
@@ -46,7 +47,12 @@ APERTUS_70B = ApertusConfig(
 
 
 class Apertus(Module):
-    """Full Apertus decoder stack: embed → L blocks → final RMSNorm → LMHead."""
+    """Full Apertus decoder stack: embed → L blocks → final RMSNorm → LMHead.
+
+    Architecture-only constructor: ``seq_len`` sizes the causal mask and
+    RoPE caches. Parallel batch is never a constructor argument; pass
+    ``(B, S)`` (or legacy ``(S,)``) token ids to :meth:`forward`.
+    """
 
     module_kind = "Apertus"
 
@@ -125,6 +131,7 @@ class Apertus(Module):
 
     def forward_hidden(self, token_ids: Tensor) -> Tensor:
         """Backbone hidden states before LM head (embed → blocks → final_norm)."""
+        expect_token_ids_rank(token_ids)
         hidden_states = self.embedding(token_ids)
         causal_mask = self.causal_mask()
         rope_cos, rope_sin = self.rope_materialize()
@@ -140,4 +147,5 @@ class Apertus(Module):
         return self.final_norm(hidden_states)  # type: ignore[return-value]
 
     def forward(self, token_ids: Tensor) -> Tensor:
+        """Run the decoder on ``(S,)`` or batched ``(B, S)`` token ids."""
         return self.lm_head(self.forward_hidden(token_ids))  # type: ignore[return-value]

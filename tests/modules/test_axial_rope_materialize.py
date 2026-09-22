@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Tensor, compose_graph
-from modules.position.axial_rope_materialize import AxialRoPEMaterialize
-from modules.position.rope_apply import RoPEApply
+from zepto.modules.position.axial_rope_materialize import AxialRoPEMaterialize
+from zepto.modules.position.rope_apply import RoPEApply
 
 
 def test_axial_cache_shapes() -> None:
