@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from zepto.compose import Module, Parameter, Tensor
+from zepto.modules._internal._batch import (
+    batch_seq_dims,
+    expect_labels_for_hidden,
+    expect_sequence_hidden_states,
+)
 from zepto.semantic import (
     Divide,
     Exp,
@@ -11,6 +16,7 @@ from zepto.semantic import (
     Log,
     Multiply,
     ReduceSum,
+    Reshape,
 )
 
 
@@ -51,26 +57,20 @@ class FusedLinearCrossEntropy(Module):
         )
 
     def forward(self, hidden_states: Tensor, labels: Tensor) -> Tensor:
-        if len(hidden_states.shape) != 2:
-            raise ValueError(
-                f"expected rank-2 hidden states (S, d), got {hidden_states.shape}"
-            )
-        if hidden_states.shape[1] != self.hidden_size:
-            raise ValueError(
-                f"hidden dim mismatch: expected {self.hidden_size}, "
-                f"got {hidden_states.shape[1]}"
-            )
-        if len(labels.shape) != 1:
-            raise ValueError(
-                f"expected rank-1 labels (S,), got {labels.shape}"
-            )
-        if labels.shape[0] != hidden_states.shape[0]:
-            raise ValueError("labels and hidden states batch dim must match")
+        expect_sequence_hidden_states(hidden_states, self.hidden_size)
+        expect_labels_for_hidden(labels, hidden_states)
 
         logits = LinearMatMul()(
             hidden_states,
             parameters=(self.weight,),
         )
+        rank = len(hidden_states.shape)
+        if rank == 3:
+            batch, seq_len = batch_seq_dims(hidden_states)
+            token_count = batch * seq_len
+            logits = Reshape(shape=(token_count, self.vocab_size))(logits)
+            labels = Reshape(shape=(token_count,))(labels)
+
         exp_logits = Exp()(logits)
         sum_exp = ReduceSum(axis=-1, keepdim=True)(exp_logits)
         probs = Divide()(exp_logits, sum_exp)

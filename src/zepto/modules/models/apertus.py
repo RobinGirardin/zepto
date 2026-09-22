@@ -119,6 +119,7 @@ class Apertus(Module):
         )
 
     def forward(self, token_ids: Tensor) -> Tensor:
+        """Run the decoder on ``(S,)`` or batched ``(B, S)`` token ids."""
         hidden_states = self.embedding(token_ids)
         causal_mask = self.causal_mask()
         rope_cos, rope_sin = self.rope_materialize()

@@ -17,5 +17,5 @@ class QKNormRMSNorm(Module):
         self.k_norm = RMSNorm(head_dim, eps=eps)
 
     def forward(self, query: Tensor, key: Tensor) -> tuple[Tensor, Tensor]:
-        """Normalize headed Q/K tensors of shape ``(h, S, d_h)``."""
+        """Normalize headed Q/K tensors ``(h, S, d_h)`` or ``(B, h, S, d_h)``."""
         return self.q_norm(query), self.k_norm(key)  # type: ignore[return-value]
