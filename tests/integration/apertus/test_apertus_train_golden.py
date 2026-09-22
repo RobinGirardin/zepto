@@ -18,7 +18,14 @@ from zepto.analysis.horizon.state import trainable_parameter_elements
 from zepto.compose import Tensor, compose_graph
 from zepto.modules import Apertus, ApertusForCausalLM
 
-from tests.integration.apertus.shared import GOLDEN, golden_apertus_ctx, merge_train_lowered
+import pytest
+
+from tests.integration.apertus.shared import (
+    GOLDEN,
+    golden_apertus_ctx,
+    golden_apertus_hf_flop_ctx,
+    merge_train_lowered,
+)
 
 _S = GOLDEN["seq_len"]
 _D = GOLDEN["hidden_size"]
@@ -161,3 +168,86 @@ def test_apertus_inference_prefill_unchanged() -> None:
         n for n in lowered.nodes if n.implementation.startswith("region/gqa")
     ]
     assert len(gqa_regions) == GOLDEN["num_layers"]
+
+
+def _rel_err(measured: float, reference: float) -> float:
+    if reference == 0:
+        return float("inf") if measured != 0 else 0.0
+    return abs(measured - reference) / reference
+
+
+@pytest.mark.skipif(
+    __import__("torch").cuda.is_available() is False,
+    reason="CUDA required",
+)
+def test_apertus_train_flop_no_opt_cuda_parity() -> None:
+    import torch
+    from torch.utils.flop_counter import FlopCounterMode
+
+    from zepto.empirical.measure_torch import measure_train_step_torch
+    from zepto.empirical.models.apertus import ApertusFamily
+
+    ctx = golden_apertus_hf_flop_ctx()
+    spec_no_opt = HorizonSpec.training(
+        seq_len=_S, micro_batches=1, batch=1, optimizer=None
+    )
+    zepto_no_opt = int(
+        estimate_horizon(
+            spec_no_opt, _training_module, _training_inputs, ctx
+        ).total_flops
+    )
+
+    family = ApertusFamily()
+    device = torch.device("cuda")
+    model = family.build_hf_model(
+        GOLDEN,
+        seq_len=_S,
+        precision="fp32",
+        device=device,
+        twin_mode="apertus_parity",
+    )
+    input_ids = torch.arange(_S, device=device, dtype=torch.long)
+    labels = input_ids.clone()
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    measured = measure_train_step_torch(
+        family, model, input_ids, labels, opt
+    ).target_flop_no_opt
+
+    assert _rel_err(measured, zepto_no_opt) < 0.10
+
+
+@pytest.mark.skipif(
+    __import__("torch").cuda.is_available() is False,
+    reason="CUDA required",
+)
+def test_apertus_train_full_flop_cuda_parity() -> None:
+    from zepto.empirical.measure_torch import measure_train_step_torch
+    from zepto.empirical.models.apertus import ApertusFamily
+
+    import torch
+
+    ctx = golden_apertus_hf_flop_ctx()
+    spec = HorizonSpec.training(
+        seq_len=_S, micro_batches=1, batch=1, optimizer=AdamW
+    )
+    zepto_full = int(
+        estimate_horizon(spec, _training_module, _training_inputs, ctx).total_flops
+    )
+
+    family = ApertusFamily()
+    device = torch.device("cuda")
+    model = family.build_hf_model(
+        GOLDEN,
+        seq_len=_S,
+        precision="fp32",
+        device=device,
+        twin_mode="apertus_parity",
+    )
+    input_ids = torch.arange(_S, device=device, dtype=torch.long)
+    labels = input_ids.clone()
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    measured = measure_train_step_torch(
+        family, model, input_ids, labels, opt
+    ).target_flop
+
+    assert _rel_err(measured, zepto_full) < 0.10

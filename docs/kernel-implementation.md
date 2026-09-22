@@ -383,8 +383,10 @@ Liger fuses Q and K rotation into one Triton kernel and reports large speedups f
 Materialize (once per forward, shared across layers):
 
 \[
-\underbrace{S \cdot (d_h/2)}_{\text{outer product}} + \underbrace{2 S d_h}_{\sin/\cos} \quad \text{(trig counted as elementwise)}.
+S \cdot (d_h/2) \quad \text{(outer product ``position\_ids @ inv\_freq'' only)}.
 \]
+
+``concat``, ``cos``, and ``sin`` bill **0** FLOPs (Zepto / PyTorch ``FlopCounterMode``; hardware-dependent trig is not modeled).
 
 Apply per tensor (Q and K):
 

@@ -39,6 +39,28 @@ def golden_apertus_ctx(
     return reference_invocation(**kwargs)
 
 
+def golden_apertus_hf_flop_ctx(
+    *,
+    phase: str = "forward",
+    cuda_capability: tuple[int, int] | None = (8, 0),
+):
+    """Zepto ctx aligned with smoke ``build_parity_ctx`` (HF eager ↔ sdpa-math GQA)."""
+    from zepto.semantic.metadata import DType
+
+    kwargs: dict = {
+        "phase": phase,
+        "default_dtype": DType.FP32,
+        "optim_prec": 4,
+        "attention_backend": "eager",
+        "hardware": "cuda",
+        "requested_capabilities": frozenset({"fused", "sdpa", "gqa"}),
+        "state": (("sdpa_mode", "math"),),
+    }
+    if cuda_capability is not None:
+        kwargs["compute_capability"] = cuda_capability
+    return reference_invocation(**kwargs)
+
+
 def merge_train_lowered(graph, ctx):
     """Merge forward and backward lowering events for training simulation."""
     base = ctx

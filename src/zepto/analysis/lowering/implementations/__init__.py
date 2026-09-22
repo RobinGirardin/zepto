@@ -81,6 +81,8 @@ from .regions import (
     SWIGLU_REGIONS,
     XIELU_REGIONS,
     MAMBA2_MIXER_REGIONS,
+    ROPE_APPLY_REGIONS,
+    ROPE_MATERIALIZE_REGIONS,
 )
 
 
@@ -213,6 +215,10 @@ def register_regions(registry: LoweringRegistry) -> None:
     for impl in GEGLU_REGIONS:
         registry.register_region(impl)
     for impl in MAMBA2_MIXER_REGIONS:
+        registry.register_region(impl)
+    for impl in ROPE_MATERIALIZE_REGIONS:
+        registry.register_region(impl)
+    for impl in ROPE_APPLY_REGIONS:
         registry.register_region(impl)
 
 

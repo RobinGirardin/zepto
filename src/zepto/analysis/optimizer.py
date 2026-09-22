@@ -45,7 +45,14 @@ class OptimizerPolicy(ABC):
 
 @dataclass(frozen=True, slots=True)
 class AdamWPolicy(OptimizerPolicy):
-    """AdamW: 2 state tensors × optim_prec bytes; ~7 FLOPs/param update."""
+    """AdamW: 2 state tensors × optim_prec bytes; FLOPs/param from CUDA calibration.
+
+    Default ``flops_per_element=7`` matches the historical analytic estimate.
+    Calibrated against HF GOLDEN ``opt.step()`` in
+    ``tests/integration/apertus/test_adam_flop_calibration.py``.
+    """
+
+    flops_per_element: float = 7.0
 
     @property
     def name(self) -> str:
@@ -61,8 +68,7 @@ class AdamWPolicy(OptimizerPolicy):
         self, *, trainable_elements: int, context: InvocationContext
     ) -> int:
         del context
-        # 3 mul-add per moment + 1 param update ≈ 7 N
-        return 7 * trainable_elements
+        return int(self.flops_per_element * trainable_elements)
 
 
 @dataclass(frozen=True, slots=True)

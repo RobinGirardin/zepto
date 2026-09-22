@@ -71,6 +71,12 @@ from .softmax_one import (
     SoftmaxOneRecipe,
 )
 from .rmsnorm import RMSNormRecipe
+from .rope import (
+    DEFAULT_ROPE_APPLY_RECIPE,
+    DEFAULT_ROPE_MATERIALIZE_RECIPE,
+    RoPEApplyRecipe,
+    RoPEMaterializeRecipe,
+)
 from .softmax import DEFAULT_SOFTMAX_RECIPE, SoftmaxRecipe
 from .relu import DEFAULT_RELU_RECIPE, SAVED_INPUT_RELU_RECIPE, ReLURecipe
 from .silu import DEFAULT_SILU_RECIPE, SiLURecipe
@@ -142,6 +148,10 @@ __all__ = [
     "DEFAULT_SQUARED_RELU_RECIPE",
     "ReLURecipe",
     "RMSNormRecipe",
+    "DEFAULT_ROPE_APPLY_RECIPE",
+    "DEFAULT_ROPE_MATERIALIZE_RECIPE",
+    "RoPEApplyRecipe",
+    "RoPEMaterializeRecipe",
     "DEFAULT_SOFTPLUS_RECIPE",
     "SiLURecipe",
     "SquaredReLURecipe",
