@@ -1,4 +1,4 @@
-"""CUDA FLOP parity for RoPE on GOLDEN Apertus infer (smoke-aligned ctx)."""
+"""CUDA FCM-comparable FLOP parity for RoPE on GOLDEN Apertus infer."""
 
 from __future__ import annotations
 
@@ -28,14 +28,17 @@ def _rel_err(measured: float, reference: float) -> float:
 
 
 def test_apertus_infer_flops_rope_and_gqa_within_smoke_band() -> None:
-    """Full infer forward FLOPs vs Zepto after RoPE regions + sdpa-math GQA."""
+    """FCM-comparable infer FLOPs vs FlopCounterMode after RoPE + sdpa-math GQA."""
     seq = GOLDEN["seq_len"]
     ctx = golden_apertus_hf_flop_ctx()
     graph = compose_graph(
         lambda _ctx: Apertus(**GOLDEN),
         (Tensor(shape=(seq,)),),
     )
-    zepto_flops = estimate(graph, ctx).flops.forward_flops
+    report = estimate(graph, ctx)
+    fcm_flops = report.flops.fcm_forward_flops
+    zepto_flops = report.flops.zepto_forward_flops
+    assert zepto_flops > fcm_flops
 
     family = ApertusFamily()
     device = torch.device("cuda")
@@ -54,7 +57,7 @@ def test_apertus_infer_flops_rope_and_gqa_within_smoke_band() -> None:
             family.hf_forward_infer(model, input_ids.squeeze(0))
     measured = int(counter.get_total_flops())
 
-    assert _rel_err(measured, zepto_flops) < 0.10, (
-        f"infer FLOP rel err {_rel_err(measured, zepto_flops):.3f} "
-        f"(measured={measured}, zepto={zepto_flops})"
+    assert _rel_err(measured, fcm_flops) < 0.10, (
+        f"infer FLOP rel err {_rel_err(measured, fcm_flops):.3f} "
+        f"(measured={measured}, fcm={fcm_flops})"
     )

@@ -1,4 +1,4 @@
-"""CUDA audit: Zepto sdpa-math GQA vs HF eager forward FLOPs (GOLDEN)."""
+"""CUDA audit: Zepto FCM-comparable GQA vs HF eager FlopCounterMode (GOLDEN)."""
 
 from __future__ import annotations
 
@@ -35,7 +35,10 @@ def test_gqa_sdpa_math_infer_flops_match_hf_eager(seq_len: int) -> None:
         lambda _ctx: Apertus(**opts),
         (Tensor(shape=(seq_len,)),),
     )
-    zepto_flops = estimate(graph, ctx).flops.forward_flops
+    report = estimate(graph, ctx)
+    fcm_flops = report.flops.fcm_forward_flops
+    zepto_flops = report.flops.zepto_forward_flops
+    assert zepto_flops > fcm_flops
 
     family = ApertusFamily()
     device = torch.device("cuda")
@@ -54,8 +57,7 @@ def test_gqa_sdpa_math_infer_flops_match_hf_eager(seq_len: int) -> None:
             family.hf_forward_infer(model, input_ids)
     measured = int(counter.get_total_flops())
 
-    # Before WS4 recipe fixes, rel err on S=64 was ~0.12; target <10% post-audit.
-    assert _rel_err(measured, zepto_flops) < 0.10, (
-        f"S={seq_len}: rel err {_rel_err(measured, zepto_flops):.3f} "
-        f"(measured={measured}, zepto={zepto_flops})"
+    assert _rel_err(measured, fcm_flops) < 0.10, (
+        f"S={seq_len}: rel err {_rel_err(measured, fcm_flops):.3f} "
+        f"(measured={measured}, fcm={fcm_flops})"
     )

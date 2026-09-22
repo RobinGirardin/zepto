@@ -237,7 +237,6 @@ def _rel_err(measured: float, reference: float) -> float:
 )
 def test_apertus_train_flop_no_opt_cuda_parity() -> None:
     import torch
-    from torch.utils.flop_counter import FlopCounterMode
 
     from zepto.empirical.measure_torch import measure_train_step_torch
     from zepto.empirical.models.apertus import ApertusFamily
@@ -246,11 +245,10 @@ def test_apertus_train_flop_no_opt_cuda_parity() -> None:
     spec_no_opt = HorizonSpec.training(
         seq_len=_S, micro_batches=1, batch=1, optimizer=None
     )
-    zepto_no_opt = int(
-        estimate_horizon(
-            spec_no_opt, _training_module, _training_inputs, ctx
-        ).total_flops
+    report = estimate_horizon(
+        spec_no_opt, _training_module, _training_inputs, ctx
     )
+    fcm_no_opt = int(report.flops.fcm_total_flops)
 
     family = ApertusFamily()
     device = torch.device("cuda")
@@ -268,7 +266,7 @@ def test_apertus_train_flop_no_opt_cuda_parity() -> None:
         family, model, input_ids, labels, opt
     ).target_flop_no_opt
 
-    assert _rel_err(measured, zepto_no_opt) < 0.10
+    assert _rel_err(measured, fcm_no_opt) < 0.10
 
 
 @pytest.mark.skipif(
@@ -285,9 +283,10 @@ def test_apertus_train_full_flop_cuda_parity() -> None:
     spec = HorizonSpec.training(
         seq_len=_S, micro_batches=1, batch=1, optimizer=AdamW
     )
-    zepto_full = int(
-        estimate_horizon(spec, _training_module, _training_inputs, ctx).total_flops
-    )
+    report = estimate_horizon(spec, _training_module, _training_inputs, ctx)
+    fcm_full = int(report.flops.fcm_total_flops)
+    zepto_full = int(report.flops.zepto_total_flops)
+    assert zepto_full > fcm_full
 
     family = ApertusFamily()
     device = torch.device("cuda")
@@ -305,4 +304,4 @@ def test_apertus_train_full_flop_cuda_parity() -> None:
         family, model, input_ids, labels, opt
     ).target_flop
 
-    assert _rel_err(measured, zepto_full) < 0.10
+    assert _rel_err(measured, fcm_full) < 0.10
