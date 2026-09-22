@@ -16,6 +16,7 @@ from zepto.semantic import (
     Transpose,
 )
 
+from zepto.modules._internal._batch import is_unbatched_layout
 from zepto.modules._internal._concat import (
     concat_leading,
     concat_on_sequence,
@@ -65,20 +66,26 @@ class SelectiveSSMScan(Module):
         exp_x = Exp()(x)
         return Log()(Add()(self._one, exp_x))  # type: ignore[return-value]
 
-    def _split_unroll(self, tensor: Tensor, seq_len: int, *, batch: int) -> tuple[Tensor, ...]:
-        if batch == 1:
+    def _split_unroll(
+        self, tensor: Tensor, seq_len: int, *, unbatched: bool
+    ) -> tuple[Tensor, ...]:
+        if unbatched:
             return split_leading(tensor, seq_len)
         return split_on_sequence(tensor, seq_len)
 
-    def _concat_unroll(self, tensors: tuple[Tensor, ...], *, batch: int) -> Tensor:
-        if batch == 1:
+    def _concat_unroll(
+        self, tensors: tuple[Tensor, ...], *, unbatched: bool
+    ) -> Tensor:
+        if unbatched:
             return concat_leading(tensors)
         return concat_on_sequence(tensors)
 
-    def _expand_groups(self, grouped: Tensor, seq_len: int, *, batch: int) -> Tensor:
+    def _expand_groups(
+        self, grouped: Tensor, seq_len: int, *, unbatched: bool
+    ) -> Tensor:
         """Expand (S, G, N) or (B, S, G, N) to head layout along sequence."""
         rank = len(grouped.shape)
-        parts = self._split_unroll(grouped, seq_len, batch=batch)
+        parts = self._split_unroll(grouped, seq_len, unbatched=unbatched)
         expanded: list[Tensor] = []
         for part in parts:
             if rank == 3:
@@ -97,7 +104,7 @@ class SelectiveSSMScan(Module):
                         h
                     )
                 )
-        return self._concat_unroll(tuple(expanded), batch=batch)
+        return self._concat_unroll(tuple(expanded), unbatched=unbatched)
 
     def forward(
         self,
@@ -108,7 +115,8 @@ class SelectiveSSMScan(Module):
         scan_state_in: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         rank = len(x.shape)
-        if rank == 3:
+        unbatched = is_unbatched_layout(x, unbatched_rank=3)
+        if unbatched:
             seq_len, num_heads, head_dim = x.shape
             batch = 1
         elif rank == 4:
@@ -118,7 +126,7 @@ class SelectiveSSMScan(Module):
 
         if num_heads != self.num_heads or head_dim != self.head_dim:
             raise ValueError("x shape mismatch")
-        if rank == 3:
+        if unbatched:
             if delta.shape != (seq_len, num_heads):
                 raise ValueError("delta must be (S, h)")
             if b.shape[1] != self.num_groups or c.shape[1] != self.num_groups:
@@ -130,13 +138,13 @@ class SelectiveSSMScan(Module):
                 raise ValueError("B/C group count mismatch")
 
         restore_dtype = activation_dtype(x)
-        b_h = self._expand_groups(b, seq_len, batch=batch)
-        c_h = self._expand_groups(c, seq_len, batch=batch)
+        b_h = self._expand_groups(b, seq_len, unbatched=unbatched)
+        c_h = self._expand_groups(c, seq_len, unbatched=unbatched)
 
-        x_parts = self._split_unroll(x, seq_len, batch=batch)
-        delta_parts = self._split_unroll(delta, seq_len, batch=batch)
-        b_parts = self._split_unroll(b_h, seq_len, batch=batch)
-        c_parts = self._split_unroll(c_h, seq_len, batch=batch)
+        x_parts = self._split_unroll(x, seq_len, unbatched=unbatched)
+        delta_parts = self._split_unroll(delta, seq_len, unbatched=unbatched)
+        b_parts = self._split_unroll(b_h, seq_len, unbatched=unbatched)
+        c_parts = self._split_unroll(c_h, seq_len, unbatched=unbatched)
 
         if scan_state_in is None:
             ctx = Compose.current()
@@ -144,7 +152,7 @@ class SelectiveSSMScan(Module):
                 raise RuntimeError("SelectiveSSMScan requires an active Compose context")
             state_shape = (
                 (num_heads, head_dim, self.state_size)
-                if batch == 1
+                if unbatched
                 else (batch, num_heads, head_dim, self.state_size)
             )
             state = ctx.input(
@@ -158,7 +166,7 @@ class SelectiveSSMScan(Module):
         else:
             expected = (
                 (num_heads, head_dim, self.state_size)
-                if batch == 1
+                if unbatched
                 else (batch, num_heads, head_dim, self.state_size)
             )
             if scan_state_in.shape != expected:
@@ -167,7 +175,7 @@ class SelectiveSSMScan(Module):
 
         outputs: list[Tensor] = []
         for t in range(seq_len):
-            if batch == 1:
+            if unbatched:
                 x_t = Reshape(shape=(num_heads, head_dim))(x_parts[t])
                 b_t = Reshape(shape=(num_heads, 1, self.state_size))(b_parts[t])
                 c_t = Reshape(shape=(num_heads, 1, self.state_size))(c_parts[t])
@@ -177,7 +185,7 @@ class SelectiveSSMScan(Module):
                 c_t = Reshape(shape=(batch, num_heads, 1, self.state_size))(c_parts[t])
 
             delta_raw = add_bias_parameter(
-                Reshape(shape=((batch, num_heads) if batch > 1 else (num_heads,)))(
+                Reshape(shape=((num_heads,) if unbatched else (batch, num_heads)))(
                     delta_parts[t]
                 ),
                 self.dt_bias,
@@ -185,7 +193,7 @@ class SelectiveSSMScan(Module):
             delta_pos = self._softplus(
                 Cast(to_dtype=RMSNORM_COMPUTE_DTYPE)(delta_raw)  # type: ignore[arg-type]
             )
-            if batch == 1:
+            if unbatched:
                 delta_broadcast = Reshape(shape=(num_heads, 1, 1))(delta_pos)
                 scaled_delta = scale_by_parameter(delta_pos, self.decay_rate)  # type: ignore[arg-type]
                 neg_a = Multiply()(scaled_delta, self._minus_one)  # type: ignore[call-arg]
@@ -197,7 +205,7 @@ class SelectiveSSMScan(Module):
                 a_bar = Exp()(Reshape(shape=(batch, num_heads, 1, 1))(neg_a))
 
             b_bar = Multiply()(delta_broadcast, b_t)  # type: ignore[call-arg]
-            if batch == 1:
+            if unbatched:
                 x_col = Reshape(shape=(num_heads, head_dim, 1))(x_t)
             else:
                 x_col = Reshape(shape=(batch, num_heads, head_dim, 1))(x_t)
@@ -205,7 +213,7 @@ class SelectiveSSMScan(Module):
             decayed = Multiply()(state, a_bar)  # type: ignore[call-arg]
             state = Add()(decayed, update)  # type: ignore[assignment]
 
-            if batch == 1:
+            if unbatched:
                 c_broadcast = Reshape(shape=(num_heads, 1, self.state_size))(c_t)
                 weighted = Multiply()(state, c_broadcast)  # type: ignore[call-arg]
                 y = ReduceSum(axis=2)(weighted)
@@ -228,7 +236,7 @@ class SelectiveSSMScan(Module):
                 y = Add()(y, x_scaled)  # type: ignore[assignment]
                 outputs.append(Reshape(shape=(batch, 1, num_heads, head_dim))(y))
 
-        output = self._concat_unroll(tuple(outputs), batch=batch)
+        output = self._concat_unroll(tuple(outputs), unbatched=unbatched)
         output = Cast(to_dtype=restore_dtype)(output)  # type: ignore[assignment]
         state_out = Cast(to_dtype=restore_dtype)(state)  # type: ignore[assignment]
         return output, state_out

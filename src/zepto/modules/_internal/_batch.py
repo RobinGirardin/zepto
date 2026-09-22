@@ -5,6 +5,14 @@ from __future__ import annotations
 from zepto.compose import Tensor
 
 
+def is_unbatched_layout(tensor: Tensor, *, unbatched_rank: int) -> bool:
+    """True only for the legacy alias with no leading batch axis.
+
+    Rank is the layout signal: ``(1, S, …)`` is batched even when ``batch==1``.
+    """
+    return len(tensor.shape) == unbatched_rank
+
+
 def batch_seq_dims(value: Tensor) -> tuple[int, int]:
     """Return ``(batch, seq_len)`` for rank-2 ``(S, …)`` or rank-3 ``(B, S, …)``."""
     rank = len(value.shape)

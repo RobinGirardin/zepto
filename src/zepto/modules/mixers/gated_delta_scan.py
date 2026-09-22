@@ -7,6 +7,7 @@ from zepto.compose.context import Compose
 from zepto.semantic import Add, Cast, Exp, MatMul, Multiply, Reshape, Subtract
 from zepto.semantic.metadata import DType
 
+from zepto.modules._internal._batch import is_unbatched_layout
 from zepto.modules._internal._concat import (
     concat_leading,
     concat_on_sequence,
@@ -49,7 +50,8 @@ class GatedDeltaScan(Module):
         if q_rank not in (3, 4):
             raise ValueError("query must be rank-3 (S,h,d) or rank-4 (B,S,h,d)")
 
-        if q_rank == 3:
+        unbatched = is_unbatched_layout(query, unbatched_rank=3)
+        if unbatched:
             seq_len, num_heads, key_dim = query.shape
             batch = 1
             if value.shape != query.shape:
@@ -65,7 +67,7 @@ class GatedDeltaScan(Module):
             raise ValueError("value head dim mismatch")
 
         restore_dtype = activation_dtype(query)
-        if batch == 1:
+        if unbatched:
             q_parts = split_leading(query, seq_len)
             k_parts = split_leading(key, seq_len)
             v_parts = split_leading(value, seq_len)
@@ -84,7 +86,7 @@ class GatedDeltaScan(Module):
                 raise RuntimeError("GatedDeltaScan requires an active Compose context")
             state_shape = (
                 (num_heads, key_dim, self.value_head_dim)
-                if batch == 1
+                if unbatched
                 else (batch, num_heads, key_dim, self.value_head_dim)
             )
             state = ctx.input(
@@ -98,7 +100,7 @@ class GatedDeltaScan(Module):
         else:
             expected = (
                 (num_heads, key_dim, self.value_head_dim)
-                if batch == 1
+                if unbatched
                 else (batch, num_heads, key_dim, self.value_head_dim)
             )
             if scan_state_in.shape != expected:
@@ -107,7 +109,7 @@ class GatedDeltaScan(Module):
 
         outputs: list[Tensor] = []
         for _t in range(seq_len):
-            if batch == 1:
+            if unbatched:
                 q_t = Reshape(shape=(num_heads, key_dim))(q_parts[_t])
                 k_t = Reshape(shape=(num_heads, key_dim))(k_parts[_t])
                 v_t = Reshape(shape=(num_heads, self.value_head_dim))(v_parts[_t])
@@ -125,7 +127,7 @@ class GatedDeltaScan(Module):
             alpha = Exp()(decay_t)
             decayed = Multiply()(state, alpha)  # type: ignore[call-arg]
 
-            if batch == 1:
+            if unbatched:
                 k_row = Reshape(shape=(num_heads, 1, key_dim))(k_t)
                 prediction = MatMul()(k_row, decayed)  # type: ignore[call-arg]
                 prediction = Reshape(shape=(num_heads, self.value_head_dim))(prediction)
@@ -158,7 +160,7 @@ class GatedDeltaScan(Module):
                     Reshape(shape=(batch, 1, num_heads, self.value_head_dim))(out_t)
                 )
 
-        if batch == 1:
+        if unbatched:
             output = concat_leading(tuple(outputs))
         else:
             output = concat_on_sequence(tuple(outputs))

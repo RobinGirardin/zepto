@@ -140,7 +140,6 @@ class GatedDeltaNet(Module):
             z_splits = Split(sizes=(1,) * cfg.num_v_heads)(z_by_head)
             merge_axis = 1
             head_seq = seq_len
-            head_batch = 1
         else:
             q_heads = Reshape(
                 shape=(batch, seq_len, cfg.num_qk_heads, cfg.head_dim)
@@ -186,16 +185,15 @@ class GatedDeltaNet(Module):
             z_splits = Split(sizes=(1,) * cfg.num_v_heads)(moved_z)
             merge_axis = 2
             head_seq = seq_len
-            head_batch = batch
 
         normed_heads: list[Tensor] = []
         for scan_h, z_h in zip(scan_splits, z_splits, strict=True):
-            if head_batch == 1:
+            if rank == 2:
                 val = Reshape(shape=(head_seq, cfg.head_dim))(scan_h)
                 gate_h = Reshape(shape=(head_seq, cfg.head_dim))(z_h)
             else:
-                val = Reshape(shape=(head_batch, head_seq, cfg.head_dim))(scan_h)
-                gate_h = Reshape(shape=(head_batch, head_seq, cfg.head_dim))(z_h)
+                val = Reshape(shape=(batch, head_seq, cfg.head_dim))(scan_h)
+                gate_h = Reshape(shape=(batch, head_seq, cfg.head_dim))(z_h)
             normed_heads.append(self.out_norm(val, gate_h))
         merged = Concat(axis=merge_axis, input_count=len(normed_heads))(*normed_heads)  # type: ignore[call-arg]
         output = LinearMatMul()(merged, parameters=(self.o_proj.weight,))  # type: ignore[return-value]

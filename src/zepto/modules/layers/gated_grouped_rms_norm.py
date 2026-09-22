@@ -5,7 +5,7 @@ from __future__ import annotations
 from zepto.compose import Module, Parameter, Tensor
 from zepto.semantic import Add, Cast, Divide, Multiply, ReduceSum, Reshape, Sigmoid, SquareRoot
 
-from zepto.modules._internal._batch import batch_seq_dims
+from zepto.modules._internal._batch import batch_seq_dims, is_unbatched_layout
 from zepto.modules._internal._helpers import (
     RMSNORM_COMPUTE_DTYPE,
     activation_dtype,
@@ -69,7 +69,7 @@ class GatedGroupedRMSNorm(Module):
         )
         denom = SquareRoot()(Add()(variance, self._eps))
         normalized = Divide()(grouped, denom)
-        if batch == 1:
+        if is_unbatched_layout(value, unbatched_rank=2):
             flat = Reshape(shape=(seq_len, self.hidden_size))(normalized)
         else:
             flat = Reshape(shape=(batch, seq_len, self.hidden_size))(normalized)

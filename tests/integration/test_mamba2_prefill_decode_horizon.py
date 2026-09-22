@@ -7,6 +7,7 @@ from zepto.analysis import (
     HorizonSpec,
     RecurrentStateConfig,
     estimate_horizon,
+    inputs_from_shape,
     reference_invocation,
 )
 from zepto.compose import Tensor
@@ -48,4 +49,40 @@ def test_mamba2_mini_prefill_decode_horizon() -> None:
     report = estimate_horizon(spec, module_fn, inputs_fn, ctx)
     assert len(report.per_step) == 5
     assert report.state_final.custom
+    assert report.per_step[1].flops.forward_flops < report.per_step[0].flops.forward_flops
+
+
+def test_mamba2_mini_prefill_decode_horizon_inputs_from_shape() -> None:
+    """Rank-3 ``(1, S, H)`` via ``inputs_from_shape`` (not the rank-2 alias)."""
+    cfg = Mamba2MixerConfig(
+        hidden_size=64,
+        num_heads=2,
+        head_dim=8,
+        state_size=16,
+        num_groups=2,
+    )
+    ctx = reference_invocation(default_dtype=DType.BF16)
+    spec = HorizonSpec.inference(
+        prefill=32,
+        decode_steps=4,
+        batch=1,
+        conv=ConvStateConfig(
+            layer_indices=(0,),
+            channels=cfg.conv_channels,
+            kernel_size=4,
+            dtype=DType.BF16,
+        ),
+        recurrent=RecurrentStateConfig(
+            layers=((0, "mamba2", 2, 8, 16),),
+            dtype=DType.BF16,
+        ),
+    )
+
+    def module_fn(_compose):
+        return Mamba2Mixer(cfg)
+
+    report = estimate_horizon(spec, module_fn, inputs_from_shape(cfg.hidden_size), ctx)
+    assert len(report.per_step) == 5
+    assert report.total_flops > 0
+    assert report.peak_vram > 0
     assert report.per_step[1].flops.forward_flops < report.per_step[0].flops.forward_flops

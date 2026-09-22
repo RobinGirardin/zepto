@@ -8,7 +8,7 @@ from zepto.compose import Module, Parameter, Tensor
 from zepto.compose.context import Compose
 from zepto.semantic import Add, Concat, Multiply, Reshape, Sigmoid, Split, Transpose
 
-from zepto.modules._internal._batch import batch_seq_dims
+from zepto.modules._internal._batch import batch_seq_dims, is_unbatched_layout
 from zepto.modules._internal._concat import concat_on_sequence, split_leading
 from zepto.modules._internal._helpers import add_bias_parameter, scale_by_parameter
 
@@ -71,22 +71,23 @@ class DepthwiseCausalConv1d(Module):
             acc = Multiply()(acc, sig)  # type: ignore[assignment]
         return acc  # type: ignore[return-value]
 
-    def _validate_conv_state(self, conv_state_in: Tensor, batch: int) -> None:
+    def _validate_conv_state(
+        self, conv_state_in: Tensor, batch: int, *, unbatched: bool
+    ) -> None:
         k = self.kernel_size
         c = self.channels
-        if batch == 1:
-            expected = (c, k)
-        else:
-            expected = (batch, c, k)
+        expected = (c, k) if unbatched else (batch, c, k)
         if conv_state_in.shape != expected:
             raise ValueError(
                 f"conv_state_in expected {expected} for batch={batch}, "
                 f"got {conv_state_in.shape}"
             )
 
-    def _history_prefill(self, value: Tensor, *, batch: int, seq_len: int) -> tuple[Tensor, ...]:
+    def _history_prefill(
+        self, value: Tensor, *, batch: int, seq_len: int, unbatched: bool
+    ) -> tuple[Tensor, ...]:
         k = self.kernel_size
-        if batch == 1:
+        if unbatched:
             pad = self._graph_const(
                 (k - 1, self.channels),
                 semantic_type="zero",
@@ -103,10 +104,10 @@ class DepthwiseCausalConv1d(Module):
         return split_leading(moved, seq_len + k - 1)
 
     def _window_from_history(
-        self, history: tuple[Tensor, ...], t: int, *, batch: int
+        self, history: tuple[Tensor, ...], t: int, *, batch: int, unbatched: bool
     ) -> tuple[Tensor, ...]:
         k = self.kernel_size
-        if batch == 1:
+        if unbatched:
             return history[t : t + k]
         return tuple(
             Reshape(shape=(batch, self.channels))(history[t + lag])
@@ -114,10 +115,10 @@ class DepthwiseCausalConv1d(Module):
         )
 
     def _history_decode(
-        self, value: Tensor, conv_state_in: Tensor, *, batch: int
+        self, value: Tensor, conv_state_in: Tensor, *, batch: int, unbatched: bool
     ) -> tuple[Tensor, ...]:
         k = self.kernel_size
-        if batch == 1:
+        if unbatched:
             state_seq = Transpose(permutation=(1, 0))(conv_state_in)
             state_parts = Split(sizes=(1,) * k)(state_seq)
             return state_parts[1:] + (value,)
@@ -128,9 +129,11 @@ class DepthwiseCausalConv1d(Module):
         tail = Reshape(shape=(batch, self.channels))(value)
         return state_parts[1:] + (tail,)
 
-    def _state_out_prefill(self, value: Tensor, *, batch: int, seq_len: int) -> Tensor:
+    def _state_out_prefill(
+        self, value: Tensor, *, batch: int, seq_len: int, unbatched: bool
+    ) -> Tensor:
         k = self.kernel_size
-        if batch == 1:
+        if unbatched:
             if seq_len >= k:
                 tail = Split(sizes=(seq_len - k, k))(value)
                 return Transpose(permutation=(1, 0))(tail[1])  # type: ignore[return-value]
@@ -151,10 +154,12 @@ class DepthwiseCausalConv1d(Module):
         return Transpose(permutation=(1, 2, 0))(padded)  # type: ignore[return-value]
 
     def _state_out_decode(
-        self, value: Tensor, conv_state_in: Tensor, *, batch: int
+        self, value: Tensor, conv_state_in: Tensor, *, batch: int, unbatched: bool
     ) -> Tensor:
-        window = self._history_decode(value, conv_state_in, batch=batch)
-        if batch == 1:
+        window = self._history_decode(
+            value, conv_state_in, batch=batch, unbatched=unbatched
+        )
+        if unbatched:
             stacked = Concat(axis=0, input_count=len(window))(*window)  # type: ignore[call-arg]
             return Transpose(permutation=(1, 0))(stacked)  # type: ignore[return-value]
 
@@ -176,29 +181,40 @@ class DepthwiseCausalConv1d(Module):
                 "DepthwiseCausalConv1d expects rank-2 (S, C) or rank-3 (B, S, C)"
             )
         batch, seq_len = batch_seq_dims(value)
+        unbatched = is_unbatched_layout(value, unbatched_rank=2)
 
         if conv_state_in is None:
-            history = self._history_prefill(value, batch=batch, seq_len=seq_len)
+            history = self._history_prefill(
+                value, batch=batch, seq_len=seq_len, unbatched=unbatched
+            )
             outputs: list[Tensor] = []
             for t in range(seq_len):
-                window = self._window_from_history(history, t, batch=batch)
+                window = self._window_from_history(
+                    history, t, batch=batch, unbatched=unbatched
+                )
                 out = self._conv_sample(window)
-                if batch == 1:
+                if unbatched:
                     outputs.append(Reshape(shape=(1, self.channels))(out))
                 else:
                     outputs.append(Reshape(shape=(batch, 1, self.channels))(out))
             output = concat_on_sequence(tuple(outputs))
-            state_out = self._state_out_prefill(value, batch=batch, seq_len=seq_len)
+            state_out = self._state_out_prefill(
+                value, batch=batch, seq_len=seq_len, unbatched=unbatched
+            )
             return output, state_out
 
-        self._validate_conv_state(conv_state_in, batch)
-        window = self._history_decode(value, conv_state_in, batch=batch)
+        self._validate_conv_state(conv_state_in, batch, unbatched=unbatched)
+        window = self._history_decode(
+            value, conv_state_in, batch=batch, unbatched=unbatched
+        )
         out = self._conv_sample(window)
-        if batch == 1:
+        if unbatched:
             output = Reshape(shape=(1, self.channels))(out)
         else:
             output = Reshape(shape=(batch, 1, self.channels))(out)
-        state_out = self._state_out_decode(value, conv_state_in, batch=batch)
+        state_out = self._state_out_decode(
+            value, conv_state_in, batch=batch, unbatched=unbatched
+        )
         return output, state_out
 
 
