@@ -1,4 +1,8 @@
-"""Batched Apertus training-horizon estimate_horizon API."""
+"""Batched inference-Apertus (logits-only) training-horizon compose/API smoke.
+
+Does not exercise ``ApertusForCausalLM`` or fused linear+CE. The product
+train path is ``test_apertus_causal_lm_training_horizon_batched.py``.
+"""
 
 from __future__ import annotations
 
@@ -50,7 +54,7 @@ def _training_report(batch: int) -> HorizonCostReport:
     return estimate_horizon(spec, _tiny_apertus, inputs_from_token_ids(), _flash_ctx())
 
 
-def test_apertus_training_horizon_batched_estimate_api() -> None:
+def test_apertus_logits_training_horizon_batched_compose_api() -> None:
     report_1 = _training_report(1)
     report_b = _training_report(_BATCH)
 

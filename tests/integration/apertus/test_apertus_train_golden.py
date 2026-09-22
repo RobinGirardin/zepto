@@ -9,6 +9,7 @@ from zepto.analysis import (
     discover_regions,
     estimate,
     estimate_horizon,
+    inputs_from_token_ids_and_labels,
     lower,
 )
 from zepto.analysis.lowering import LoweringRegistry, build_lowering_plan
@@ -119,6 +120,59 @@ def test_apertus_train_flops_match_linear_ce_recipe() -> None:
     assert len(ce_regions) == 1
     assert ce_regions[0].anchor.component_type == "FusedLinearCrossEntropy"
     assert len(ce_regions[0].operation_ids) == 8
+
+
+def test_apertus_train_horizon_batch_two_labels_scales_activations() -> None:
+    """Rank-2 ``(B, S)`` tokens+labels on GOLDEN; keep rank-1 B=1 coverage above."""
+    ctx = golden_apertus_ctx()
+    spec_1 = HorizonSpec.training(
+        seq_len=_S, batch=1, micro_batches=1, optimizer=AdamW
+    )
+    spec_2 = HorizonSpec.training(
+        seq_len=_S, batch=2, micro_batches=1, optimizer=AdamW
+    )
+    report_1, sim_1 = estimate_horizon(
+        spec_1,
+        _training_module,
+        inputs_from_token_ids_and_labels(),
+        ctx,
+        return_simulation=True,
+    )
+    report_2, sim_2 = estimate_horizon(
+        spec_2,
+        _training_module,
+        inputs_from_token_ids_and_labels(),
+        ctx,
+        return_simulation=True,
+    )
+
+    assert report_1.state_final.grad_accum is None
+    assert report_2.state_final.grad_accum is None
+    assert report_1.state_final.optimizer is not None
+    assert report_2.state_final.optimizer is not None
+    assert report_1.state_final.optimizer.bytes == report_2.state_final.optimizer.bytes
+
+    params_1 = report_1.per_step[0].memory.breakdown.parameters
+    params_2 = report_2.per_step[0].memory.breakdown.parameters
+    assert params_1 == params_2
+
+    act_1 = report_1.per_step[0].memory.breakdown.activations
+    act_2 = report_2.per_step[0].memory.breakdown.activations
+    assert act_1 > 0
+    assert act_2 / act_1 == pytest.approx(2.0, rel=0.05)
+    assert report_2.peak_vram > report_1.peak_vram
+
+    def _ce_ids(sim):
+        graph = sim.timeline[0].graph
+        return {
+            nid
+            for nid in graph.node_order
+            if graph.node(nid).provenance.component_type
+            == "FusedLinearCrossEntropy"
+        }
+
+    assert _ce_ids(sim_1)
+    assert _ce_ids(sim_2)
 
 
 def test_apertus_train_horizon_produces_positive_peak_with_optimizer() -> None:
