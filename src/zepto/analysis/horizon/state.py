@@ -83,9 +83,14 @@ class RecurrentScanState:
 class GradAccumState:
     """Gradient accumulation buffer carried across micro-batch forwards.
 
-    Bytes equal ``parameter_bytes`` and are independent of parallel batch
-    ``B``. Effective HuggingFace batch is ``G × b`` when using ``batch=b``
-    and ``micro_batches=G``.
+    Bytes equal **gradient storage** for trainable params (gradient dtype
+    × trainable elements) and are independent of parallel batch ``B``.
+    Zero when G=1: no extra buffer is installed; the backward graph
+    already owns weight grads. Effective HuggingFace batch is ``G × b``
+    when using ``batch=b`` and ``micro_batches=G``.
+
+    ``parameter_bytes`` is the historical field name; the stored value is
+    the gradient-dtype footprint from :func:`trainable_gradient_bytes`.
     """
 
     parameter_bytes: int
@@ -190,6 +195,35 @@ def parameter_bytes(lowered: LoweredGraph) -> int:
     return total
 
 
+def trainable_gradient_bytes(lowered: LoweredGraph) -> int:
+    """Persistent grad-accum footprint: trainable elements × gradient dtype.
+
+    Resolves ``TensorRole.GRADIENT`` on a shape-only tensor so role policy
+    wins over parameter semantic type and explicit param dtype (mixed
+    precision: fp16 weights, fp32 grads).
+    """
+    from zepto.compose.values import Tensor
+    from zepto.semantic.metadata import TensorRole
+
+    from ..resolved import ResolvedValue
+
+    accounting = lowered.context.accounting
+    total = 0
+    for param in lowered.parameters.values():
+        if not param.trainable:
+            continue
+        grad_tensor = Tensor(shape=param.tensor.shape)
+        dtype = accounting.resolve_dtype(grad_tensor, role=TensorRole.GRADIENT)
+        total += accounting.bytes_for(
+            ResolvedValue(
+                tensor=grad_tensor,
+                role=TensorRole.GRADIENT,
+                dtype=dtype,
+            )
+        )
+    return total
+
+
 @dataclass
 class StatePortRegistry:
     """Mutable registry of cross-step state injected into invocation contexts."""
@@ -201,6 +235,7 @@ class StatePortRegistry:
     grad_accum: GradAccumState | None = None
     optimizer: OptimizerState | None = None
     optimizer_policy: OptimizerPolicy | None = None
+    grad_accum_steps: int = 1
     custom: tuple[tuple[str, object], ...] = ()
 
     @classmethod
@@ -380,19 +415,20 @@ class StatePortRegistry:
                 ),
             )
 
-        if step.kind == StepKind.MICRO_FORWARD:
-            param_bytes = parameter_bytes(lowered)
+        if step.kind == StepKind.MICRO_FORWARD and registry.grad_accum_steps > 1:
+            # G>1 only. G=1 leaves grad_accum=None; backward owns weight grads.
+            grad_bytes = trainable_gradient_bytes(lowered)
             accum = registry.grad_accum
             if accum is None:
                 accum = GradAccumState(
-                    parameter_bytes=param_bytes,
+                    parameter_bytes=grad_bytes,
                     micro_batches_seen=0,
                 )
             registry = replace(
                 registry,
                 grad_accum=replace(
                     accum,
-                    parameter_bytes=param_bytes,
+                    parameter_bytes=grad_bytes,
                     micro_batches_seen=accum.micro_batches_seen + 1,
                 ),
             )

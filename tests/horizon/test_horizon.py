@@ -8,6 +8,7 @@ from zepto.analysis import (
     AdamW,
     HorizonSpec,
     KVConfig,
+    PrecisionPolicy,
     StepKind,
     account_flops,
     account_memory,
@@ -19,6 +20,12 @@ from zepto.analysis import (
     simulate_horizon,
 )
 from zepto.analysis.horizon.spec import HorizonStep
+from zepto.analysis.horizon.state import (
+    GradAccumState,
+    parameter_bytes,
+    snapshot_state_bytes,
+    trainable_gradient_bytes,
+)
 from zepto.compose import Tensor, compose_graph
 from zepto.modules.layers.linear import Linear
 from zepto.semantic.metadata import DType
@@ -221,7 +228,7 @@ def test_prefill_decode_kv_bytes_scale_with_batch() -> None:
 def test_grad_accum_independent_of_parallel_batch() -> None:
     ctx = reference_invocation()
     spec_g = HorizonSpec().grad_accum(4, 128, batch=1)
-    spec_b = HorizonSpec().grad_accum(1, 128, batch=4)
+    spec_b = HorizonSpec().grad_accum(4, 128, batch=4)
 
     sim_g = simulate_horizon(spec_g, _linear_module, _linear_inputs, ctx)
     sim_b = simulate_horizon(spec_b, _linear_module, _linear_inputs, ctx)
@@ -240,3 +247,82 @@ def test_grad_accum_independent_of_parallel_batch() -> None:
     mem_g = account_memory(sim_g)
     mem_b = account_memory(sim_b)
     assert mem_b.peak_live_bytes > mem_g.peak_live_bytes
+
+
+def test_training_step_appends_optimizer_row() -> None:
+    spec = HorizonSpec().training_step(8, optimizer=AdamW)
+    assert len(spec.steps) == 3
+    assert spec.steps[-1].kind == StepKind.OPTIMIZER
+    assert spec.optimizer_policy is AdamW
+
+
+def test_training_g1_has_no_grad_accum() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=128, batch=4, micro_batches=1, optimizer=AdamW)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+
+    assert sim.state_final.grad_accum is None
+    assert sim.timeline[0].state_after.grad_accum is None
+    for record in sim.timeline:
+        assert record.state_after.grad_accum is None
+    assert snapshot_state_bytes(sim.timeline[0].state_after) == 0
+
+
+def test_training_g1_peak_not_inflated_by_param_accum() -> None:
+    from dataclasses import replace
+
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=128, batch=4, micro_batches=1, optimizer=AdamW)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    honest = account_memory(sim)
+
+    param_b = parameter_bytes(sim.timeline[0].lowered)
+    fake_accum = GradAccumState(parameter_bytes=param_b, micro_batches_seen=1)
+
+    def _with_accum(record):
+        return replace(
+            record,
+            state_after=replace(record.state_after, grad_accum=fake_accum),
+        )
+
+    # Inject on every snapshot so carry_state lifts every step peak. Linear
+    # activations can dominate, so a buffer that only appears after micro
+    # would not move the global max.
+    inflated_sim = replace(
+        sim,
+        state_initial=replace(sim.state_initial, grad_accum=fake_accum),
+        timeline=tuple(_with_accum(record) for record in sim.timeline),
+        state_final=replace(sim.state_final, grad_accum=fake_accum),
+    )
+    inflated = account_memory(inflated_sim)
+
+    assert honest.peak_live_bytes < inflated.peak_live_bytes
+    assert inflated.peak_live_bytes - honest.peak_live_bytes == param_b
+
+
+def test_g2_accum_bytes_use_grad_dtype() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec().grad_accum(2, 128)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    lowered = sim.timeline[-1].lowered
+
+    assert sim.state_final.grad_accum is not None
+    assert sim.state_final.grad_accum.micro_batches_seen == 2
+    assert sim.state_final.grad_accum.bytes == trainable_gradient_bytes(lowered)
+    assert trainable_gradient_bytes(lowered) == parameter_bytes(lowered)
+
+
+def test_trainable_gradient_bytes_uses_grad_dtype() -> None:
+    ctx = reference_invocation(
+        precision=PrecisionPolicy.from_byte_sizes(param_bytes=2, grad_bytes=4),
+    )
+    spec = HorizonSpec().grad_accum(2, 128)
+    sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    lowered = sim.timeline[-1].lowered
+    grad_bytes = trainable_gradient_bytes(lowered)
+    param_b = parameter_bytes(lowered)
+
+    assert grad_bytes == 2 * param_b
+    assert sim.state_final.grad_accum is not None
+    assert sim.state_final.grad_accum.bytes == grad_bytes
+    assert sim.state_final.grad_accum.micro_batches_seen == 2

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from zepto.analysis import AdamW, HorizonSpec, estimate_horizon, reference_invocation
+from zepto.analysis import AdamW, HorizonSpec, StepKind, estimate_horizon, reference_invocation
 from zepto.analysis.horizon.state import trainable_parameter_elements
 from zepto.compose import Tensor, compose_graph
 from zepto.modules import ApertusForCausalLM
-from zepto.modules.linear import Linear
+from zepto.modules.layers.linear import Linear
 from zepto.semantic.metadata import DType
 
 _IN_FEATURES = 64
@@ -57,9 +57,10 @@ def _golden_ctx():
     )
 
 
-def test_training_spec_has_two_steps_not_three() -> None:
+def test_training_spec_includes_optimizer_step() -> None:
     spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
-    assert len(spec.steps) == 2
+    assert len(spec.steps) == 3
+    assert spec.steps[-1].kind == StepKind.OPTIMIZER
 
 
 def test_adamw_state_bytes_uses_optim_prec() -> None:

@@ -255,6 +255,8 @@ class HorizonSpec:
                 specs=self.recurrent.layers,
                 dtype=self.recurrent.dtype,
             )
+        n_micro = sum(1 for s in self.steps if s.kind == StepKind.MICRO_FORWARD)
+        registry = replace(registry, grad_accum_steps=n_micro)
         if self.optimizer_policy is not None:
             registry = replace(registry, optimizer_policy=self.optimizer_policy)
         return registry
@@ -323,4 +325,5 @@ class HorizonSpec:
         self.backward_step(seq_len, batch=batch)
         if optimizer is not None:
             self.optimizer_policy = optimizer
+            self.steps.append(optimizer_step(seq_len=seq_len, batch=batch))
         return self
