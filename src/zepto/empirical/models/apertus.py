@@ -18,14 +18,24 @@ if TYPE_CHECKING:
 
     from zepto.analysis.horizon.spec import HorizonStep
 
-TwinMode = Literal["apertus_parity", "transformers_defaults"]
+TwinMode = Literal["scored_window", "apertus_parity", "transformers_defaults"]
 
 APERTUS_ORIGINAL_MPE = 8192
+SCORED_WINDOW_MIN_MPE = 32
 
 
-def apertus_hf_max_position_embeddings(seq_len: int) -> int:
-    """HF MPE valid for short scored windows (original MPE must stay below MPE)."""
-    return max(seq_len, APERTUS_ORIGINAL_MPE + 1)
+def apertus_hf_max_position_embeddings(seq_len: int, *, twin_mode: TwinMode) -> int:
+    """HF ``max_position_embeddings`` for a twin mode that overrides MPE.
+
+    ``scored_window`` matches smoke (``max(seq_len, 32)``). ``apertus_parity``
+    keeps llama3 valid without warning (``max(seq_len, 8193)``).
+    ``transformers_defaults`` does not override MPE.
+    """
+    if twin_mode == "scored_window":
+        return max(seq_len, SCORED_WINDOW_MIN_MPE)
+    if twin_mode == "apertus_parity":
+        return max(seq_len, APERTUS_ORIGINAL_MPE + 1)
+    raise ValueError(f"twin_mode {twin_mode!r} does not override MPE")
 
 
 def _module_kwargs(opts: dict[str, int], *, seq_len: int) -> dict[str, int]:
@@ -93,7 +103,7 @@ class ApertusFamily(ApertusFamilyCore):
         seq_len: int,
         precision: str,
         device: "torch.device",
-        twin_mode: TwinMode = "apertus_parity",
+        twin_mode: TwinMode = "scored_window",
     ) -> "nn.Module":
         import torch
 
@@ -113,9 +123,9 @@ class ApertusFamily(ApertusFamilyCore):
             "attention_bias": False,
             "hidden_act": "xielu",
         }
-        if twin_mode == "apertus_parity":
+        if twin_mode in ("scored_window", "apertus_parity"):
             cfg_kwargs["max_position_embeddings"] = apertus_hf_max_position_embeddings(
-                seq_len
+                seq_len, twin_mode=twin_mode
             )
         elif twin_mode != "transformers_defaults":
             raise ValueError(f"unknown twin_mode: {twin_mode!r}")
@@ -148,6 +158,7 @@ class ApertusFamily(ApertusFamilyCore):
 
 __all__ = [
     "APERTUS_ORIGINAL_MPE",
+    "SCORED_WINDOW_MIN_MPE",
     "ApertusFamily",
     "OPTION_KEYS",
     "TwinMode",

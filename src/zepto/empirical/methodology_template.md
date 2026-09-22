@@ -10,11 +10,16 @@ Each row uses a **family slug** (`model_id`, e.g. `apertus`). Models use **rando
 
 ## Twin contract
 
-Default **`twin_mode=apertus_parity`** (see `run_meta.json`):
+Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studies use `scored_window`.**
 
-- **HF (Apertus):** `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. Checkpoint **llama3** `rope_parameters` (θ=12M, YaRN factor 8, `original_max_position_embeddings=8192`) are kept — do not set `rope_scaling=None`. **`max_position_embeddings`** is set to `max(seq_len, 8193)` so short scored windows validate without shrinking RoPE type (must stay **>** `original_max_position_embeddings`).
-- **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`.
-- **`transformers_defaults`:** optional experiment — omit MPE override and use full default HF context (65536); not comparable to smoke-style short-`S` studies.
+| Mode | HF `max_position_embeddings` | When to use |
+|------|------------------------------|-------------|
+| **`scored_window`** (default) | `max(seq_len, 32)` | VRAM parity vs the scored window (same as smoke). HF static buffers (RoPE/mask) are sized to **S**, not unused context. Transformers may warn because checkpoint `original_max_position_embeddings` (8192) is not **<** MPE; that is acceptable. llama3 `rope_parameters` are **not** shrunk. |
+| **`apertus_parity`** | `max(seq_len, 8193)` | llama3 config validates without warning (`original_max_position_embeddings` must stay **<** MPE). HF still allocates ~8k positions; not a scored-window VRAM twin. |
+| **`transformers_defaults`** | omitted (HF default, typically 65536) | Trial 1 full-context experiment. |
+
+- **HF (Apertus):** `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. Checkpoint **llama3** `rope_parameters` (θ=12M, YaRN factor 8, `original_max_position_embeddings=8192`) are kept — do not set `rope_scaling=None`.
+- **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`. Zepto materializes RoPE/mask at the scored **S** in all modes — do not inflate Zepto caches to chase HF MPE.
 
 ## Phases
 

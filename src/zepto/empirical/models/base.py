@@ -46,7 +46,7 @@ class ModelFamily(Protocol):
         seq_len: int,
         precision: str,
         device: torch.device,
-        twin_mode: str = "apertus_parity",
+        twin_mode: str = "scored_window",
     ) -> nn.Module: ...
 
     def hf_forward_infer(self, model: nn.Module, input_ids: torch.Tensor): ...

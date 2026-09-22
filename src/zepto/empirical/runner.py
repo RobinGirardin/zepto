@@ -59,7 +59,9 @@ class RunConfig:
     sampler: SamplerConfig
     append_results: bool = False
     log_first_draw_spec: bool = True
-    twin_mode: Literal["apertus_parity", "transformers_defaults"] = "apertus_parity"
+    twin_mode: Literal["scored_window", "apertus_parity", "transformers_defaults"] = (
+        "scored_window"
+    )
 
 
 def _git_commit() -> str | None:
