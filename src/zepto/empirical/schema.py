@@ -28,17 +28,25 @@ def configuration_id(_model_id: str, options: dict[str, int]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def subject_id(
+    configuration_id: str,
+    *,
+    seq_len: int,
+    batch_size: int,
+) -> str:
+    """Stable id for one experimental unit (architecture, sequence length, batch)."""
+    payload = f"{configuration_id}|S={seq_len}|B={batch_size}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def draw_id(
     configuration_id: str,
     *,
     seq_len: int,
     batch_size: int,
-    precision: str,
     draw_seed: int,
 ) -> str:
-    payload = (
-        f"{configuration_id}|S={seq_len}|B={batch_size}|prec={precision}|seed={draw_seed}"
-    )
+    payload = f"{configuration_id}|S={seq_len}|B={batch_size}|seed={draw_seed}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 

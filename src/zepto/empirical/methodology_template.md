@@ -34,13 +34,17 @@ Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studi
 
 ### Infer `target_vram` (cuBLAS handle correction)
 
-CUDA peak VRAM often includes cuBLAS workspace tied to GEMM handles. Zepto models **one** handle on infer; after a prior draw has run training, measured infer peak can reflect **two** handles’ workspace (~8.5 MiB on pre-SM90 GPUs).
+CUDA peak VRAM includes cuBLAS workspace tied to GEMM handles. A process-wide dummy forward and backward is run **once** before any scored row so two handles are already live. Zepto bills one handle on inference and two on training.
 
 - `target_vram_raw`: unadjusted `max_memory_allocated()` peak for the scored infer window.
-- `cublas_infer_correction_bytes`: subtracted on **inference** rows only when `global_draw_index > 0` (0 on the first draw in a run). Value = `cublas_workspace_bytes_per_handle(compute_capability)` from runtime policy.
-- `target_vram`: comparable ground truth — `target_vram_raw - cublas_infer_correction_bytes` on infer; training rows use raw peak (`correction = 0`).
+- `cublas_infer_correction_bytes`: one handle (`cublas_workspace_bytes_per_handle(compute_capability)`) subtracted on **every** inference row after that warmup, including the first subject and its second precision. Training rows use correction 0.
+- `target_vram`: `target_vram_raw - cublas_infer_correction_bytes` on infer; training rows use the raw peak.
 
-Draw order: configurations and draws are processed sequentially; index increments once per draw (not per CSV row).
+`empty_cache()` and deleting the module do not free the handle pool. Remaining leftover after the one-handle subtract is treated as constant.
+
+### Training windows
+
+Training VRAM and FLOPs are scored in **separate** windows. Both wrap `optimizer.step()`. `FlopCounterMode` is not active during the VRAM window.
 
 ### FLOP columns (training vs optimizer)
 

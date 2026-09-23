@@ -11,6 +11,7 @@ from zepto.empirical.schema import (
     draw_id,
     option_id,
     parse_evaluation_csv,
+    subject_id,
     write_csv_rows,
     EVALUATION_FIELDNAMES,
 )
@@ -28,10 +29,20 @@ def test_configuration_id_order_invariant() -> None:
 
 def test_draw_id_changes_with_workload() -> None:
     cfg = configuration_id("apertus", {"hidden_size": 32, "num_layers": 2})
-    d1 = draw_id(cfg, seq_len=8, batch_size=1, precision="fp32", draw_seed=1)
-    d2 = draw_id(cfg, seq_len=16, batch_size=1, precision="fp32", draw_seed=1)
+    d1 = draw_id(cfg, seq_len=8, batch_size=1, draw_seed=1)
+    d2 = draw_id(cfg, seq_len=16, batch_size=1, draw_seed=1)
     assert d1 != d2
     assert len(d1) == 16
+
+
+def test_subject_id_is_architecture_and_workload() -> None:
+    cfg = configuration_id("apertus", {"hidden_size": 32, "num_layers": 2})
+    s1 = subject_id(cfg, seq_len=8, batch_size=1)
+    s2 = subject_id(cfg, seq_len=16, batch_size=1)
+    s3 = subject_id(cfg, seq_len=8, batch_size=2)
+    assert s1 != s2
+    assert s1 != s3
+    assert s1 == subject_id(cfg, seq_len=8, batch_size=1)
 
 
 def test_evaluation_csv_round_trip(tmp_path: Path) -> None:

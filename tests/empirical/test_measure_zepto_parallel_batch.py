@@ -26,7 +26,7 @@ def _golden_opts() -> dict[str, int]:
 
 
 def test_harness_version_parallel_batch() -> None:
-    assert HARNESS_VERSION == "0.4.0"
+    assert HARNESS_VERSION == "0.5.0"
 
 
 def test_train_batch_two_grows_activations() -> None:

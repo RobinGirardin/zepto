@@ -1,4 +1,4 @@
-"""cuBLAS infer VRAM correction helper (draw index)."""
+"""cuBLAS infer VRAM correction after process-wide handle warmup."""
 
 from __future__ import annotations
 
@@ -14,10 +14,11 @@ def test_cublas_workspace_bytes_per_handle_policy() -> None:
     assert cublas_workspace_bytes_per_handle((9, 0)) == SM90_PLUS
 
 
-def test_correction_zero_on_first_draw() -> None:
-    assert infer_cublas_vram_correction_bytes(0, (7, 5)) == 0
+def test_correction_zero_before_process_warmup() -> None:
+    assert infer_cublas_vram_correction_bytes((7, 5), process_warmed=False) == 0
 
 
-def test_correction_per_handle_after_first_draw() -> None:
-    assert infer_cublas_vram_correction_bytes(1, (7, 5)) == PRE_SM90
-    assert infer_cublas_vram_correction_bytes(3, (7, 5)) == PRE_SM90
+def test_correction_one_handle_after_warmup() -> None:
+    assert infer_cublas_vram_correction_bytes((7, 5), process_warmed=True) == PRE_SM90
+    assert infer_cublas_vram_correction_bytes((7, 5)) == PRE_SM90
+    assert infer_cublas_vram_correction_bytes((9, 0)) == SM90_PLUS

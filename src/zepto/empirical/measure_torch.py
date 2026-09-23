@@ -24,6 +24,17 @@ def _cuda_sync_peak_vram() -> int:
     return int(torch.cuda.max_memory_allocated())
 
 
+def warmup_cublas_process(device: torch.device) -> None:
+    """Dummy forward + backward so two cuBLAS handles exist before scored rows."""
+    if device.type != "cuda":
+        return
+    operand = torch.randn(64, 64, device=device, requires_grad=True)
+    (operand @ operand).sum().backward()
+    torch.cuda.synchronize()
+    del operand
+    torch.cuda.empty_cache()
+
+
 def measure_infer_torch(
     family: ModelFamily,
     model: torch.nn.Module,
@@ -75,27 +86,24 @@ def measure_train_step_torch(
     labels: torch.Tensor,
     opt: torch.optim.Optimizer,
 ) -> TorchMeasureResult:
-    opt.zero_grad(set_to_none=False)
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
-    torch.cuda.synchronize()
-    with FlopCounterMode(display=False) as flop_counter:
-        train_step_forward_backward(
-            family,
-            model,
-            input_ids,
-            labels,
-            opt,
-            include_optimizer_step=False,
-        )
-    torch.cuda.synchronize()
-    target_flop_no_opt = int(flop_counter.get_total_flops())
-
+    """Score VRAM and FLOPs in separate windows; both wrap ``optimizer.step()``."""
     opt.zero_grad(set_to_none=False)
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
     alloc_before = int(torch.cuda.memory_allocated())
+    train_step_forward_backward(
+        family,
+        model,
+        input_ids,
+        labels,
+        opt,
+        include_optimizer_step=True,
+    )
+    torch.cuda.synchronize()
+    target_vram_raw = _cuda_sync_peak_vram()
+
+    opt.zero_grad(set_to_none=False)
     with FlopCounterMode(display=False) as flop_counter:
         train_step_forward_backward(
             family,
@@ -105,10 +113,22 @@ def measure_train_step_torch(
             opt,
             include_optimizer_step=True,
         )
-    torch.cuda.synchronize()
-    target_vram_raw = _cuda_sync_peak_vram()
+    target_flop = int(flop_counter.get_total_flops())
+
+    opt.zero_grad(set_to_none=False)
+    with FlopCounterMode(display=False) as flop_counter_no_opt:
+        train_step_forward_backward(
+            family,
+            model,
+            input_ids,
+            labels,
+            opt,
+            include_optimizer_step=False,
+        )
+    target_flop_no_opt = int(flop_counter_no_opt.get_total_flops())
+
     return TorchMeasureResult(
-        target_flop=int(flop_counter.get_total_flops()),
+        target_flop=target_flop,
         target_vram_raw=target_vram_raw,
         peak_minus_before=target_vram_raw - alloc_before,
         alloc_before=alloc_before,
@@ -123,7 +143,7 @@ def training_warmup_step(
     labels: torch.Tensor,
     opt: torch.optim.Optimizer,
 ) -> None:
-    """One unscored train step before scored steps 1..K (smoke notebook protocol)."""
+    """One unscored train step before the scored training window (HF only)."""
     opt.zero_grad(set_to_none=True)
     train_step_forward_backward(
         family,

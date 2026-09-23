@@ -7,6 +7,24 @@ import pytest
 from zepto.empirical.models.apertus_core import ApertusFamilyCore as ApertusFamily
 
 
+def test_derive_from_free_knobs() -> None:
+    family = ApertusFamily()
+    opts = family.derive_options(
+        {
+            "gqa_group": 4,
+            "num_kv_heads": 2,
+            "head_dim": 4,
+            "ffn_mult": 2.0,
+            "num_layers": 2,
+            "vocab_size": 100,
+        }
+    )
+    assert opts["num_heads"] == 8
+    assert opts["hidden_size"] == 32
+    assert opts["intermediate_size"] == 64
+    family.validate_options(opts)
+
+
 def test_derive_hidden_size() -> None:
     family = ApertusFamily()
     opts = family.derive_options(
