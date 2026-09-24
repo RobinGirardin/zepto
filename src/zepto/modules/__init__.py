@@ -2,6 +2,7 @@
 
 from .layers.affine_linear import AffineLinear
 from .models.apertus import APERTUS_70B, APERTUS_8B, Apertus, ApertusConfig
+from .models.apertus15 import APERTUS15_70B, APERTUS15_8B, Apertus15, Apertus15Config
 from .blocks.apertus_decoder_block import ApertusDecoderBlock
 from .attention.attention import FlexibleAttention
 from .attention.attention_config import (
@@ -152,6 +153,7 @@ from .ffn.squared_relu_ffn import SquaredReluFFN
 from .ffn.swiglu import SwiGLU
 from .layers.xielu import XIELU
 from .apertus_for_causal_lm import ApertusForCausalLM
+from .apertus15_for_causal_lm import Apertus15ForCausalLM
 from .granite_for_causal_lm import GraniteForCausalLM
 
 __all__ = [
@@ -162,6 +164,11 @@ __all__ = [
     "ApertusConfig",
     "ApertusForCausalLM",
     "ApertusDecoderBlock",
+    "APERTUS15_70B",
+    "APERTUS15_8B",
+    "Apertus15",
+    "Apertus15Config",
+    "Apertus15ForCausalLM",
     "AttentionConfig",
     "AttentionLayerTemplate",
     "AttentionSoftmaxWithSink",
