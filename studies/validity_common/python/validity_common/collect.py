@@ -64,13 +64,15 @@ def collect_subjects(
     study: str,
     model_id: str,
     twin_mode: str,
+    write_subjects_fn=None,
 ) -> Path:
     """Measure every subject. Creates evaluation.csv and ledger.csv."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     catalog = catalog or Catalog()
 
-    write_subjects(output_dir / "subjects.csv", subjects)
+    write = write_subjects_fn or write_subjects
+    write(output_dir / "subjects.csv", subjects)
     write_evaluation(output_dir / "evaluation.csv", [])
     write_ledger(output_dir / "ledger.csv", [])
     write_run_meta(

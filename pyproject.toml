@@ -24,6 +24,7 @@ pythonpath = [
     "studies/validity_common/python",
     "studies/apertus-validity/python",
     "studies/granite-validity/python",
+    "studies/qwen38-validity/python",
 ]
 testpaths = ["tests"]
 addopts = "-m 'not benchmark'"

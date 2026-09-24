@@ -78,11 +78,29 @@ def test_get_model_family_qwen38() -> None:
 
 
 def test_infer_factory_is_text_only_hybrid() -> None:
+    from zepto.compose import Tensor, compose_graph
+    from zepto.empirical.models.qwen38_core import layer_specs_from_options
+
     family = get_model_family("qwen38")
     opts = family.derive_options(_WORKED)
-    module = family.build_zepto_infer_module_factory(opts, seq_len=32)(None)
-    assert module.vision is None
-    assert module.mtp is None
-    mixers = [spec.mixer for spec in module._layer_specs]
-    assert mixers == ["gated_delta_net", "gated_delta_net", "gated_delta_net", "attention"]
-    assert mixers.count("gated_delta_net") == 3
+    specs = layer_specs_from_options(opts)
+    assert [spec.mixer for spec in specs] == [
+        "gated_delta_net",
+        "gated_delta_net",
+        "gated_delta_net",
+        "attention",
+    ]
+    graph = compose_graph(
+        family.build_zepto_infer_module_factory(opts, seq_len=32),
+        (Tensor(shape=(32,)),),
+    )
+    kinds = [graph.node(n).provenance.component_type for n in graph.nodes]
+    gdn_paths = {
+        graph.node(n).provenance.module_path
+        for n in graph.nodes
+        if graph.node(n).provenance.component_type == "GatedDeltaNet"
+    }
+    assert len(gdn_paths) == 3
+    assert "FlexibleAttention" in kinds
+    assert "Qwen3VLVisionTower" not in kinds
+    assert "MtpStage" not in kinds

@@ -1,0 +1,27 @@
+---
+title: "Qwen3.8 text-only validity: primary analysis"
+subtitle: "Eight TOSTs, conjunction, Bland Altman, and the sampling frame ledger"
+format:
+  html:
+    toc: true
+    number-sections: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+params:
+  evaluation: "../fixtures/evaluation.csv"
+  ledger: "../fixtures/ledger.csv"
+---
+
+# What this document answers {#sec-purpose}
+
+The preregistered design is set out in
+[`docs/framework-empirical-evaluation-qwen38.md`](../../docs/framework-empirical-evaluation-qwen38.md),
+which reuses
+[`docs/framework-empirical-evaluation.md`](../../docs/framework-empirical-evaluation.md)
+for hypotheses, outcomes, and analysis. This Quarto document is the primary
+analysis of that design and is written as a confirmatory report rather than as
+an exploratory notebook.
+
+{{< include ../../validity_common/r/analysis_body.qmd >}}

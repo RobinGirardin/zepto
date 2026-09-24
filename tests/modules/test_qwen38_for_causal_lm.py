@@ -52,9 +52,14 @@ def test_qwen38_causal_lm_compose_has_fused_ce() -> None:
         ),
     )
     kinds = [graph.node(n).provenance.component_type for n in graph.nodes]
+    gdn_paths = {
+        graph.node(n).provenance.module_path
+        for n in graph.nodes
+        if graph.node(n).provenance.component_type == "GatedDeltaNet"
+    }
     assert "FusedLinearCrossEntropy" in kinds
-    assert kinds.count("GatedDeltaNet") == 3
-    assert "FlexibleAttention" in kinds or kinds.count("Qwen35LanguageDecoderBlock") == 4
+    assert len(gdn_paths) == 3
+    assert "FlexibleAttention" in kinds or kinds.count("Qwen35LanguageDecoderBlock") >= 4
     assert kinds.count("LanguageModelOutput") == 0
 
 

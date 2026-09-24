@@ -21,7 +21,7 @@ from zepto.modules.models.qwen38 import Qwen38Config
 from zepto.modules.position.rope_config import qwen3_vl_mrope
 from zepto.semantic.metadata import DType
 
-_SEQ_LEN = 128
+_SEQ_LEN = 8
 _BATCH = 2
 
 

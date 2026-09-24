@@ -440,6 +440,10 @@ A second instance of the same protocol for Granite lives in
 `studies/granite-validity/` and is scoped in
 `docs/framework-empirical-evaluation-granite.md`.
 
+A third instance of the same protocol for Qwen3.8 (text-only hybrid
+trunk) lives in `studies/qwen38-validity/` and is scoped in
+`docs/framework-empirical-evaluation-qwen38.md`.
+
 ## Sources
 
 ```bibtex

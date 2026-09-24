@@ -15,6 +15,8 @@ studies/apertus-validity/artifacts/*
 !studies/apertus-validity/artifacts/.gitkeep
 studies/granite-validity/artifacts/*
 !studies/granite-validity/artifacts/.gitkeep
+studies/qwen38-validity/artifacts/*
+!studies/qwen38-validity/artifacts/.gitkeep
 
 # Pi harness handoff and eval workspaces
 _workspace/
