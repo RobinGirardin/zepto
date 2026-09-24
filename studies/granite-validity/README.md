@@ -32,6 +32,7 @@ protocol-matched pilot. This pass does not lock a new catalog.
 python/granite_validity/   family protocol + shims over validity_common
 r/power.R                  wrapper; shared script is studies/validity_common/r/power.R
 r/analysis.qmd             Granite title + include of the shared TOST body
+notebooks/                 Colab-capable collection
 fixtures/                  tiny CSV so the Quarto doc renders without a GPU
 artifacts/                 run outputs (gitignored)
 ```

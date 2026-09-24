@@ -385,6 +385,7 @@ List of PyTorch ATEN operation that requires a dedicated zepto fused-kernel pins
 - `torch.rmsnorm`
 - `torch.softmax`
 - `XIELUActivation`
+- `torch.SiLU`
 
 ### 7.6 Assignment
 
