@@ -63,7 +63,10 @@ def _cublas_handle_count(phase: str, *, step_kind: StepKind | None) -> int:
     """Map Zepto phase / horizon step to cuBLAS handle count."""
     if step_kind == StepKind.OPTIMIZER:
         return 0
-    if phase in ("backward", "full") or step_kind == StepKind.BACKWARD:
+    if phase in ("backward", "full") or step_kind in (
+        StepKind.BACKWARD,
+        StepKind.TRAIN,
+    ):
         return 2
     return 1
 

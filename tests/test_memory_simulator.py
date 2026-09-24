@@ -19,6 +19,7 @@ from zepto.semantic import (
     MatMul,
     Maximum,
     Port,
+    ResourceEvent,
     ResourceEventKind,
     TensorRole,
 )
@@ -331,3 +332,86 @@ def test_matmul_relu_matmul_train_peak_not_sum_all() -> None:
         result.peak_live_bytes
         <= weight_bytes + input_bytes + 5 * largest_activation + 1_048_576
     )
+
+
+def _gradient_edge_graph(*, persist: bool):
+    from zepto.analysis.lowered import LoweredEdge, LoweredGraph, LoweredNode
+    from zepto.graph.ids import EdgeId, GraphId, NodeId
+
+    gid = GraphId.new()
+    nid = NodeId(gid, 0)
+    eid = EdgeId(gid, 0)
+    tensor = Tensor(shape=(8, 4), dtype=DType.FP32, requires_grad=True)
+    events = [
+        ResourceEvent(ResourceEventKind.ALLOCATE, "grad_w", phase="backward"),
+    ]
+    if persist:
+        events.append(
+            ResourceEvent(ResourceEventKind.PERSIST, "grad_w", phase="backward")
+        )
+    edge = LoweredEdge(
+        id="grad_w",
+        edge_id=eid,
+        tensor=tensor,
+        role=TensorRole.GRADIENT,
+        storage_id="stor_grad_w",
+    )
+    node = LoweredNode(
+        id="n0",
+        node_id=nid,
+        implementation="test/weight_grad",
+        input_edges=(),
+        output_edges=("grad_w",),
+        auxiliary_edges=("grad_w",),
+        resource_events=tuple(events),
+        forward_flops=0,
+        backward_flops=0,
+    )
+    lowered = LoweredGraph(
+        edges={"grad_w": edge},
+        parameters={},
+        parameter_map={},
+        nodes=(node,),
+        context=reference_invocation(phase="backward"),
+        edge_map={eid: "grad_w"},
+        node_map={nid: "n0"},
+        output_edge_ids=(),
+        selections=(),
+    )
+    nbytes = lowered.context.accounting.bytes_for(
+        ResolvedValue(tensor=tensor, role=TensorRole.GRADIENT, dtype=tensor.dtype)
+    )
+    return lowered, nbytes
+
+
+def test_persist_gradient_classified_as_weight_grad() -> None:
+    lowered, nbytes = _gradient_edge_graph(persist=True)
+    result = ResourceEventSimulator(lowered).run()
+    assert result.breakdown.weight_grads == nbytes
+    assert result.peak_live_bytes >= nbytes
+
+
+def test_gradient_without_persist_stays_wavefront() -> None:
+    lowered, _nbytes = _gradient_edge_graph(persist=False)
+    result = ResourceEventSimulator(lowered).run()
+    assert result.breakdown.weight_grads == 0
+
+
+def test_phase_full_emits_save_and_backward_events() -> None:
+    from zepto.modules.layers.linear import Linear
+
+    graph = compose_graph(
+        lambda ctx: Linear(64, 32),
+        (ComposeTensor(shape=(2, 64), requires_grad=True),),
+    )
+    full = lower(graph, reference_invocation(phase="full"))
+    backward = lower(graph, reference_invocation(phase="backward"))
+    full_result = ResourceEventSimulator(full).run()
+    bwd_result = ResourceEventSimulator(backward).run()
+    assert full_result.breakdown.saved_for_backward > 0
+    assert any(
+        event.phase == "backward"
+        for node in full.nodes
+        for event in node.resource_events
+    )
+    assert bwd_result.breakdown.saved_for_backward == 0

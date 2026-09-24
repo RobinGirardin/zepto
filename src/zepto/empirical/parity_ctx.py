@@ -11,8 +11,10 @@ def build_invocation_context(
     *,
     cuda_capability: tuple[int, int],
 ):
+    # Vanilla AdamW on a uniform-dtype twin: moments follow param_prec.
+    optim_prec = 2 if precision == "fp16" else 4
     base = dict(
-        optim_prec=4,
+        optim_prec=optim_prec,
         attention_backend="eager",
         hardware="cuda",
         compute_capability=cuda_capability,

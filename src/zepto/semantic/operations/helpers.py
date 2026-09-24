@@ -13,6 +13,11 @@ GRAD_LEFT_UNREDUCED = "grad_left_unreduced"
 GRAD_RIGHT_UNREDUCED = "grad_right_unreduced"
 
 
+def includes_backward(phase: str) -> bool:
+    """Return True when ``phase`` must emit backward resource events."""
+    return phase in ("backward", "full")
+
+
 def numel(tensor: Tensor) -> int:
     """Return the concrete element count."""
     result = 1

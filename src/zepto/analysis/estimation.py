@@ -52,6 +52,7 @@ def estimate_horizon(
     context: InvocationContext,
     *,
     return_simulation: bool = False,
+    steady_state: bool = True,
 ) -> HorizonCostReport | tuple[HorizonCostReport, HorizonSimulation]:
     """Simulate a horizon and return combined memory and FLOP accounting.
 
@@ -59,6 +60,10 @@ def estimate_horizon(
     ``inputs_fn``; ``simulate_horizon`` raises ``ValueError`` on mismatch.
     FLOPs sum over steps; peak VRAM is the max over steps
     (``HorizonMemoryReducer``).
+
+    ``steady_state=True`` (default) seeds optimizer moments on the registry
+    before ``state_initial`` so a G=1 ``TRAIN`` peak includes Adam. Set
+    ``steady_state=False`` for a cold first step.
 
     Empirical harness contract: use
     ``HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)`` for
@@ -72,7 +77,9 @@ def estimate_horizon(
     from .horizon import simulate_horizon
     from .memory import account_memory
 
-    sim = simulate_horizon(horizon, module_fn, inputs_fn, context)
+    sim = simulate_horizon(
+        horizon, module_fn, inputs_fn, context, steady_state=steady_state
+    )
     hmem = account_memory(sim)
     hflops = account_flops(sim)
     per_step = tuple(

@@ -5,6 +5,7 @@ from zepto.semantic.metadata import PortContract
 from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
+    includes_backward,
     allocate,
     broadcast_tensor,
     broadcast_reduction_flops,
@@ -140,7 +141,7 @@ class ParameterBias(Operation):
         result: OperationResult,
     ) -> tuple[ResourceEvent, ...]:
         events = list(allocate(len(self.output_ports)))
-        if context.phase != "backward":
+        if not includes_backward(context.phase):
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
             if port_name == GRAD_BIAS:

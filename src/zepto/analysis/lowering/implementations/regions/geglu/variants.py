@@ -10,6 +10,7 @@ from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
+from zepto.semantic.operations.helpers import includes_backward
 
 from ....context import InvocationContext
 from ....helpers import (
@@ -228,7 +229,7 @@ class FusedGeGLURegionImplementation:
             requires_grad=input_tensor.requires_grad,
         )
 
-        if context.phase == "backward" and release_edges:
+        if includes_backward(context.phase) and release_edges:
             for edge in release_edges:
                 events.append(
                     ResourceEvent(

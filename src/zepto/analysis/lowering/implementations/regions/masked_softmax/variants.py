@@ -7,7 +7,7 @@ from typing import Literal
 
 from zepto.analysis.lowered import LoweredNode
 from zepto.graph.graph import Graph
-from zepto.semantic.operations.helpers import numel
+from zepto.semantic.operations.helpers import includes_backward, numel
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 
 from ....context import InvocationContext
@@ -137,7 +137,7 @@ class FusedMaskedSoftmaxRegionImplementation:
         )
 
         if (
-            context.phase == "backward"
+            includes_backward(context.phase)
             and self.recipe.save_P
             and input_tensor.requires_grad
         ):
@@ -276,7 +276,7 @@ class FusedMaskedSoftmaxSinkRegionImplementation:
         backward_flops *= batch
 
         if (
-            context.phase == "backward"
+            includes_backward(context.phase)
             and self.recipe.save_P
             and requires_grad
         ):

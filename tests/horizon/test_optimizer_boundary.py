@@ -59,7 +59,9 @@ def _golden_ctx():
 
 def test_training_spec_includes_optimizer_step() -> None:
     spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
-    assert len(spec.steps) == 3
+    assert len(spec.steps) == 2
+    assert spec.steps[0].kind == StepKind.TRAIN
+    assert spec.steps[0].phase == "full"
     assert spec.steps[-1].kind == StepKind.OPTIMIZER
 
 
@@ -73,8 +75,8 @@ def test_horizon_flops_excludes_phantom_forward() -> None:
     spec = HorizonSpec.training(seq_len=GOLDEN["seq_len"], micro_batches=1, optimizer=AdamW)
     report = estimate_horizon(spec, _training_module, _training_inputs, ctx)
 
-    micro_flops = report.per_step[0].flops.total_flops
-    backward_flops = report.per_step[1].flops.total_flops
+    full_flops = report.per_step[0].flops.total_flops
+    update_reported = report.per_step[1].flops.total_flops
     train_graph = compose_graph(
         _training_module,
         (
@@ -88,7 +90,8 @@ def test_horizon_flops_excludes_phantom_forward() -> None:
     trainable = trainable_parameter_elements(train_lowered)
     update_flops = AdamW.update_flops(trainable_elements=trainable, context=ctx)
 
-    expected = micro_flops + backward_flops + update_flops
+    expected = full_flops + update_flops
+    assert update_reported == update_flops
     assert report.total_flops == expected
 
 
@@ -97,10 +100,21 @@ def test_horizon_flops_no_duplicate_forward() -> None:
     spec = HorizonSpec.training(seq_len=GOLDEN["seq_len"], micro_batches=1, optimizer=AdamW)
     report = estimate_horizon(spec, _training_module, _training_inputs, ctx)
 
-    micro_flops = report.per_step[0].flops.total_flops
-    backward_flops = report.per_step[1].flops.total_flops
-    phantom_total = micro_flops + backward_flops + micro_flops
-    assert report.total_flops < phantom_total
+    full_flops = report.per_step[0].flops.total_flops
+    update_flops = report.per_step[1].flops.total_flops
+    assert report.total_flops == full_flops + update_flops
+    from zepto.analysis import account_flops, lower
+
+    train_graph = compose_graph(
+        _training_module,
+        (
+            Tensor(shape=(GOLDEN["seq_len"],)),
+            Tensor(shape=(GOLDEN["seq_len"],), semantic_type="labels", requires_grad=False),
+        ),
+    )
+    fwd_only = account_flops(lower(train_graph, replace(ctx, phase="forward"))).total_flops
+    # Reject a phantom extra forward: total is full (fwd+bwd) + Adam, not +fwd again.
+    assert report.total_flops < full_flops + fwd_only
 
 
 def test_optimizer_state_in_state_final() -> None:
@@ -129,4 +143,7 @@ def test_peak_vram_includes_optimizer_state() -> None:
     train_lowered = lower(train_graph, replace(ctx, phase="forward"))
     params = parameter_bytes(train_lowered)
     opt_bytes = report.state_final.optimizer.bytes if report.state_final.optimizer else 0
-    assert report.peak_vram >= params + opt_bytes or report.peak_vram > params
+    weight_grads = report.per_step[0].memory.breakdown.weight_grads
+    assert report.peak_vram >= params + opt_bytes
+    assert weight_grads > 0
+    assert report.peak_vram >= params + opt_bytes + weight_grads

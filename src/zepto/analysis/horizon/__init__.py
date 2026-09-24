@@ -19,6 +19,7 @@ from .spec import (
     StepKind,
     decode_step,
     optimizer_step,
+    train_step,
 )
 from .state import (
     Conv1DState,
@@ -56,4 +57,5 @@ __all__ = [
     "inputs_from_token_ids_and_labels",
     "optimizer_step",
     "simulate_horizon",
+    "train_step",
 ]

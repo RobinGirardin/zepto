@@ -58,8 +58,8 @@ def test_apertus_logits_training_horizon_batched_compose_api() -> None:
     report_1 = _training_report(1)
     report_b = _training_report(_BATCH)
 
-    assert len(report_1.per_step) == 3
-    assert len(report_b.per_step) == 3
+    assert len(report_1.per_step) == 2
+    assert len(report_b.per_step) == 2
     assert report_1.state_final.optimizer is not None
     assert report_b.state_final.optimizer is not None
 
@@ -68,8 +68,8 @@ def test_apertus_logits_training_horizon_batched_compose_api() -> None:
     assert params_1 == params_b
     assert report_1.state_final.optimizer.bytes == report_b.state_final.optimizer.bytes
 
-    # MICRO_FORWARD activations, not raw peak_vram: params + AdamW (8 B/param)
-    # are constant in B and dominate total horizon peak on tiny Apertus.
+    # TRAIN-step activations scale in B. Peak is the warmed full-graph
+    # (params + Adam + tape + grads), not "params + AdamW dominate".
     # Shared causal mask is (1, S, S). See ADR-0010.
     act_1 = report_1.per_step[0].memory.breakdown.activations
     act_b = report_b.per_step[0].memory.breakdown.activations

@@ -9,7 +9,7 @@ from zepto.compose.values import Tensor
 from zepto.graph.node import Node
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
-from zepto.semantic.operations.helpers import numel
+from zepto.semantic.operations.helpers import includes_backward, numel
 from zepto.semantic.operations.records import EstimationContext, ResourceEvent, ResourceEventKind
 from ..context import InvocationContext
 from ..helpers import (
@@ -113,7 +113,7 @@ class ReLUMaskImplementation:
             ResourceEvent(ResourceEventKind.ALLOCATE, lowered_mask),
             ResourceEvent(ResourceEventKind.SAVE, lowered_mask),
         )
-        if context.phase == "backward":
+        if includes_backward(context.phase):
             events = (
                 *events,
                 ResourceEvent(

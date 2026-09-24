@@ -10,6 +10,7 @@ from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
+from zepto.semantic.operations.helpers import includes_backward
 
 from ....context import InvocationContext
 from ....helpers import (
@@ -265,7 +266,7 @@ class FusedGQARegionImplementation:
         forward_flops *= batch
         backward_flops *= batch
 
-        if context.phase == "backward":
+        if includes_backward(context.phase):
             events.extend(_backward_release_saved_aux(auxiliary_edges))
 
         return LoweredNode(

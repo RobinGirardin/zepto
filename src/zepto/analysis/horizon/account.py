@@ -59,7 +59,7 @@ class HorizonMemoryReducer:
             after_state = snapshot_state_bytes(record.state_after)
             boundary_peak = (param_bytes or 0) + after_state
             if (
-                record.step.kind == StepKind.BACKWARD
+                record.step.kind in (StepKind.BACKWARD, StepKind.TRAIN)
                 and sim.spec.optimizer_policy is not None
             ):
                 trainable = trainable_parameter_elements(record.lowered)

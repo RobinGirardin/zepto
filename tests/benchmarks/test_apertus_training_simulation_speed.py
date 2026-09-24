@@ -30,11 +30,11 @@ def test_apertus_training_simulation_timing_harness_smoke() -> None:
     """Two-layer Apertus: validates the timing harness completes quickly."""
     result = run_apertus_training_smoke()
     timing = result.timing
-    assert len(timing.step_timings) == 3
+    assert len(timing.step_timings) == 2
     assert timing.total_seconds > 0
     assert timing.step_timings[0].discover_seconds > 0
-    assert timing.metadata.get("cache_misses") == 2
-    opt_timing = timing.step_timings[2]
+    assert timing.metadata.get("cache_misses") == 1
+    opt_timing = timing.step_timings[1]
     assert opt_timing.compose_seconds == 0.0
     assert opt_timing.lower_seconds == 0.0
 

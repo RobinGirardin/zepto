@@ -11,12 +11,13 @@ Parallel batch vs gradient accumulation (normative):
 
 HF single batched training step (no grad accum)::
 
-    batch=B, micro_batches=1  →  one forward (B,S) + one backward (B,S) + optimizer
+    batch=B, micro_batches=1  →  one TRAIN step (phase="full") + optimizer
 
 HF with gradient accumulation::
 
     batch=b, micro_batches=G  →  G forwards on (b,S), then backward + optimizer
     Effective batch ≈ G × b (per device).
+    G>1 keeps the split horizon; it does not collapse into phase="full".
 
 Do not conflate ``batch=1, micro_batches=B`` with HF ``(B, S)`` VRAM: that is
 ``B`` sequential ``(1, S)`` forwards (``micro_sum``), not a parallel batch.
@@ -51,6 +52,7 @@ class StepKind(StrEnum):
     DECODE = "decode"
     MICRO_FORWARD = "micro_forward"
     BACKWARD = "backward"
+    TRAIN = "train"
     OPTIMIZER = "optimizer"
     GENERIC = "generic"
 
@@ -124,6 +126,17 @@ def decode_step(
     )
 
 
+def train_step(seq_len: int, *, batch: int = 1) -> HorizonStep:
+    """Build one G=1 training graph step (forward + backward, ``phase="full"``)."""
+    return HorizonStep(
+        kind=StepKind.TRAIN,
+        seq_len=seq_len,
+        batch=batch,
+        phase="full",
+        name="train",
+    )
+
+
 def optimizer_step(*, seq_len: int, batch: int = 1) -> HorizonStep:
     """Build one optimizer boundary step.
 
@@ -188,22 +201,26 @@ class HorizonSpec:
         batch: int = 1,
         optimizer: OptimizerPolicy | None = AdamW,
     ) -> HorizonSpec:
-        """One training step: micro-batch forwards, backward, optimizer.
+        """One training step: full graph (G=1) or micro-forwards + backward (G>1).
 
         HuggingFace mapping: ``batch=B, micro_batches=1`` matches
-        ``per_device_train_batch_size=B`` (one parallel ``(B, S)`` pass).
-        ``batch=b, micro_batches=G`` matches gradient accumulation
-        (effective batch ≈ ``G × b``). Never set ``micro_batches=B`` with
-        ``batch=1`` for HF VRAM parity unless explicitly documenting a
-        ``micro_sum`` sequential-forwards mode.
+        ``per_device_train_batch_size=B`` — one ``TRAIN`` step at
+        ``phase="full"`` plus optimizer. ``batch=b, micro_batches=G``
+        matches gradient accumulation (effective batch ≈ ``G × b``) and
+        keeps the split ``MICRO_FORWARD × G + BACKWARD`` list. Never set
+        ``micro_batches=B`` with ``batch=1`` for HF VRAM parity unless
+        explicitly documenting a ``micro_sum`` sequential-forwards mode.
 
         An optimizer step clears ``grad_accum``. Inspect
         ``state_final.grad_accum`` only on timelines built with
         :meth:`grad_accum` and no optimizer.
         """
         spec = cls(optimizer_policy=optimizer)
-        spec.grad_accum(micro_batches, seq_len, batch=batch)
-        spec.backward_step(seq_len, batch=batch)
+        if micro_batches == 1:
+            spec.steps.append(train_step(seq_len, batch=batch))
+        else:
+            spec.grad_accum(micro_batches, seq_len, batch=batch)
+            spec.backward_step(seq_len, batch=batch)
         if optimizer is not None:
             spec.steps.append(optimizer_step(seq_len=seq_len, batch=batch))
         return spec
@@ -321,8 +338,11 @@ class HorizonSpec:
         batch: int = 1,
         optimizer: OptimizerPolicy | None = None,
     ) -> HorizonSpec:
-        self.grad_accum(micro_batches, seq_len, batch=batch)
-        self.backward_step(seq_len, batch=batch)
+        if micro_batches == 1:
+            self.steps.append(train_step(seq_len, batch=batch))
+        else:
+            self.grad_accum(micro_batches, seq_len, batch=batch)
+            self.backward_step(seq_len, batch=batch)
         if optimizer is not None:
             self.optimizer_policy = optimizer
             self.steps.append(optimizer_step(seq_len=seq_len, batch=batch))

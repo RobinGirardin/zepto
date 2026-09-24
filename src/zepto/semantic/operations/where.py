@@ -4,6 +4,7 @@ from zepto.compose.values import Tensor
 from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
+    includes_backward,
     allocate,
     backward_gradient_port_events,
     broadcast_reduction_flops,
@@ -148,7 +149,7 @@ class Where(Operation):
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
         events = list(allocate(len(self.output_ports)))
-        if context.phase != "backward":
+        if not includes_backward(context.phase):
             return tuple(events)
         unreduced_by_port = {
             GRAD_ON_TRUE: GRAD_ON_TRUE_UNREDUCED,

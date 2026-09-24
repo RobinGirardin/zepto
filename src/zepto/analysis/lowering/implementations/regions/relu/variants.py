@@ -9,7 +9,7 @@ from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
-from zepto.semantic.operations.helpers import numel
+from zepto.semantic.operations.helpers import includes_backward, numel
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
 
 from ....context import InvocationContext
@@ -146,7 +146,7 @@ class ReLURegionImplementation:
             n, requires_grad=left_tensor.requires_grad
         )
 
-        if context.phase == "backward" and release_edges:
+        if includes_backward(context.phase) and release_edges:
             events.append(
                 ResourceEvent(
                     ResourceEventKind.RELEASE,

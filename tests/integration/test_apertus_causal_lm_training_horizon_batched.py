@@ -80,8 +80,8 @@ def test_causal_lm_train_horizon_batch_scales_activations() -> None:
     report_1, sim_1 = _training_horizon(1)
     report_b, sim_b = _training_horizon(_BATCH)
 
-    assert len(report_1.per_step) == 3
-    assert len(report_b.per_step) == 3
+    assert len(report_1.per_step) == 2
+    assert len(report_b.per_step) == 2
     assert report_1.state_final.grad_accum is None
     assert report_b.state_final.grad_accum is None
     assert report_1.state_final.optimizer is not None

@@ -4,6 +4,7 @@ from zepto.compose.values import Tensor
 from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
+    includes_backward,
     GRAD_LEFT,
     GRAD_LEFT_UNREDUCED,
     GRAD_RIGHT,
@@ -135,7 +136,7 @@ class Subtract(Operation):
     ) -> tuple[ResourceEvent, ...]:
         """Report forward output allocation and backward gradient aux events."""
         events = list(allocate(len(self.output_ports)))
-        if context.phase != "backward":
+        if not includes_backward(context.phase):
             return tuple(events)
         for port_name in result.active_auxiliary_ports:
             events.extend(activation_grad_events(port_name))

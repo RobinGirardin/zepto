@@ -10,6 +10,7 @@ from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
+from zepto.semantic.operations.helpers import includes_backward
 
 from ....context import InvocationContext
 from ....helpers import (
@@ -145,7 +146,7 @@ class FusedLinearCESoftcapRegionImplementation:
             s, d, v, requires_grad=hidden_tensor.requires_grad
         )
 
-        if context.phase == "backward" and self.recipe.save_hidden:
+        if includes_backward(context.phase) and self.recipe.save_hidden:
             events.append(
                 ResourceEvent(
                     ResourceEventKind.RELEASE,

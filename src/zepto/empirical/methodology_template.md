@@ -25,7 +25,7 @@ Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studi
 
 **Inference:** `model.eval()`, `torch.no_grad()`, single forward `model(input_ids=..., use_cache=False)`.
 
-**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; `torch.optim.AdamW` on HF; Zepto `AdamW` at the training horizon boundary.
+**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; `torch.optim.AdamW` on HF; Zepto `AdamW` at the training horizon boundary. The Apertus HF twin's Adam moments follow `param_prec`, so the harness passes `optim_prec=param_prec`.
 
 ## Ground truth windows
 

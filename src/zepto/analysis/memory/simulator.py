@@ -256,6 +256,11 @@ class ResourceEventSimulator:
         slot = self._slots.get(storage_id)
         if slot is None:
             return
+        if slot.kind != "saved":
+            self._breakdown = replace(
+                self._breakdown,
+                saved_for_backward=self._breakdown.saved_for_backward + slot.bytes,
+            )
         slot.pinned = True
         slot.kind = "saved"
         self._append_timeline(
@@ -424,12 +429,14 @@ class ResourceEventSimulator:
             edge = self._lowered.edges[edge_id]
             if edge.tensor.semantic_type == "kv_cache":
                 return "state"
+        if self._followed_by_persist(edge_id, node, event):
+            return "weight_grad"
+        if edge_id in self._lowered.edges:
+            edge = self._lowered.edges[edge_id]
             if edge.role is TensorRole.GRADIENT:
                 return "gradient_wavefront"
             if edge.role is TensorRole.WORKSPACE or edge.workspace:
                 return "workspace"
-        if self._followed_by_persist(edge_id, node, event):
-            return "weight_grad"
         return "activation"
 
     def _followed_by_persist(

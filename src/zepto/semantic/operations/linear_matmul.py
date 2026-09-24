@@ -5,6 +5,7 @@ from zepto.semantic.metadata import PortContract
 from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
+    includes_backward,
     GRAD_LEFT,
     GRAD_LEFT_UNREDUCED,
     GRAD_RIGHT,
@@ -171,7 +172,7 @@ class LinearMatMul(Operation):
         self, context: EstimationContext, result: OperationResult
     ) -> tuple[ResourceEvent, ...]:
         events = list(allocate(len(self.output_ports)))
-        if context.phase != "backward":
+        if not includes_backward(context.phase):
             return tuple(events)
         events.extend(
             emit_binary_backward_resource_events(

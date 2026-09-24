@@ -166,12 +166,52 @@ def simulate_horizon(
     cache_stats: HorizonStructuralCacheStats | None = None,
     step_durations: list[HorizonStepDurations] | None = None,
     profile_discover_on_first_step: bool = False,
+    steady_state: bool = True,
 ) -> HorizonSimulation:
-    """Compose and lower one graph per horizon step, advancing carried state."""
+    """Compose and lower one graph per horizon step, advancing carried state.
+
+    When ``steady_state`` is True and an optimizer policy is set, Adam
+    moments are seeded on the registry before ``state_initial`` is
+    snapshotted so the first scored graph step includes them in incoming
+    carry. Set ``steady_state=False`` for a cold first step.
+    """
     port_registry = spec.build_state_registry()
     active_registry = registry if registry is not None else DEFAULT_REGISTRY
     structural_cache: dict[object, StructuralCacheEntry] = {}
     stats = cache_stats if cache_stats is not None else HorizonStructuralCacheStats()
+    seed_discover_seconds = 0.0
+
+    if (
+        steady_state
+        and spec.optimizer_policy is not None
+        and spec.steps
+        and spec.steps[0].kind != StepKind.OPTIMIZER
+    ):
+        seed_step = spec.steps[0]
+        seed_ctx = _merge_context(seed_step, context, port_registry)
+        _graph, lowered, seed_discover_seconds = _compose_and_lower_step(
+            step=seed_step,
+            step_index=0,
+            ctx=seed_ctx,
+            snapshot=port_registry.snapshot(),
+            module_fn=module_fn,
+            inputs_fn=inputs_fn,
+            active_registry=active_registry,
+            use_structural_cache=use_structural_cache,
+            structural_cache=structural_cache,
+            stats=stats,
+            durations=None,
+            profile_discover=False,
+        )
+        trainable = trainable_parameter_elements(lowered)
+        cost = training_boundary_cost(
+            policy=spec.optimizer_policy,
+            trainable_elements=trainable,
+            context=seed_ctx,
+        )
+        port_registry = port_registry.with_optimizer_state(
+            spec.optimizer_policy, cost.optimizer_state_bytes
+        )
 
     timeline: list[InvocationRecord] = []
     initial = port_registry.snapshot()
@@ -202,57 +242,41 @@ def simulate_horizon(
 
         ctx = _merge_context(step, context, port_registry)
         snapshot = port_registry.snapshot()
-        key = make_structural_key(step, ctx)
-
-        if use_structural_cache and key in structural_cache:
-            entry = structural_cache[key]
-            stats.cache_hits += 1
-            stats.compose_skipped += 1
-            graph = entry.graph
-            t_lower = time.perf_counter()
-            lowered = execute_lowering_plan(
-                graph, ctx, active_registry, entry.structural
-            )
-            if durations is not None:
-                durations.lower_seconds = time.perf_counter() - t_lower
-        else:
-            inputs = inputs_fn(step, ctx, snapshot)
-            _check_root_batch_seq(inputs, step)
-            t_compose = time.perf_counter()
-            graph = compose_graph(module_fn, inputs)
-            if durations is not None:
-                durations.compose_seconds = time.perf_counter() - t_compose
-
-            if use_structural_cache:
-                t_discover = time.perf_counter()
-                structural = discover_and_plan(graph, ctx, active_registry)
-                discover_elapsed = time.perf_counter() - t_discover
-                if (
-                    durations is not None
-                    and profile_discover_on_first_step
-                    and step_index == 0
-                ):
-                    durations.discover_seconds = discover_elapsed
-                t_lower = time.perf_counter()
-                lowered = execute_lowering_plan(
-                    graph, ctx, active_registry, structural
-                )
-                if durations is not None:
-                    durations.lower_seconds = time.perf_counter() - t_lower
-                structural_cache[key] = StructuralCacheEntry(
-                    graph=graph, structural=structural
-                )
-                stats.cache_misses += 1
-            else:
-                from ..lowering import lower
-
-                t_lower = time.perf_counter()
-                lowered = lower(graph, ctx, registry=active_registry)
-                if durations is not None:
-                    durations.lower_seconds = time.perf_counter() - t_lower
+        graph, lowered, discover_elapsed = _compose_and_lower_step(
+            step=step,
+            step_index=step_index,
+            ctx=ctx,
+            snapshot=snapshot,
+            module_fn=module_fn,
+            inputs_fn=inputs_fn,
+            active_registry=active_registry,
+            use_structural_cache=use_structural_cache,
+            structural_cache=structural_cache,
+            stats=stats,
+            durations=durations,
+            profile_discover=profile_discover_on_first_step,
+        )
+        if (
+            durations is not None
+            and profile_discover_on_first_step
+            and step_index == 0
+            and durations.discover_seconds == 0.0
+            and seed_discover_seconds > 0.0
+        ):
+            durations.discover_seconds = seed_discover_seconds
+        elif (
+            durations is not None
+            and profile_discover_on_first_step
+            and step_index == 0
+            and discover_elapsed > 0.0
+        ):
+            durations.discover_seconds = discover_elapsed
 
         port_registry = port_registry.advance(step, lowered)
-        if step.kind == StepKind.BACKWARD and spec.optimizer_policy is not None:
+        if (
+            step.kind in (StepKind.BACKWARD, StepKind.TRAIN)
+            and spec.optimizer_policy is not None
+        ):
             trainable = trainable_parameter_elements(lowered)
             cost = training_boundary_cost(
                 policy=spec.optimizer_policy,
@@ -287,6 +311,76 @@ def simulate_horizon(
         state_final=port_registry.snapshot(),
         base_context=context,
     )
+
+
+def _compose_and_lower_step(
+    *,
+    step: HorizonStep,
+    step_index: int,
+    ctx: InvocationContext,
+    snapshot: StateSnapshot,
+    module_fn: ModuleFn,
+    inputs_fn: InputsFn,
+    active_registry: LoweringRegistry,
+    use_structural_cache: bool,
+    structural_cache: dict[object, StructuralCacheEntry],
+    stats: HorizonStructuralCacheStats,
+    durations: HorizonStepDurations | None,
+    profile_discover: bool,
+) -> tuple[object, object, float]:
+    """Compose/lower one graph step, sharing the structural cache with seed."""
+    key = make_structural_key(step, ctx)
+    discover_elapsed = 0.0
+
+    if use_structural_cache and key in structural_cache:
+        entry = structural_cache[key]
+        stats.cache_hits += 1
+        stats.compose_skipped += 1
+        graph = entry.graph
+        t_lower = time.perf_counter()
+        lowered = execute_lowering_plan(
+            graph, ctx, active_registry, entry.structural
+        )
+        if durations is not None:
+            durations.lower_seconds = time.perf_counter() - t_lower
+        return graph, lowered, 0.0
+
+    inputs = inputs_fn(step, ctx, snapshot)
+    _check_root_batch_seq(inputs, step)
+    t_compose = time.perf_counter()
+    graph = compose_graph(module_fn, inputs)
+    if durations is not None:
+        durations.compose_seconds = time.perf_counter() - t_compose
+
+    if use_structural_cache:
+        t_discover = time.perf_counter()
+        structural = discover_and_plan(graph, ctx, active_registry)
+        discover_elapsed = time.perf_counter() - t_discover
+        if (
+            durations is not None
+            and profile_discover
+            and step_index == 0
+        ):
+            durations.discover_seconds = discover_elapsed
+        t_lower = time.perf_counter()
+        lowered = execute_lowering_plan(
+            graph, ctx, active_registry, structural
+        )
+        if durations is not None:
+            durations.lower_seconds = time.perf_counter() - t_lower
+        structural_cache[key] = StructuralCacheEntry(
+            graph=graph, structural=structural
+        )
+        stats.cache_misses += 1
+        return graph, lowered, discover_elapsed
+
+    from ..lowering import lower
+
+    t_lower = time.perf_counter()
+    lowered = lower(graph, ctx, registry=active_registry)
+    if durations is not None:
+        durations.lower_seconds = time.perf_counter() - t_lower
+    return graph, lowered, 0.0
 
 
 def _merge_context(

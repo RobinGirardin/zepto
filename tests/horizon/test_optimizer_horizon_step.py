@@ -34,7 +34,9 @@ def test_optimizer_step_skips_compose() -> None:
         ).compose_graph,
     ) as compose_graph:
         simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
-    assert compose_graph.call_count == 2
+    # Seed lower fills the structural cache; the scored TRAIN step reuses it;
+    # OPTIMIZER never composes.
+    assert compose_graph.call_count == 1
 
 
 def test_training_flops_not_triple_forward() -> None:
@@ -42,16 +44,22 @@ def test_training_flops_not_triple_forward() -> None:
     spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
     sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
     hf = account_horizon_flops(sim)
-    fwd = hf.per_step[0].total_flops
-    bwd = hf.per_step[1].total_flops
-    opt = hf.per_step[2].total_flops
-    param_bytes = parameter_bytes(sim.timeline[2].lowered)
+    full = hf.per_step[0].total_flops
+    opt = hf.per_step[1].total_flops
+    param_bytes = parameter_bytes(sim.timeline[1].lowered)
     bpe = param_bytes // (_IN_FEATURES * _OUT_FEATURES)
     expected_opt = optimizer_update_flops(AdamW, param_bytes, bytes_per_element=bpe)
-    assert hf.per_step[2].forward_flops == 0
+    assert hf.per_step[1].forward_flops == 0
     assert opt == expected_opt
-    assert hf.total_flops == fwd + bwd + opt
-    assert hf.total_flops < 3 * fwd
+    assert hf.total_flops == full + opt
+    from zepto.analysis import account_flops, lower
+    from zepto.compose import Tensor, compose_graph
+
+    fwd_graph = compose_graph(
+        _linear_module, (Tensor(shape=(1, 8, _IN_FEATURES)),)
+    )
+    fwd_only = account_flops(lower(fwd_graph, ctx)).total_flops
+    assert hf.total_flops < 3 * fwd_only
 
 
 def test_optimizer_row_flop_report() -> None:
@@ -86,15 +94,16 @@ def test_optimizer_advances_state() -> None:
     assert sim.state_final.grad_accum is None
 
 
-def test_reference_lowered_is_backward() -> None:
+def test_reference_lowered_is_train_graph() -> None:
     ctx = reference_invocation()
     spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
     sim = simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
     reference = reference_lowered_for_optimizer(sim.timeline)
-    backward = sim.timeline[1].lowered
-    assert reference is backward
-    assert len(sim.timeline[2].lowered.nodes) == 0
-    assert parameter_bytes(sim.timeline[2].lowered) == parameter_bytes(backward)
+    train = sim.timeline[0].lowered
+    assert sim.timeline[0].step.kind == StepKind.TRAIN
+    assert reference is train
+    assert len(sim.timeline[1].lowered.nodes) == 0
+    assert parameter_bytes(sim.timeline[1].lowered) == parameter_bytes(train)
 
 
 def test_optimizer_without_prior_step_raises() -> None:

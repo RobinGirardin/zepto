@@ -32,6 +32,7 @@ from ..gqa.variants import (
 )
 from .rules import GQA_SINK_OP_SEQUENCES, GQA_SINK_PATTERN
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
+from zepto.semantic.operations.helpers import includes_backward
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +154,7 @@ class FusedGQASinkRegionImplementation:
         forward_flops *= batch
         backward_flops *= batch
 
-        if context.phase == "backward":
+        if includes_backward(context.phase):
             events.extend(_backward_release_saved_aux(auxiliary_edges))
 
         return LoweredNode(

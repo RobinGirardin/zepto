@@ -9,6 +9,7 @@ from zepto.analysis.lowered import LoweredNode
 from zepto.compose.values import Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
+from zepto.semantic.operations.helpers import includes_backward
 
 from ....context import InvocationContext
 from ....helpers import RegionEstimationContext, ensure_lowered_edge
@@ -128,7 +129,7 @@ class FusedSoftmaxOneRegionImplementation:
         backward_flops *= batch
 
         if (
-            context.phase == "backward"
+            includes_backward(context.phase)
             and self.recipe.save_P
             and input_tensor.requires_grad
         ):

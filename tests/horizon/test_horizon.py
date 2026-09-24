@@ -24,7 +24,6 @@ from zepto.analysis.horizon.spec import HorizonStep
 from zepto.analysis.horizon.state import (
     GradAccumState,
     parameter_bytes,
-    snapshot_state_bytes,
     trainable_gradient_bytes,
 )
 from zepto.compose import Tensor, compose_graph
@@ -156,12 +155,10 @@ def test_training_horizon_backward_step_includes_double_cublas() -> None:
     )
     spec = HorizonSpec.training(seq_len=128, micro_batches=1, optimizer=AdamW)
     report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
-    assert len(report.per_step) == 3
-    micro_step = report.per_step[0]
-    backward_step = report.per_step[1]
-    assert micro_step.memory.breakdown.runtime_workspace == 8_519_680
-    assert backward_step.memory.breakdown.runtime_workspace == 2 * 8_519_680
-    optimizer_mem = report.per_step[2]
+    assert len(report.per_step) == 2
+    train_step = report.per_step[0]
+    assert train_step.memory.breakdown.runtime_workspace == 2 * 8_519_680
+    optimizer_mem = report.per_step[1]
     assert optimizer_mem.memory.breakdown.runtime_workspace == 0
     assert report.memory.breakdown.runtime_workspace == 2 * 8_519_680
 
@@ -277,7 +274,9 @@ def test_grad_accum_independent_of_parallel_batch() -> None:
 
 def test_training_step_appends_optimizer_row() -> None:
     spec = HorizonSpec().training_step(8, optimizer=AdamW)
-    assert len(spec.steps) == 3
+    assert len(spec.steps) == 2
+    assert spec.steps[0].kind == StepKind.TRAIN
+    assert spec.steps[0].phase == "full"
     assert spec.steps[-1].kind == StepKind.OPTIMIZER
     assert spec.optimizer_policy is AdamW
 
@@ -289,9 +288,9 @@ def test_training_g1_has_no_grad_accum() -> None:
 
     assert sim.state_final.grad_accum is None
     assert sim.timeline[0].state_after.grad_accum is None
+    assert sim.state_initial.grad_accum is None
     for record in sim.timeline:
         assert record.state_after.grad_accum is None
-    assert snapshot_state_bytes(sim.timeline[0].state_after) == 0
 
 
 def test_training_g1_peak_not_inflated_by_param_accum() -> None:
@@ -352,3 +351,28 @@ def test_trainable_gradient_bytes_uses_grad_dtype() -> None:
     assert sim.state_final.grad_accum is not None
     assert sim.state_final.grad_accum.bytes == grad_bytes
     assert sim.state_final.grad_accum.micro_batches_seen == 2
+
+
+def test_steady_state_seeds_optimizer_before_train_step() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)
+
+    warmed = simulate_horizon(
+        spec, _linear_module, _linear_inputs, ctx, steady_state=True
+    )
+    cold = simulate_horizon(
+        spec, _linear_module, _linear_inputs, ctx, steady_state=False
+    )
+
+    assert warmed.state_initial.optimizer is not None
+    assert warmed.state_initial.optimizer.bytes > 0
+    assert warmed.timeline[0].step.kind == StepKind.TRAIN
+
+    warm_mem = account_memory(warmed)
+    params = parameter_bytes(warmed.timeline[0].lowered)
+    opt = warmed.state_initial.optimizer.bytes
+    assert warm_mem.peak_live_bytes >= params + opt
+
+    assert cold.state_initial.optimizer is None
+    assert cold.timeline[0].state_after.optimizer is not None
+    assert cold.timeline[0].state_after.optimizer.bytes > 0

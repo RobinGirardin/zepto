@@ -4,6 +4,7 @@ from zepto.compose.values import Tensor
 from ..ports import Port, ValueKind
 from .base import Operation
 from .helpers import (
+    includes_backward,
     GRAD_LEFT,
     GRAD_LEFT_UNREDUCED,
     GRAD_RIGHT,
@@ -145,7 +146,7 @@ class Minimum(Operation):
     ) -> tuple[ResourceEvent, ...]:
         """Report forward output allocation and backward gradient aux events."""
         events = list(allocate(len(self.output_ports)))
-        if context.phase != "backward":
+        if not includes_backward(context.phase):
             return tuple(events)
         events.extend(
             emit_binary_backward_resource_events(result, materializes_vjp=True)
