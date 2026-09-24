@@ -113,8 +113,16 @@ For each cell the tests are (framework §5.1):
 - \(H_{02}\colon \mu \ge +0.10\) versus \(H_{12}\colon \mu < +0.10\)
 
 Equivalence is declared only if both one-sided tests reject. The two
-`t.test` calls below are that definition. `TOSTER::t_TOST` is the same
-procedure as packaged by Lakens and Caldwell.
+`t.test` calls below are that definition.
+
+`TOSTER::t_TOST` is the same two one-sided tests packaged by Lakens and
+Caldwell. It is confirmation only; it does not decide the cell. H2
+inference can have **zero** relative-error SD: every subject’s
+`y_flop_fcm` equals `target_flop`. That is a valid TOST input
+(\(t = \pm\infty\)). TOSTER 0.8.6 still tries to invert a non-central
+\(t\) for a Cohen’s \(d\) interval (`get_ncp_t2`) and errors with
+`object 'Best.Low' not found`. Confirmation is skipped when the SD is
+zero.
 
 ```{r}
 #| label: tost-cells
@@ -150,18 +158,23 @@ tost_one_cell <- function(hypothesis, phase, precision) {
   }
 
   # Written-out two one-sided tests (Schuirmann 1987).
+  # Zero SD is allowed: all observations equal, t is ±Inf.
   lower <- t.test(re, alternative = "greater", mu = -MARGIN)
   upper <- t.test(re, alternative = "less", mu = MARGIN)
   both_reject <- (lower$p.value < ALPHA) && (upper$p.value < ALPHA)
 
-  # Packaged confirmation of the same two one-sided tests (Lakens 2017).
-  invisible(TOSTER::t_TOST(
-    x = re,
-    hypothesis = "EQU",
-    eqb = MARGIN,
-    eqbound_type = "raw",
-    alpha = ALPHA
-  ))
+  # Packaged confirmation (Lakens 2017). Skip when SD is 0: TOSTER's
+  # Cohen's d CI helper does not accept an infinite t-statistic.
+  sd_re <- stats::sd(re)
+  if (is.finite(sd_re) && sd_re > 0) {
+    invisible(TOSTER::t_TOST(
+      x = re,
+      hypothesis = "EQU",
+      eqb = MARGIN,
+      eqbound_type = "raw",
+      alpha = ALPHA
+    ))
+  }
 
   decision <- if (both_reject) {
     "equivalent"
@@ -175,7 +188,7 @@ tost_one_cell <- function(hypothesis, phase, precision) {
     precision = precision,
     n = n,
     mean_re = mean(re),
-    sd_re = sd(re),
+    sd_re = sd_re,
     p_lower = unname(lower$p.value),
     p_upper = unname(upper$p.value),
     equivalent = both_reject,
