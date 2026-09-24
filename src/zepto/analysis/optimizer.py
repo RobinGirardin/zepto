@@ -36,10 +36,11 @@ class OptimizerPolicy(ABC):
     def update_workspace_bytes(
         self,
         *,
+        trainable_elements: int,
         context: InvocationContext,
     ) -> int:
         """Ephemeral scratch during optimizer update; default 0."""
-        del context
+        del trainable_elements, context
         return 0
 
 
@@ -50,9 +51,14 @@ class AdamWPolicy(OptimizerPolicy):
     Default ``flops_per_element=7`` matches the historical analytic estimate.
     Calibrated against HF GOLDEN ``opt.step()`` in
     ``tests/integration/apertus/test_adam_flop_calibration.py``.
+
+    ``foreach=True`` matches default CUDA ``torch.optim.AdamW``: one
+    parameter-sized TensorList intermediate during ``step()``. That
+    scratch is workspace, not persistent moments.
     """
 
     flops_per_element: float = 7.0
+    foreach: bool = True
 
     @property
     def name(self) -> str:
@@ -69,6 +75,17 @@ class AdamWPolicy(OptimizerPolicy):
     ) -> int:
         del context
         return int(self.flops_per_element * trainable_elements)
+
+    def update_workspace_bytes(
+        self,
+        *,
+        trainable_elements: int,
+        context: InvocationContext,
+    ) -> int:
+        if not self.foreach:
+            return 0
+        optim_prec = context.optim_prec or 4
+        return trainable_elements * optim_prec
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,5 +28,7 @@ def training_boundary_cost(
         optimizer_update_flops=policy.update_flops(
             trainable_elements=trainable_elements, context=context
         ),
-        optimizer_workspace_bytes=policy.update_workspace_bytes(context=context),
+        optimizer_workspace_bytes=policy.update_workspace_bytes(
+            trainable_elements=trainable_elements, context=context
+        ),
     )

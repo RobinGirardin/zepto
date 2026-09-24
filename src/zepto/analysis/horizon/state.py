@@ -447,7 +447,7 @@ class StatePortRegistry:
             opt_bytes = policy.state_bytes(
                 trainable_elements=trainable,
                 context=lowered.context,
-            ) + policy.update_workspace_bytes(context=lowered.context)
+            )
             registry = replace(
                 registry,
                 optimizer=OptimizerState(policy=policy, bytes=opt_bytes),

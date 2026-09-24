@@ -43,10 +43,11 @@ def test_validity_subject_ab0f75a0_training_peak_within_delta() -> None:
     )
 
     peak = report.peak_vram
-    # A–D recover Adam + persist-grads + fused SAVE. Residual vs the
-    # eager HF twin is the fused training tape (compact region saves,
-    # not a full eager activation working set) — not a 2P fudge.
+    # Foreach workspace raises the param-dominated floor to ~5P. Residual
+    # vs the eager HF twin is now a few tens of MiB (cuBLAS / tape), not
+    # a missing P.
     assert abs(peak - _TWIN_PEAK) < abs(peak - _OLD_ZEPTO_PEAK)
+    assert abs(peak - _TWIN_PEAK) / _TWIN_PEAK < 0.03
 
     train = report.per_step[0]
     assert len(report.per_step) == 2

@@ -53,7 +53,7 @@ from .horizon import (
     optimizer_step,
     simulate_horizon,
 )
-from .optimizer import AdamW, OptimizerPolicy, SGD, optimizer_update_flops
+from .optimizer import AdamW, AdamWPolicy, OptimizerPolicy, SGD, optimizer_update_flops
 from .runtime import (
     CudaCublasWorkspacePolicy,
     NullRuntimeOverheadPolicy,
@@ -65,6 +65,7 @@ from .runtime import (
 __all__ = [
     "AccountingPolicy",
     "AdamW",
+    "AdamWPolicy",
     "CostReport",
     "CudaCublasWorkspacePolicy",
     "cublas_workspace_bytes_per_handle",

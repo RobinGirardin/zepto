@@ -140,6 +140,8 @@ and deleting the module do not free them. After any backward pass, two
 handles typically remain. Inference then records two handles while Zepto
 bills one.
 
+Notably, HuggingFace AdamW optimizer, used for this study, is the `foreach` method as default. This method grep all the weights to udpate at the same time instead of looping through all of them. This is a gain of speed that occurs a slight memory inefficiency. Zepto AdamW policy will also settle with this default mechanism.
+
 The study therefore warms the process **once**, before any scored row, with
 a dummy forward and backward matrix-multiply so that two handles are already
 live. Every later inference peak is adjusted by subtracting **one** handle
@@ -373,7 +375,18 @@ memory versus device memory. The minimum sequence length of 32 matches the
 windowed rotary context of Section 1. The same \((B, S)\) is reused for
 both precisions.
 
-### 7.5 Assignment
+### 7.5 ATEN operation
+
+Zepto represent all the functions as the combination of their primitive operation,
+For example, a function as $\text{softmax}$ is represented by its series of exponential, divide, exponential and sum operation. This allow to monitor backward propagation mechanism as the primitive operation level, and not per specific operation or layer. However, due to the wide-spread adoption certain functions such as the $\text{XIELU}$ activation, $\text{RMSNorm}$ or $\text{softmax}$, have their own C/C++ (aten) variant. Those function are the equivalent of a fused-kernel, a special series of operation that make the execution of those function faster but also cheaper on memory. To ensure comparability, Zepto twin will match PyTorch ATEN operation behavior for the availalbe function. This will be done by using a list of `region_implementaton_pins` for Zepto, that points the graph to use a fused-kernel version of ceratin region.
+
+List of PyTorch ATEN operation that requires a dedicated zepto fused-kernel pins:
+
+- `torch.rmsnorm`
+- `torch.softmax`
+- `XIELUActivation`
+
+### 7.6 Assignment
 
 For each accepted subject, measurements follow the within-subject factorial
 of phase and precision.
