@@ -84,3 +84,32 @@ def test_qwen38_primary_plus_mtp_exceeds_primary_only() -> None:
 
 def test_qwen38_preset_specs_length() -> None:
     assert len(qwen35_language_layer_specs()) == 64
+
+
+def test_forward_hidden_skips_lm_head() -> None:
+    from zepto.compose import Module
+
+    seq_len = 8
+    full = compose_graph(
+        lambda _ctx: _tiny_qwen38(seq_len, include_mtp=False),
+        (Tensor(shape=(seq_len,)),),
+    )
+    kinds = [full.node(n).provenance.component_type for n in full.nodes]
+    assert "LanguageModelOutput" in kinds
+
+    class _HiddenOnly(Module):
+        module_kind = "Qwen38HiddenOnly"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = _tiny_qwen38(seq_len, include_mtp=False)
+
+        def forward(self, token_ids: Tensor) -> Tensor:
+            return self.model.forward_hidden(token_ids)
+
+    hidden = compose_graph(
+        lambda _ctx: _HiddenOnly(),
+        (Tensor(shape=(seq_len,)),),
+    )
+    hidden_kinds = [hidden.node(n).provenance.component_type for n in hidden.nodes]
+    assert "LanguageModelOutput" not in hidden_kinds

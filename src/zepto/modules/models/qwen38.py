@@ -18,7 +18,7 @@ from zepto.modules.multimodal.multimodal_sequence_builder import MultimodalSeque
 from zepto.modules.output.output_presets import qwen38_lm_output
 from zepto.modules.blocks.qwen35_language_decoder_block import Qwen35LanguageDecoderBlock
 from zepto.modules.layers.rms_norm import RMSNorm
-from zepto.modules.position.rope_config import qwen3_vl_mrope
+from zepto.modules.position.rope_config import RoPEConfig, qwen3_vl_mrope
 from zepto.modules.vision.vision_presets import Qwen3VLVisionTower
 
 
@@ -53,6 +53,7 @@ class Qwen38(Module):
         grid_h: int = 8,
         grid_w: int = 8,
         layer_specs: tuple | None = None,
+        rope_config: RoPEConfig | None = None,
     ) -> None:
         super().__init__()
         cfg = config
@@ -81,7 +82,9 @@ class Qwen38(Module):
         else:
             self.embedding = Embedding(cfg.hidden_size, cfg.vocab_size)
         self.causal_mask = MaterializedCausalMask(seq_len)
-        self.mrope = MultimodalRoPEMaterialize(seq_len, qwen3_vl_mrope())
+        self.mrope = MultimodalRoPEMaterialize(
+            seq_len, rope_config if rope_config is not None else qwen3_vl_mrope()
+        )
         self.blocks: list[Qwen35LanguageDecoderBlock] = []
         for index, spec in enumerate(self._layer_specs):
             block = Qwen35LanguageDecoderBlock(spec)
@@ -146,12 +149,13 @@ class Qwen38(Module):
                 captured = hidden
         return hidden, captured
 
-    def forward(
+    def forward_hidden(
         self,
         token_ids: Tensor,
         placeholder_indices: Tensor | None = None,
         vision_pixels: Tensor | None = None,
     ) -> Tensor:
+        """Backbone hidden states before LM head (embed → trunk → final_norm)."""
         expect_token_ids_rank(token_ids)
         hidden = embed_multimodal_sequence(
             self,
@@ -160,7 +164,21 @@ class Qwen38(Module):
             vision_pixels=vision_pixels,
         )
         hidden, _ = self._language_trunk(hidden)
-        return self.lm_output(self.final_norm(hidden))  # type: ignore[return-value]
+        return self.final_norm(hidden)  # type: ignore[return-value]
+
+    def forward(
+        self,
+        token_ids: Tensor,
+        placeholder_indices: Tensor | None = None,
+        vision_pixels: Tensor | None = None,
+    ) -> Tensor:
+        return self.lm_output(
+            self.forward_hidden(
+                token_ids,
+                placeholder_indices=placeholder_indices,
+                vision_pixels=vision_pixels,
+            )
+        )  # type: ignore[return-value]
 
     def mtp_forward(self, trunk_hidden: Tensor, mtp_token_ids: Tensor) -> Tensor:
         if self.mtp is None:

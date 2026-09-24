@@ -21,4 +21,8 @@ def get_model_family(model_id: str) -> ModelFamily:
         from zepto.empirical.models.granite import GraniteFamily
 
         return GraniteFamily()
+    if model_id == "qwen38":
+        from zepto.empirical.models.qwen38 import Qwen38Family
+
+        return Qwen38Family()
     raise KeyError(f"unknown model_id: {model_id!r}")

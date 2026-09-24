@@ -155,6 +155,7 @@ from .layers.xielu import XIELU
 from .apertus_for_causal_lm import ApertusForCausalLM
 from .apertus15_for_causal_lm import Apertus15ForCausalLM
 from .granite_for_causal_lm import GraniteForCausalLM
+from .qwen38_for_causal_lm import Qwen38ForCausalLM
 
 __all__ = [
     "APERTUS_70B",
@@ -208,6 +209,7 @@ __all__ = [
     "QWEN38_27B",
     "Qwen38",
     "Qwen38Config",
+    "Qwen38ForCausalLM",
     "GEMMA4_LANGUAGE_SANDWICH_NORM",
     "MUSE_LANGUAGE_SANDWICH_NORM",
     "SandwichNormStyle",
