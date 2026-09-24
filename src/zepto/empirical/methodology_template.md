@@ -19,15 +19,15 @@ Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studi
 | **`transformers_defaults`** | omitted (HF default, typically 65536) | Trial 1 full-context experiment. |
 
 - **HF (Apertus):** `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. Checkpoint **llama3** `rope_parameters` (θ=12M, YaRN factor 8, `original_max_position_embeddings=8192`) are kept — do not set `rope_scaling=None`.
-- **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`. Zepto materializes RoPE/mask at the scored **S** in all modes — do not inflate Zepto caches to chase HF MPE.
+- **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities={"fused"}`, region pins to `region/{rmsnorm,xielu,softmax,linear_ce}/reference` (eager ATen leaves). Do not request `sdpa`/`gqa`/`flash` — those profiles block the ATen leaves and/or fuse attention. Zepto materializes RoPE/mask at the scored **S** in all modes — do not inflate Zepto caches to chase HF MPE.
 - **HF (Granite):** random-init `GraniteForCausalLM`, `hidden_act=silu`, default RoPE θ=50M, `tie_word_embeddings=False`, identity residual/embedding/attention/logit scales. No `apertus_parity` mode and no llama3 `rope_parameters`.
-- **Zepto (Granite):** default RoPE via `granite_rope`; same eager/`fused`/`sdpa`/`gqa` invocation context as Apertus. Do not enable Liger SwiGLU (`swiglu` / `fused_post_gemm`).
+- **Zepto (Granite):** default RoPE via `granite_rope`; same eager ATen invocation context as Apertus. Do not enable Liger SwiGLU (`swiglu` / `fused_post_gemm`).
 
 ## Phases
 
 **Inference:** `model.eval()`, `torch.no_grad()`, single forward `model(input_ids=..., use_cache=False)`.
 
-**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; `torch.optim.AdamW` on HF; Zepto `AdamW` at the training horizon boundary. The Apertus HF twin's Adam moments follow `param_prec`, so the harness passes `optim_prec=param_prec`.
+**Training:** one scored window = forward (with loss) + backward + `optimizer.step()`; `torch.optim.AdamW` on HF (CUDA default `foreach=True`); Zepto `AdamWPolicy(foreach=True)` bills one parameter-sized update workspace at the training horizon boundary, not as persistent moments. The Apertus HF twin's Adam moments follow `param_prec`, so the harness passes `optim_prec=param_prec`.
 
 ## Ground truth windows
 
@@ -88,7 +88,7 @@ Zepto and HF both run one parallel `(B, S)` pass. Parallel batch is `HorizonStep
 
 Empirical studies do **not** sample or measure `"mixed"`. Zepto’s role-split policy (`param_bytes=2, grad_bytes=4`) and HF Trainer AMP (`--fp16` / GradScaler) are **out of scope** until a dedicated follow-up.
 
-Base flags: `hardware=cuda`, device compute capability, eager attention, fused/sdpa/gqa capabilities.
+Base flags: `hardware=cuda`, device compute capability, eager attention, `requested_capabilities={"fused"}`, ATen reference region pins.
 
 ## Step column semantics
 
