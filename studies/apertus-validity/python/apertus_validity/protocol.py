@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from validity_common.protocol_defaults import (  # re-export
+    ALPHA,
+    ASSUMED_TRUE_MEAN,
+    EQUIVALENCE_MARGIN,
+    MIN_SEQ_LEN,
+    PER_COMBINATION_POWER,
+    PHASES,
+    PRECISIONS,
+    TRAINING_STEPS,
+)
+
 MODEL_ID = "apertus"
 TWIN_MODE = "scored_window"
-TRAINING_STEPS = 1  # K = 1; extra steps are not extra n
-MIN_SEQ_LEN = 32
-
-PHASES: tuple[str, ...] = ("inference", "training")
-PRECISIONS: tuple[str, ...] = ("fp32", "fp16")
-
-EQUIVALENCE_MARGIN = 0.10
-ALPHA = 0.05
-# 0.95 ** (1/8) so the conjunction of eight TOSTs targets joint power 0.95.
-PER_COMBINATION_POWER = 0.9936
-ASSUMED_TRUE_MEAN = 0.0
-
 OPTIONAL_LARGE_VOCAB = 131072

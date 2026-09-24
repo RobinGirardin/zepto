@@ -13,4 +13,12 @@ def get_model_family(model_id: str) -> ModelFamily:
         from zepto.empirical.models.apertus import ApertusFamily
 
         return ApertusFamily()
+    if model_id == "apertus15":
+        from zepto.empirical.models.apertus15 import Apertus15Family
+
+        return Apertus15Family()
+    if model_id == "granite":
+        from zepto.empirical.models.granite import GraniteFamily
+
+        return GraniteFamily()
     raise KeyError(f"unknown model_id: {model_id!r}")

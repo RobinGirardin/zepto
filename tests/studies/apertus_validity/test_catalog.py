@@ -62,7 +62,7 @@ def test_default_catalog_architectures_are_valid() -> None:
 def test_large_vocab_is_off_by_default() -> None:
     catalog = Catalog()
     assert 131072 not in catalog.knobs.vocab_values()
-    on = Catalog(knobs=type(catalog.knobs)(include_large_vocab=True))
+    on = Catalog(knobs=type(catalog.knobs)(include_large_vocab=True, large_vocab=131072))
     assert 131072 in on.knobs.vocab_values()
 
 

@@ -90,8 +90,8 @@ class Granite(Module):
     def granite_42_30b(cls, seq_len: int) -> Granite:
         return cls(config=GRANITE_42_30B, seq_len=seq_len)
 
-    def forward(self, token_ids: Tensor) -> Tensor:
-        """Compose on rank-1 ``(S,)`` or rank-2 ``(B, S)`` token ids."""
+    def forward_hidden(self, token_ids: Tensor) -> Tensor:
+        """Backbone hidden states before LM head (embed → blocks → final_norm)."""
         expect_token_ids_rank(token_ids)
         hidden = self.embedding(token_ids)
         for index, block in enumerate(self.blocks):
@@ -102,7 +102,11 @@ class Granite(Module):
                 ctx.cos,
                 ctx.sin,
             )  # type: ignore[assignment]
-        return self.lm_output(self.final_norm(hidden))  # type: ignore[return-value]
+        return self.final_norm(hidden)  # type: ignore[return-value]
+
+    def forward(self, token_ids: Tensor) -> Tensor:
+        """Compose on rank-1 ``(S,)`` or rank-2 ``(B, S)`` token ids."""
+        return self.lm_output(self.forward_hidden(token_ids))  # type: ignore[return-value]
 
 
 __all__ = ["GRANITE_42_30B", "Granite", "GraniteConfig"]

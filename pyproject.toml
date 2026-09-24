@@ -18,7 +18,13 @@ empirical = [
 zepto-bench = "zepto.benchmark.cli:main"
 
 [tool.pytest.ini_options]
-pythonpath = ["src", ".", "studies/apertus-validity/python"]
+pythonpath = [
+    "src",
+    ".",
+    "studies/validity_common/python",
+    "studies/apertus-validity/python",
+    "studies/granite-validity/python",
+]
 testpaths = ["tests"]
 addopts = "-m 'not benchmark'"
 markers = [

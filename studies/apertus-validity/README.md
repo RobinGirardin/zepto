@@ -23,9 +23,9 @@ scored step.
 ## Layout
 
 ```text
-python/apertus_validity/   collection (catalog, sample, measure, ledger)
-r/power.R                  sample size from the largest of eight cell SDs
-r/analysis.qmd             eight TOSTs, conjunction, Bland–Altman, ledger
+python/apertus_validity/   family protocol + shims over validity_common
+r/power.R                  wrapper; shared script is studies/validity_common/r/power.R
+r/analysis.qmd             Apertus title + include of the shared TOST body
 notebooks/                 Colab-capable collection
 fixtures/                  tiny CSV so the Quarto doc renders without a GPU
 artifacts/                 run outputs (gitignored)
@@ -42,9 +42,10 @@ python -m apertus_validity run \
   --out studies/apertus-validity/artifacts/pilot
 
 # 2. Lock n from the largest cell SD (needs R + TOSTER)
-Rscript studies/apertus-validity/r/power.R \
+Rscript studies/validity_common/r/power.R \
   --evaluation studies/apertus-validity/artifacts/pilot/evaluation.csv \
   --out studies/apertus-validity/artifacts/pilot/sample_size.json
+# or: Rscript studies/apertus-validity/r/power.R (same args; sources the shared script)
 
 # 3. Main sample (use n from sample_size.json)
 python -m apertus_validity run \
@@ -63,8 +64,9 @@ Render the fixture copy of the analysis without a GPU:
 quarto render studies/apertus-validity/r/analysis.qmd
 ```
 
-`pythonpath` for the study package is
-`studies/apertus-validity/python` (already on pytest’s path).
+`pythonpath` for the study packages is
+`studies/validity_common/python` then `studies/apertus-validity/python`
+(already on pytest’s path).
 
 ## What this tree does not do
 

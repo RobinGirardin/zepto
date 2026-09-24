@@ -422,6 +422,10 @@ Quarto (`r/analysis.qmd`) runs the eight TOSTs and Bland–Altman panels.
 See that directory’s README. `src/zepto/empirical/` is a measurement
 harness, not the study.
 
+A second instance of the same protocol for Granite lives in
+`studies/granite-validity/` and is scoped in
+`docs/framework-empirical-evaluation-granite.md`.
+
 ## Sources
 
 ```bibtex

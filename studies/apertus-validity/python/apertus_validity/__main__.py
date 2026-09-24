@@ -7,8 +7,9 @@ from pathlib import Path
 
 from apertus_validity.catalog import Catalog, KnobCatalog, WorkloadCatalog
 from apertus_validity.collect import run_collection
-from apertus_validity.sample import enumerate_frame, sample_subjects
 from apertus_validity.io import write_subjects
+from apertus_validity.protocol import OPTIONAL_LARGE_VOCAB
+from apertus_validity.sample import enumerate_frame, sample_subjects
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,7 +62,10 @@ def _add_shared(parser: argparse.ArgumentParser) -> None:
 
 def _catalog_from_args(args: argparse.Namespace) -> Catalog:
     return Catalog(
-        knobs=KnobCatalog(include_large_vocab=getattr(args, "include_large_vocab", False)),
+        knobs=KnobCatalog(
+            include_large_vocab=getattr(args, "include_large_vocab", False),
+            large_vocab=OPTIONAL_LARGE_VOCAB,
+        ),
         workload=WorkloadCatalog(max_tokens=getattr(args, "max_tokens", None)),
     )
 

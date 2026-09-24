@@ -40,6 +40,17 @@ def test_granite_compose_has_flexible_attention_per_layer() -> None:
     assert kinds.count("FlexibleAttention") >= 2
 
 
+def test_forward_hidden_skips_lm_head() -> None:
+    seq_len = 32
+    graph = compose_graph(
+        lambda _ctx: _tiny_granite(seq_len),
+        (Tensor(shape=(seq_len,)),),
+    )
+    kinds = [graph.node(n).provenance.component_type for n in graph.nodes]
+    assert "LanguageModelOutput" in kinds
+    assert "LinearMatMul" in kinds or "LanguageModelOutput" in kinds
+
+
 def test_granite_estimate_positive_flops() -> None:
     seq_len = 64
     graph = compose_graph(

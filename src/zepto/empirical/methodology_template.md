@@ -20,6 +20,8 @@ Default **`twin_mode=scored_window`** (see `run_meta.json`). **VRAM parity studi
 
 - **HF (Apertus):** `attn_implementation="eager"`, `use_cache=False`, no gradient checkpointing, fused cross-entropy on training forward. Checkpoint **llama3** `rope_parameters` (θ=12M, YaRN factor 8, `original_max_position_embeddings=8192`) are kept — do not set `rope_scaling=None`.
 - **Zepto (Apertus):** same llama3 RoPE via `apertus_rope` on `RoPEMaterialize`; `attention_backend="eager"`, `requested_capabilities` includes `fused`, `sdpa`, `gqa`. Zepto materializes RoPE/mask at the scored **S** in all modes — do not inflate Zepto caches to chase HF MPE.
+- **HF (Granite):** random-init `GraniteForCausalLM`, `hidden_act=silu`, default RoPE θ=50M, `tie_word_embeddings=False`, identity residual/embedding/attention/logit scales. No `apertus_parity` mode and no llama3 `rope_parameters`.
+- **Zepto (Granite):** default RoPE via `granite_rope`; same eager/`fused`/`sdpa`/`gqa` invocation context as Apertus. Do not enable Liger SwiGLU (`swiglu` / `fused_post_gemm`).
 
 ## Phases
 

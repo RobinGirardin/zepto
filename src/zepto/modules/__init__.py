@@ -152,6 +152,7 @@ from .ffn.squared_relu_ffn import SquaredReluFFN
 from .ffn.swiglu import SwiGLU
 from .layers.xielu import XIELU
 from .apertus_for_causal_lm import ApertusForCausalLM
+from .granite_for_causal_lm import GraniteForCausalLM
 
 __all__ = [
     "APERTUS_70B",
@@ -184,6 +185,7 @@ __all__ = [
     "GptOssConfig",
     "Granite",
     "GraniteConfig",
+    "GraniteForCausalLM",
     "HybridDecoderBlock",
     "LAGUNA_XS_21",
     "LagunaDecoderBlock",

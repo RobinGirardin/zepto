@@ -1,0 +1,150 @@
+"""Apertus 1.5 text-only family for empirical Zepto vs HF twin studies."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal
+
+from zepto.empirical.models.apertus import apertus_hf_max_position_embeddings
+from zepto.empirical.models.apertus15_core import Apertus15FamilyCore, OPTION_KEYS
+
+try:
+    from transformers import (
+        Apertus1p5TextConfig,
+        Apertus1p5TextForCausalLM as HFApertus15TextForCausalLM,
+    )
+except ImportError:  # pragma: no cover - optional swiss-ai Transformers fork
+    Apertus1p5TextConfig = None  # type: ignore[misc, assignment]
+    HFApertus15TextForCausalLM = None  # type: ignore[misc, assignment]
+
+if TYPE_CHECKING:
+    import torch
+    from torch import nn
+
+    from zepto.analysis.horizon.spec import HorizonStep
+
+TwinMode = Literal["scored_window", "apertus_parity", "transformers_defaults"]
+
+
+def _module_kwargs(opts: dict[str, int], *, seq_len: int) -> dict[str, int]:
+    return {
+        "hidden_size": opts["hidden_size"],
+        "intermediate_size": opts["intermediate_size"],
+        "num_heads": opts["num_heads"],
+        "num_kv_heads": opts["num_kv_heads"],
+        "num_layers": opts["num_layers"],
+        "vocab_size": opts["vocab_size"],
+        "output_vocab_size": opts["output_vocab_size"],
+        "head_dim": opts["head_dim"],
+        "seq_len": seq_len,
+    }
+
+
+class Apertus15Family(Apertus15FamilyCore):
+    def build_zepto_infer_module_factory(
+        self, opts: dict[str, int], *, seq_len: int
+    ):
+        from zepto.modules import Apertus15
+
+        kwargs = _module_kwargs(opts, seq_len=seq_len)
+
+        def factory(_ctx):
+            return Apertus15(**kwargs)
+
+        return factory
+
+    def build_zepto_train_module_factory(
+        self, opts: dict[str, int], *, seq_len: int
+    ):
+        from zepto.modules import Apertus15ForCausalLM
+
+        kwargs = _module_kwargs(opts, seq_len=seq_len)
+
+        def factory(_ctx):
+            return Apertus15ForCausalLM(**kwargs)
+
+        return factory
+
+    def zepto_infer_inputs(self, step: "HorizonStep", _ctx, _state) -> tuple:
+        from zepto.compose import Tensor
+
+        return (
+            Tensor(
+                shape=(step.batch, step.seq_len),
+                semantic_type="token_ids",
+                requires_grad=False,
+            ),
+        )
+
+    def zepto_train_inputs(self, step: "HorizonStep", _ctx, _state) -> tuple:
+        from zepto.analysis import inputs_from_token_ids_and_labels
+
+        return inputs_from_token_ids_and_labels()(step, _ctx, _state)
+
+    def build_hf_model(
+        self,
+        opts: dict[str, int],
+        *,
+        seq_len: int,
+        precision: str,
+        device: "torch.device",
+        twin_mode: TwinMode = "scored_window",
+    ) -> "nn.Module":
+        import torch
+
+        if HFApertus15TextForCausalLM is None or Apertus1p5TextConfig is None:
+            raise ImportError(
+                "swiss-ai Transformers fork with Apertus1p5TextForCausalLM "
+                "is required for HF twin builds "
+                "(swiss-ai/transformers@3797303dda74844e3d1f8977ff5518bb91f818b4)"
+            )
+        cfg_kwargs: dict = {
+            "vocab_size": opts["vocab_size"],
+            "output_vocab_size": opts["output_vocab_size"],
+            "hidden_size": opts["hidden_size"],
+            "intermediate_size": opts["intermediate_size"],
+            "num_hidden_layers": opts["num_layers"],
+            "num_attention_heads": opts["num_heads"],
+            "num_key_value_heads": opts["num_kv_heads"],
+            "tie_word_embeddings": False,
+            "use_cache": False,
+            "attention_bias": False,
+            "hidden_act": "xielu",
+        }
+        if twin_mode in ("scored_window", "apertus_parity"):
+            cfg_kwargs["max_position_embeddings"] = apertus_hf_max_position_embeddings(
+                seq_len, twin_mode=twin_mode
+            )
+        elif twin_mode != "transformers_defaults":
+            raise ValueError(f"unknown twin_mode: {twin_mode!r}")
+        cfg = Apertus1p5TextConfig(**cfg_kwargs)
+        if precision == "fp32":
+            dtype = torch.float32
+        elif precision == "fp16":
+            dtype = torch.float16
+        else:
+            raise ValueError(f"unknown precision: {precision!r}")
+        model = HFApertus15TextForCausalLM(cfg)
+        model.config.use_cache = False
+        model.gradient_checkpointing_disable()
+        model = model.to(device=device, dtype=dtype)
+        if hasattr(model.config, "_attn_implementation"):
+            model.config._attn_implementation = "eager"
+        return model
+
+    def hf_forward_infer(self, model: "nn.Module", input_ids: "torch.Tensor"):
+        return model(input_ids=input_ids, use_cache=False)
+
+    def hf_forward_train(
+        self,
+        model: "nn.Module",
+        input_ids: "torch.Tensor",
+        labels: "torch.Tensor",
+    ):
+        return model(input_ids=input_ids, labels=labels, use_cache=False)
+
+
+__all__ = [
+    "Apertus15Family",
+    "OPTION_KEYS",
+    "TwinMode",
+]

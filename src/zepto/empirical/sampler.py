@@ -20,7 +20,7 @@ _ALLOWED_PRECISIONS: frozenset[str] = frozenset(("fp32", "fp16"))
 
 @dataclass(frozen=True, slots=True)
 class FreeKnobCatalog:
-    """Discrete supports for the generators in the Apertus identity derivation."""
+    """Discrete supports for GQA dense decoder (Apertus / Granite) identity derivation."""
 
     gqa_group: tuple[int, ...] = (1, 2, 4)
     num_kv_heads: tuple[int, ...] = (2, 4, 8)
