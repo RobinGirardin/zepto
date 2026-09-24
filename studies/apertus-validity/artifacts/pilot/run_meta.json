@@ -1,0 +1,84 @@
+{
+  "alpha": 0.05,
+  "catalog": {
+    "batch_size": [
+      1,
+      2,
+      4
+    ],
+    "ffn_mult": [
+      4.0,
+      5.25
+    ],
+    "gqa_group": [
+      1,
+      2,
+      4
+    ],
+    "head_dim": [
+      64,
+      128
+    ],
+    "include_large_vocab": false,
+    "max_tokens": null,
+    "min_seq_len": 32,
+    "num_kv_heads": [
+      2,
+      4,
+      8
+    ],
+    "num_layers": [
+      2,
+      4,
+      8
+    ],
+    "seq_len": [
+      32,
+      64,
+      128
+    ],
+    "vocab_size": [
+      1024,
+      4096
+    ]
+  },
+  "cuda_capability": [
+    7,
+    5
+  ],
+  "cuda_device_name": "Tesla T4",
+  "equivalence_margin": 0.1,
+  "git_commit": null,
+  "k_training_steps": 1,
+  "master_seed": 1,
+  "model_id": "apertus",
+  "n_subjects": 12,
+  "per_combination_power": 0.9936,
+  "phases": [
+    "inference",
+    "training"
+  ],
+  "precisions": [
+    "fp32",
+    "fp16"
+  ],
+  "study": "apertus-validity",
+  "subject_ids": [
+    "eed33298a375925f",
+    "4fee85606b118eb1",
+    "c95a0d9378d2afa1",
+    "00875e7c07b6a4ff",
+    "e9a6034aab123854",
+    "66c9950bca928bbd",
+    "72b56d2fc2d29568",
+    "fb94a19b31770906",
+    "db76f44e530b7895",
+    "d40f9ecf3eabb24f",
+    "49b79e5ae76cd7c3",
+    "983b21c134c9470c"
+  ],
+  "timestamp_utc": "2026-09-24T08:00:28.202726+00:00",
+  "torch_version": "2.11.0+cu128",
+  "transformers_version": "5.17.0",
+  "twin_mode": "scored_window"
+}
