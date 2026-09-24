@@ -414,6 +414,14 @@ serving distribution. Relative error from an additive leftover is larger on
 small peaks than on large ones. The primary TOST still uses the relative
 error of Section 2.
 
+## Implementation
+
+The executable pipeline for this protocol lives in
+`studies/apertus-validity/`. Python collects subjects and writes CSV;
+Quarto (`r/analysis.qmd`) runs the eight TOSTs and Bland–Altman panels.
+See that directory’s README. `src/zepto/empirical/` is a measurement
+harness, not the study.
+
 ## Sources
 
 ```bibtex

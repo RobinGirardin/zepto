@@ -1,0 +1,283 @@
+---
+title: "Apertus validity — primary analysis"
+subtitle: "Eight TOSTs, conjunction, Bland–Altman, and the sampling-frame ledger"
+format:
+  html:
+    toc: true
+    number-sections: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+params:
+  evaluation: "../fixtures/evaluation.csv"
+  ledger: "../fixtures/ledger.csv"
+---
+
+# What this document answers
+
+The pre-registered design is
+[`docs/framework-empirical-evaluation.md`](../../docs/framework-empirical-evaluation.md).
+This Quarto document is the primary analysis, not an exploratory notebook.
+
+The estimand is the mean relative error on the executable Apertus-like grid.
+A **subject** is one architecture together with one \((B, S)\). Each subject
+contributes one relative error to each of eight cells (phase × precision ×
+hypothesis). Extra training steps are not extra \(n\).
+
+| Hypothesis | Zepto column \(y\) | Twin column \(t\) |
+|------------|--------------------|-------------------|
+| H1 VRAM | `y_vram` | `target_vram` |
+| H2 FLOPs | `y_flop_fcm` | `target_flop` |
+
+Relative error:
+
+\[
+\mathrm{RE} = \frac{y - t}{t}.
+\]
+
+Equivalence margin \(\Delta = 0.10\). \(\alpha = 0.05\) for each pair of
+one-sided tests. No Bonferroni. Family validity is the **conjunction** of
+all eight TOSTs. An inconclusive TOST is not evidence that Zepto is
+inaccurate to ten percent.
+
+`y_flop` is stored on the CSV as a diagnostic. It is not the H2 column.
+
+```{r}
+#| label: setup
+required <- c("TOSTER")
+missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing) > 0) {
+  stop("Install missing R packages: ", paste(missing, collapse = ", "),
+       "\n  install.packages(c(\"TOSTER\"))", call. = FALSE)
+}
+
+relative_error <- function(y, t) {
+  if (any(t == 0, na.rm = TRUE)) {
+    stop("twin probe t must be non-zero", call. = FALSE)
+  }
+  (y - t) / t
+}
+
+MARGIN <- 0.10
+ALPHA <- 0.05
+
+evaluation <- read.csv(params$evaluation, stringsAsFactors = FALSE)
+ledger_path <- params$ledger
+ledger <- if (file.exists(ledger_path)) {
+  read.csv(ledger_path, stringsAsFactors = FALSE)
+} else {
+  data.frame()
+}
+
+needed <- c(
+  "subject_id", "phase", "precision",
+  "y_vram", "target_vram", "y_flop_fcm", "target_flop"
+)
+missing_cols <- setdiff(needed, names(evaluation))
+if (length(missing_cols) > 0) {
+  stop("evaluation.csv missing: ", paste(missing_cols, collapse = ", "),
+       call. = FALSE)
+}
+
+evaluation$re_vram <- relative_error(evaluation$y_vram, evaluation$target_vram)
+evaluation$re_flop <- relative_error(evaluation$y_flop_fcm, evaluation$target_flop)
+```
+
+# Data
+
+Primary analysis uses **completed subjects only**. The ledger is the
+sampling-frame appendix (framework §5.3).
+
+```{r}
+#| label: data-counts
+n_rows <- nrow(evaluation)
+n_subjects <- length(unique(evaluation$subject_id))
+n_ledger <- if (nrow(ledger) == 0) 0 else nrow(ledger)
+
+knitr::kable(
+  data.frame(
+    evaluation_rows = n_rows,
+    completed_subject_ids = n_subjects,
+    ledger_rows = n_ledger
+  ),
+  caption = "Completed measurements versus ledger rows."
+)
+```
+
+# Eight one-sample TOSTs
+
+For each cell the tests are (framework §5.1):
+
+- \(H_{01}\colon \mu \le -0.10\) versus \(H_{11}\colon \mu > -0.10\)
+- \(H_{02}\colon \mu \ge +0.10\) versus \(H_{12}\colon \mu < +0.10\)
+
+Equivalence is declared only if both one-sided tests reject. The two
+`t.test` calls below are that definition. `TOSTER::t_TOST` is the same
+procedure as packaged by Lakens and Caldwell.
+
+```{r}
+#| label: tost-cells
+cells <- expand.grid(
+  hypothesis = c("vram", "flop"),
+  phase = c("inference", "training"),
+  precision = c("fp16", "fp32"),
+  stringsAsFactors = FALSE
+)
+
+tost_one_cell <- function(hypothesis, phase, precision) {
+  part <- evaluation[
+    evaluation$phase == phase & evaluation$precision == precision,
+  ]
+  part <- part[!duplicated(part$subject_id), ]
+  re <- if (hypothesis == "vram") part$re_vram else part$re_flop
+  re <- re[is.finite(re)]
+  n <- length(re)
+  if (n < 2) {
+    return(data.frame(
+      hypothesis = hypothesis,
+      phase = phase,
+      precision = precision,
+      n = n,
+      mean_re = NA_real_,
+      sd_re = NA_real_,
+      p_lower = NA_real_,
+      p_upper = NA_real_,
+      equivalent = FALSE,
+      decision = "not_enough_n",
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  # Written-out two one-sided tests (Schuirmann 1987).
+  lower <- t.test(re, alternative = "greater", mu = -MARGIN)
+  upper <- t.test(re, alternative = "less", mu = MARGIN)
+  both_reject <- (lower$p.value < ALPHA) && (upper$p.value < ALPHA)
+
+  # Packaged confirmation of the same two one-sided tests (Lakens 2017).
+  invisible(TOSTER::t_TOST(
+    x = re,
+    hypothesis = "EQU",
+    eqb = MARGIN,
+    eqbound_type = "raw",
+    alpha = ALPHA
+  ))
+
+  decision <- if (both_reject) {
+    "equivalent"
+  } else {
+    "inconclusive_or_not_equivalent"
+  }
+
+  data.frame(
+    hypothesis = hypothesis,
+    phase = phase,
+    precision = precision,
+    n = n,
+    mean_re = mean(re),
+    sd_re = sd(re),
+    p_lower = unname(lower$p.value),
+    p_upper = unname(upper$p.value),
+    equivalent = both_reject,
+    decision = decision,
+    stringsAsFactors = FALSE
+  )
+}
+
+tost_table <- do.call(
+  rbind,
+  Map(tost_one_cell, cells$hypothesis, cells$phase, cells$precision)
+)
+rownames(tost_table) <- NULL
+
+knitr::kable(
+  tost_table[, c(
+    "hypothesis", "phase", "precision", "n",
+    "mean_re", "sd_re", "p_lower", "p_upper", "equivalent", "decision"
+  )],
+  digits = 4,
+  caption = "One-sample TOST per phase × precision × hypothesis. p_lower is H01; p_upper is H02."
+)
+```
+
+# Conjunction
+
+The family claim holds only if every cell above is `equivalent`.
+
+```{r}
+#| label: conjunction
+family_pass <- all(tost_table$equivalent)
+cat(
+  if (family_pass) {
+    "Conjunction: PASS. All eight TOSTs declared equivalence."
+  } else {
+    paste(
+      "Conjunction: FAIL.",
+      "At least one cell is not equivalent or is inconclusive.",
+      "An inconclusive cell is not evidence that Zepto is inaccurate to 10%."
+    )
+  },
+  "\n"
+)
+knitr::kable(
+  tost_table[!tost_table$equivalent, c("hypothesis", "phase", "precision", "decision")],
+  caption = "Cells that did not declare equivalence (empty if the conjunction passed)."
+)
+```
+
+# Bland–Altman
+
+Framework §5.2. These figures do not replace TOST. Horizontal axis
+\((y + t) / 2\); vertical axis signed difference \(y - t\). Each panel
+shows the mean difference and the limits of agreement (mean ± 1.96 SD).
+
+```{r}
+#| label: bland-altman
+#| fig-width: 9
+#| fig-height: 8
+old_par <- par(mfrow = c(4, 2), mar = c(4, 4, 3, 1))
+on.exit(par(old_par), add = TRUE)
+
+for (i in seq_len(nrow(cells))) {
+  hyp <- cells$hypothesis[[i]]
+  phase <- cells$phase[[i]]
+  precision <- cells$precision[[i]]
+  part <- evaluation[
+    evaluation$phase == phase & evaluation$precision == precision,
+  ]
+  part <- part[!duplicated(part$subject_id), ]
+  y <- if (hyp == "vram") part$y_vram else part$y_flop_fcm
+  t <- if (hyp == "vram") part$target_vram else part$target_flop
+  average <- (y + t) / 2
+  difference <- y - t
+  mean_diff <- mean(difference)
+  loa <- 1.96 * sd(difference)
+
+  plot(
+    average,
+    difference,
+    xlab = "(y + t) / 2",
+    ylab = "y - t",
+    main = paste(hyp, phase, precision),
+    pch = 16
+  )
+  abline(h = 0, lty = 3)
+  abline(h = mean_diff, lty = 1)
+  abline(h = mean_diff + loa, lty = 2)
+  abline(h = mean_diff - loa, lty = 2)
+}
+```
+
+# Ledger (sampling-frame appendix)
+
+Builds that fail, including out-of-memory failures, are not dropped
+silently. They are not in the eight TOSTs.
+
+```{r}
+#| label: ledger
+if (nrow(ledger) == 0) {
+  cat("No ledger rows.\n")
+} else {
+  knitr::kable(ledger, caption = "Failed attempts. Primary analysis uses completed subjects only.")
+}
+```

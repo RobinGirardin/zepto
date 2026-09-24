@@ -10,6 +10,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Study run outputs (keep fixtures and .gitkeep)
+studies/apertus-validity/artifacts/*
+!studies/apertus-validity/artifacts/.gitkeep
+
 # Pi harness handoff and eval workspaces
 _workspace/
 .pi/skills/kernel-search-workspace/
