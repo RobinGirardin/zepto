@@ -39,6 +39,20 @@ def test_optimizer_step_skips_compose() -> None:
     assert compose_graph.call_count == 1
 
 
+def test_optimizer_step_skips_compose_g2() -> None:
+    ctx = reference_invocation()
+    spec = HorizonSpec.training(seq_len=8, micro_batches=2, optimizer=AdamW)
+    with patch(
+        "zepto.analysis.horizon.simulate.compose_graph",
+        wraps=__import__(
+            "zepto.compose", fromlist=["compose_graph"]
+        ).compose_graph,
+    ) as compose_graph:
+        simulate_horizon(spec, _linear_module, _linear_inputs, ctx)
+    # Seed + both TRAIN micros share the structural key; OPTIMIZER never composes.
+    assert compose_graph.call_count == 1
+
+
 def test_training_flops_not_triple_forward() -> None:
     ctx = reference_invocation()
     spec = HorizonSpec.training(seq_len=8, micro_batches=1, optimizer=AdamW)

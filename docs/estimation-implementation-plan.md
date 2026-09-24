@@ -1,7 +1,7 @@
 # Estimation Feature — Implementation Plan (Approach A + Horizon)
 
-**Status:** planning artifact — no code landed yet  
-**Last updated:** 2026-09-14  
+**Status:** planning artifact — no code landed yet
+**Last updated:** 2026-09-14
 **Audience:** agents and humans implementing Zepto cost estimation in phases
 
 This document is the authoritative build plan for the estimation API. It supersedes earlier chat summaries. Read ADR-0003, ADR-0006, and `CONTEXT.md` before implementing any phase.
@@ -1075,7 +1075,7 @@ def test_matmul_relu_matmul_train_peak_not_sum_all():
 
 ## 19. Open questions (resolve during Phase 1a)
 
-1. **`phase="full"` lowering:** emit both event sets in one `lower()` call, or model training as horizon `[forward_step, backward_step]`? Recommendation: horizon split first; `phase="full"` later.
+1. **`phase="full"` lowering:** decided. G=1 training is `[TRAIN phase="full", OPTIMIZER]`. G>1 is the same `phase="full"` decision repeated `G` times (`[TRAIN × G, OPTIMIZER]` on `(b, S)`). `simulate_horizon` / `estimate_horizon` seed Adam before `state_initial` when `steady_state=True` (default). Set `steady_state=False` for a cold first step. Residual vs the eager HF training twin is the fused-region SAVE tape (not a `2P` fudge).
 
 2. **`last_use` for fused regions:** region nodes subsume multiple structural nodes — use region boundary edges and `saved_for_backward` on fused `LoweredNode`.
 

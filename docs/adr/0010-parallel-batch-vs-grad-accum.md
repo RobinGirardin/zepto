@@ -16,8 +16,8 @@ to **`micro_batches=B` with `batch=1`** instead of **`batch=B` with
 |--------|-------------|----------------------|---------|
 | **B** | `HorizonStep.batch` | `per_device_train_batch_size` (single pass) | Parallel batch width of one compose/lowering: tensor leading dim before `S`. |
 | **S** | `HorizonStep.seq_len` | sequence length in the batch | Tokens per sequence in that step. |
-| **G** | `HorizonSpec.grad_accum(micro_batches=G, …)` | `gradient_accumulation_steps` | Count of **sequential** `MICRO_FORWARD` steps before one `BACKWARD` + optimizer. |
-| **b** | `batch` on each micro-forward | micro-batch size per accum step | Tensor width **per** micro-forward when using grad accum. |
+| **G** | `HorizonSpec.training(..., micro_batches=G)` | `gradient_accumulation_steps` | Count of sequential `TRAIN` (`phase="full"`) micros on `(b, S)` before optimizer. |
+| **b** | `batch` on each train micro | micro-batch size per accum step | Tensor width **per** `TRAIN` step. Activations stay width `b`, not `G × b`. |
 
 **HF single batched training step (no grad accum):**
 
@@ -30,8 +30,10 @@ HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)
 
 ```text
 HorizonSpec.training(seq_len=S, batch=b, micro_batches=G)
-→ G forwards on (b,S), then backward + optimizer
-Effective batch ≈ G × b (per device).
+→ TRAIN × G on (b,S), then optimizer
+Peak VRAM is max over those TRAIN micros, not the sum.
+training() does not create GradAccumState.
+Effective batch ≈ G × b (per device) is FLOP / optimizer frequency, not VRAM.
 ```
 
 **Rejected for HF VRAM parity** (unless explicitly labeled `micro_sum`):

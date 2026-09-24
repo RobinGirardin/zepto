@@ -81,13 +81,16 @@ class RecurrentScanState:
 
 @dataclass(frozen=True, slots=True)
 class GradAccumState:
-    """Gradient accumulation buffer carried across micro-batch forwards.
+    """Extra gradient buffer for the ``grad_accum()`` escape hatch.
+
+    Not used by :meth:`~zepto.analysis.horizon.spec.HorizonSpec.training`
+    or :meth:`~zepto.analysis.horizon.spec.HorizonSpec.training_step`:
+    those timelines never install this buffer. Each ``TRAIN`` graph owns
+    ``.grad`` via persist-grads. Created only when ``advance`` sees
+    ``MICRO_FORWARD`` and ``grad_accum_steps > 1``.
 
     Bytes equal **gradient storage** for trainable params (gradient dtype
     × trainable elements) and are independent of parallel batch ``B``.
-    Zero when G=1: no extra buffer is installed; the backward graph
-    already owns weight grads. Effective HuggingFace batch is ``G × b``
-    when using ``batch=b`` and ``micro_batches=G``.
 
     ``parameter_bytes`` is the historical field name; the stored value is
     the gradient-dtype footprint from :func:`trainable_gradient_bytes`.

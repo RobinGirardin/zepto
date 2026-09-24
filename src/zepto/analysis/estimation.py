@@ -67,9 +67,11 @@ def estimate_horizon(
 
     Empirical harness contract: use
     ``HorizonSpec.training(seq_len=S, batch=B, micro_batches=1)`` for
-    HuggingFace ``per_device_train_batch_size=B``. Never set
-    ``micro_batches=B`` with ``batch=1`` for HF VRAM parity unless
-    explicitly documenting a ``micro_sum`` sequential-forwards mode.
+    HuggingFace ``per_device_train_batch_size=B``. ``micro_batches=G``
+    is ``TRAIN × G`` on ``(b, S)`` then optimizer — activations stay
+    width ``b``. Never set ``micro_batches=B`` with ``batch=1`` for HF
+    VRAM parity unless explicitly documenting a ``micro_sum``
+    sequential-forwards mode.
     Decoder models should pass ``inputs_from_token_ids()``, not
     ``inputs_from_shape``.
     """

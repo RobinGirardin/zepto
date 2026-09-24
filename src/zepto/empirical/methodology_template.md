@@ -75,7 +75,7 @@ One **unscored** train step: forward + backward + `optimizer.step()` outside `Fl
 
 ## Batch semantics (`parallel_batch`)
 
-Zepto and HF both run one parallel `(B, S)` pass. Parallel batch is `HorizonStep.batch`; gradient accumulation is `micro_batches`. Trial 1's `micro_sum` mode (`batch=1`, `micro_batches=B`, or infer `HorizonSpec.repeat(B, batch=1)`) is a **rejected** sequential-forwards mapping — it is not the measurement contract.
+Zepto and HF both run one parallel `(B, S)` pass. Parallel batch is `HorizonStep.batch`; library `micro_batches=G` is sequential `TRAIN` micros on `(b, S)` (this study still uses `G=1`). Trial 1's `micro_sum` mode (`batch=1`, `micro_batches=B`, or infer `HorizonSpec.repeat(B, batch=1)`) is a **rejected** sequential-forwards mapping — it is not the measurement contract.
 
 ## Precision mapping
 

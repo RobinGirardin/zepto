@@ -118,13 +118,18 @@ def test_optimizer_state_persisted() -> None:
 
     report = estimate_horizon(spec, _linear_module, _linear_inputs, ctx)
 
-    assert len(report.per_step) == 4
+    assert len(report.per_step) == 3
+    assert spec.steps[0].kind == StepKind.TRAIN
+    assert spec.steps[1].kind == StepKind.TRAIN
+    assert spec.steps[-1].kind == StepKind.OPTIMIZER
     assert report.state_final.optimizer is not None
     assert report.state_final.optimizer.bytes > 0
     assert report.state_final.grad_accum is None
 
-    backward_step = report.per_step[-2]
-    assert backward_step.memory.breakdown.state > 0
+    last_graph = report.per_step[-2]
+    assert last_graph.memory.breakdown.saved_for_backward > 0
+    assert last_graph.memory.breakdown.weight_grads > 0
+    assert last_graph.memory.breakdown.state > 0
 
 
 def test_simulate_horizon_advances_kv_and_grad_state() -> None:
@@ -277,6 +282,19 @@ def test_training_step_appends_optimizer_row() -> None:
     assert len(spec.steps) == 2
     assert spec.steps[0].kind == StepKind.TRAIN
     assert spec.steps[0].phase == "full"
+    assert spec.steps[0].name == "train"
+    assert spec.steps[-1].kind == StepKind.OPTIMIZER
+    assert spec.optimizer_policy is AdamW
+
+
+def test_training_step_g2_appends_two_train_rows() -> None:
+    spec = HorizonSpec().training_step(8, micro_batches=2, optimizer=AdamW)
+    assert len(spec.steps) == 3
+    assert spec.steps[0].kind == StepKind.TRAIN
+    assert spec.steps[1].kind == StepKind.TRAIN
+    assert spec.steps[0].name == "train_0"
+    assert spec.steps[1].name == "train_1"
+    assert spec.steps[0].phase == spec.steps[1].phase == "full"
     assert spec.steps[-1].kind == StepKind.OPTIMIZER
     assert spec.optimizer_policy is AdamW
 
