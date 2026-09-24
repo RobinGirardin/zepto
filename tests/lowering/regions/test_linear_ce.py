@@ -99,6 +99,30 @@ def test_linear_ce_reference_on_xpu() -> None:
     assert lowered.nodes[0].implementation == "region/linear_ce/reference"
 
 
+def test_linear_ce_persists_lm_head_grad_on_full_phase() -> None:
+    from zepto.analysis.memory.simulator import ResourceEventSimulator
+
+    graph = _compose_linear_ce()
+    lowered = lower(graph, _fused_context(phase="full"))
+    op = lowered.nodes[0]
+    persist = [ev for ev in op.resource_events if ev.kind is ResourceEventKind.PERSIST]
+    assert persist
+    assert any("grad_weight" in ev.value for ev in persist)
+    result = ResourceEventSimulator(lowered).run()
+    assert result.breakdown.weight_grads == _D * _V * 4
+
+
+def test_linear_ce_forward_skips_lm_head_persist_grad() -> None:
+    graph = _compose_linear_ce()
+    lowered = lower(graph, _fused_context())
+    persist = [
+        ev
+        for ev in lowered.nodes[0].resource_events
+        if ev.kind is ResourceEventKind.PERSIST
+    ]
+    assert persist == []
+
+
 def test_linear_ce_peak_logits_chunk_formula() -> None:
     recipe = DEFAULT_LINEAR_CE_RECIPE
     s, d, v = 8192, 4096, 131072

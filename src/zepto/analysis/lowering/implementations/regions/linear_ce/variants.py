@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from zepto.analysis.lowered import LoweredNode
-from zepto.compose.values import Tensor
+from zepto.compose.values import Parameter, Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import DType, TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
-from zepto.semantic.operations.helpers import includes_backward
+from zepto.semantic.operations.helpers import includes_backward, weight_grad_accum_events
 
 from ....context import InvocationContext
 from ....helpers import (
@@ -149,6 +149,26 @@ class FusedLinearCERegionImplementation:
                 )
             )
 
+        weight = self.weight_parameter(region, graph)
+        if includes_backward(context.phase) and weight.trainable:
+            grad_id = f"region:{region.id}:grad_weight"
+            register_auxiliary_edge(
+                grad_id,
+                Tensor(
+                    shape=weight.shape,
+                    semantic_type="weight",
+                    dtype=weight.dtype,
+                    requires_grad=False,
+                    persistent=True,
+                ),
+                role_ctx=RoleContext(explicit_role=TensorRole.GRADIENT),
+                context=context,
+                storage_id=grad_id,
+                lowered_edges=lowered_edges,
+            )
+            events.extend(weight_grad_accum_events(grad_id))
+            auxiliary_edges.append(grad_id)
+
         return LoweredNode(
             id=f"region:{region.id}",
             node_id=region.operation_ids[0],
@@ -166,14 +186,19 @@ class FusedLinearCERegionImplementation:
         )
 
     @staticmethod
-    def weight_vocab_size(region: Region, graph: Graph) -> int:
-        """Read vocab size from the linear_matmul weight parameter."""
+    def weight_parameter(region: Region, graph: Graph) -> Parameter:
+        """Return the linear_matmul weight parameter ``(d, V)``."""
         first_op = graph.node(region.operation_ids[0])
         for param_id in first_op.parameter_ids:
             param = graph.parameter(param_id)
             if param.shape and len(param.shape) == 2:
-                return param.shape[1]
+                return param
         raise ValueError("linear_ce region requires weight parameter on linear_matmul")
+
+    @classmethod
+    def weight_vocab_size(cls, region: Region, graph: Graph) -> int:
+        """Read vocab size from the linear_matmul weight parameter."""
+        return cls.weight_parameter(region, graph).shape[1]
 
 
 def _descriptor(*, impl_id: str, priority: int) -> RegionImplementationDescriptor:

@@ -143,7 +143,11 @@ def test_peak_vram_includes_optimizer_state() -> None:
     train_lowered = lower(train_graph, replace(ctx, phase="forward"))
     params = parameter_bytes(train_lowered)
     opt_bytes = report.state_final.optimizer.bytes if report.state_final.optimizer else 0
-    weight_grads = report.per_step[0].memory.breakdown.weight_grads
+    train = report.per_step[0].memory.breakdown
+    weight_grads = train.weight_grads
+    runtime = train.runtime_workspace
     assert report.peak_vram >= params + opt_bytes
     assert weight_grads > 0
     assert report.peak_vram >= params + opt_bytes + weight_grads
+    assert runtime == 2 * 8_519_680
+    assert report.peak_vram >= params + opt_bytes + weight_grads + runtime

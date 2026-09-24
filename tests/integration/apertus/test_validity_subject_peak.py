@@ -43,15 +43,21 @@ def test_validity_subject_ab0f75a0_training_peak_within_delta() -> None:
     )
 
     peak = report.peak_vram
-    # Foreach workspace raises the param-dominated floor to ~5P. Residual
-    # vs the eager HF twin is now a few tens of MiB (cuBLAS / tape), not
-    # a missing P.
+    # Persist embed + lm-head grads and put cuBLAS on the optimizer-step
+    # floor. Residual vs the eager twin is now tape, not two missing tables.
     assert abs(peak - _TWIN_PEAK) < abs(peak - _OLD_ZEPTO_PEAK)
-    assert abs(peak - _TWIN_PEAK) / _TWIN_PEAK < 0.03
+    assert abs(peak - _TWIN_PEAK) / _TWIN_PEAK < 0.005
 
     train = report.per_step[0]
     assert len(report.per_step) == 2
-    assert train.memory.breakdown.weight_grads > 0
+    params = train.memory.breakdown.parameters
+    weight_grads = train.memory.breakdown.weight_grads
+    two_tables = 2 * _SUBJECT["vocab_size"] * _SUBJECT["hidden_size"] * 4
+    # Embed + lm-head persist: the 2VH hole is closed. A small residue
+    # (norm / xIELU scales) may remain.
+    assert params - weight_grads < two_tables
+    assert params - weight_grads < 100_000
     assert train.memory.breakdown.saved_for_backward > 0
+    assert train.memory.breakdown.runtime_workspace == 2 * 8_519_680
     assert sim.state_initial.optimizer is not None
     assert sim.state_final.grad_accum is None

@@ -72,11 +72,12 @@ def test_foreach_raises_param_dominated_peak_to_five_p() -> None:
     train = report_on.per_step[0].memory.breakdown
     p = train.parameters
     g = train.weight_grads
+    runtime = train.runtime_workspace
     adam = sim.state_final.optimizer.bytes if sim.state_final.optimizer else 0
     workspace = AdamW.update_workspace_bytes(
         trainable_elements=p // 4, context=ctx
     )
-    floor_off = p + g + adam
+    floor_off = p + g + adam + runtime
     floor_on = floor_off + workspace
     assert report_off.peak_vram >= floor_off
     assert report_on.peak_vram >= floor_on

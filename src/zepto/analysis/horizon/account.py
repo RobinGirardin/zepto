@@ -58,7 +58,9 @@ class HorizonMemoryReducer:
             step_peak = (param_bytes or 0) + carry_state + max(transient_peak, 0)
             after_state = snapshot_state_bytes(record.state_after)
             persist_grads = result.breakdown.weight_grads
-            boundary_peak = (param_bytes or 0) + after_state + persist_grads
+            boundary_peak = (
+                (param_bytes or 0) + after_state + persist_grads + runtime_ws
+            )
             if (
                 record.step.kind in (StepKind.BACKWARD, StepKind.TRAIN)
                 and sim.spec.optimizer_policy is not None
@@ -74,7 +76,8 @@ class HorizonMemoryReducer:
                     (param_bytes or 0)
                     + after_state
                     + persist_grads
-                    + boundary.optimizer_workspace_bytes,
+                    + boundary.optimizer_workspace_bytes
+                    + runtime_ws,
                 )
             merged_peak = max(merged_peak, step_peak, boundary_peak)
 

@@ -33,3 +33,27 @@ def test_invalid_token_rank_raises() -> None:
             (Tensor(shape=(2, 4, 8), semantic_type="token_ids"),),
             parameters=(Tensor(shape=(64, 32000), semantic_type="weight"),),
         )
+
+
+def test_weight_grad_persists_on_full_phase() -> None:
+    from zepto.analysis import lower, reference_invocation
+    from zepto.analysis.memory.simulator import ResourceEventSimulator
+    from zepto.compose import compose_graph
+    from zepto.modules.layers.embedding import Embedding
+    from zepto.semantic import ResourceEventKind
+
+    hidden, vocab, seq_len = 8, 16, 4
+    graph = compose_graph(
+        lambda _ctx: Embedding(hidden, vocab),
+        (Tensor(shape=(seq_len,), semantic_type="token_ids"),),
+    )
+    lowered = lower(graph, reference_invocation(phase="full"))
+    persist = [
+        event
+        for node in lowered.nodes
+        for event in node.resource_events
+        if event.kind is ResourceEventKind.PERSIST
+    ]
+    assert persist
+    result = ResourceEventSimulator(lowered).run()
+    assert result.breakdown.weight_grads == hidden * vocab * 4
