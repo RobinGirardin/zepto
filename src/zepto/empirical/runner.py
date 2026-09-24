@@ -25,6 +25,7 @@ from zepto.empirical.measure_torch import (
     measure_infer_torch,
     measure_train_step_torch,
     training_warmup_step,
+    warmup_cublas_process,
 )
 from zepto.empirical.measure_zepto import measure_infer_zepto, measure_train_zepto
 from zepto.empirical.models import get_model_family
@@ -39,11 +40,12 @@ METHODOLOGY_TEMPLATE = Path(__file__).resolve().parent / "methodology_template.m
 
 
 def infer_cublas_vram_correction_bytes(
-    global_draw_index: int,
     compute_capability: tuple[int, int],
+    *,
+    process_warmed: bool = True,
 ) -> int:
-    """Extra cuBLAS handle workspace on infer after prior draws ran training."""
-    if global_draw_index <= 0:
+    """One leftover cuBLAS handle on inference after process-wide GEMM warmup."""
+    if not process_warmed:
         return 0
     return cublas_workspace_bytes_per_handle(compute_capability)
 
@@ -110,22 +112,21 @@ def _run_meta(config: RunConfig) -> dict[str, Any]:
 
 
 def _sampler_meta(sampler: SamplerConfig) -> dict[str, Any]:
-    arch = sampler.architecture
-
-    def r(rng) -> list[int]:
-        return [rng.low, rng.high]
-
     return {
-        "seq_len": r(sampler.seq_len),
-        "batch_size": r(sampler.batch_size),
         "precisions": list(sampler.precisions),
-        "architecture": {
-            "head_dim": r(arch.head_dim),
-            "intermediate_size": r(arch.intermediate_size),
-            "num_heads": r(arch.num_heads),
-            "num_kv_heads": r(arch.num_kv_heads),
-            "num_layers": r(arch.num_layers),
-            "vocab_size": r(arch.vocab_size),
+        "knobs": {
+            "gqa_group": list(sampler.knobs.gqa_group),
+            "num_kv_heads": list(sampler.knobs.num_kv_heads),
+            "head_dim": list(sampler.knobs.head_dim),
+            "num_layers": list(sampler.knobs.num_layers),
+            "ffn_mult": list(sampler.knobs.ffn_mult),
+            "vocab_size": list(sampler.knobs.vocab_size),
+        },
+        "workload": {
+            "seq_len": list(sampler.workload.seq_len),
+            "batch_size": list(sampler.workload.batch_size),
+            "min_seq_len": sampler.workload.min_seq_len,
+            "max_tokens": sampler.workload.max_tokens,
         },
         "architecture_mins": dict(sampler.architecture_mins),
     }
@@ -157,11 +158,42 @@ def run_draw(
     draw,
     device: torch.device,
     cuda_capability: tuple[int, int],
-    global_draw_index: int,
+    process_warmed: bool = True,
+    log_spec: bool = False,
+) -> list[EvaluationRow]:
+    """Measure both precisions on one subject (architecture, B, S)."""
+    rows: list[EvaluationRow] = []
+    for precision in config.sampler.precisions:
+        rows.extend(
+            _run_precision(
+                config,
+                family=family,
+                configuration=configuration,
+                draw=draw,
+                precision=precision,
+                device=device,
+                cuda_capability=cuda_capability,
+                process_warmed=process_warmed,
+                log_spec=log_spec and precision == config.sampler.precisions[0],
+            )
+        )
+    return rows
+
+
+def _run_precision(
+    config: RunConfig,
+    *,
+    family,
+    configuration,
+    draw,
+    precision: str,
+    device: torch.device,
+    cuda_capability: tuple[int, int],
+    process_warmed: bool,
     log_spec: bool = False,
 ) -> list[EvaluationRow]:
     opts = configuration.options
-    ctx = build_invocation_context(draw.precision, cuda_capability=cuda_capability)
+    ctx = build_invocation_context(precision, cuda_capability=cuda_capability)
     zepto_infer = measure_infer_zepto(
         family,
         opts,
@@ -192,7 +224,7 @@ def run_draw(
     model = family.build_hf_model(
         opts,
         seq_len=draw.seq_len,
-        precision=draw.precision,
+        precision=precision,
         device=device,
         twin_mode=config.twin_mode,
     )
@@ -207,7 +239,7 @@ def run_draw(
 
     torch_infer = measure_infer_torch(family, model, input_ids)
     infer_correction = infer_cublas_vram_correction_bytes(
-        global_draw_index, cuda_capability
+        cuda_capability, process_warmed=process_warmed
     )
     rows: list[EvaluationRow] = [
         EvaluationRow(
@@ -215,7 +247,7 @@ def run_draw(
             configuration_id=configuration.configuration_id,
             draw_id=draw.draw_id,
             phase="inference",
-            precision=draw.precision,
+            precision=precision,
             seq_len=draw.seq_len,
             batch_size=draw.batch_size,
             step=0,
@@ -251,7 +283,7 @@ def run_draw(
                 configuration_id=configuration.configuration_id,
                 draw_id=draw.draw_id,
                 phase="training",
-                precision=draw.precision,
+                precision=precision,
                 seq_len=draw.seq_len,
                 batch_size=draw.batch_size,
                 step=step,
@@ -313,8 +345,9 @@ def run_study(config: RunConfig) -> Path:
     else:
         write_evaluation_rows(output_dir, [])
 
+    warmup_cublas_process(device)
+
     first_draw_logged = False
-    global_draw_index = 0
     for config_index, configuration in enumerate(configurations):
         draws = sample_draws(
             configuration,
@@ -332,11 +365,10 @@ def run_study(config: RunConfig) -> Path:
                 draw=draw,
                 device=device,
                 cuda_capability=cuda_capability,
-                global_draw_index=global_draw_index,
+                process_warmed=True,
                 log_spec=log_spec,
             )
             append_evaluation_rows(output_dir, rows)
-            global_draw_index += 1
             if log_spec:
                 first_draw_logged = True
 
