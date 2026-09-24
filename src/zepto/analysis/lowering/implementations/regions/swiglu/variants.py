@@ -301,7 +301,7 @@ FUSED_SWIGLU_DECOMPOSED = FusedSwiGLURegionImplementation(
     descriptor=_descriptor(
         impl_id="region/swiglu/decomposed",
         priority=8,
-        capabilities=frozenset({"swiglu", "decomposed"}),
+        capabilities=frozenset({"fused", "swiglu", "decomposed"}),
     ),
     recipe=DEFAULT_SWIGLU_RECIPE,
     hardware_gate="any",

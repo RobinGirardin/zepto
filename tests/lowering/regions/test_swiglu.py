@@ -86,6 +86,16 @@ def test_swiglu_unfused_without_capability() -> None:
     assert len(plan.steps) == 6
 
 
+def test_swiglu_decomposed_wins_with_fused_only() -> None:
+    graph = _swiglu_graph(seq_len=4, hidden_size=8, intermediate_size=16)
+    ctx = reference_invocation(
+        hardware="cuda",
+        requested_capabilities=frozenset({"fused"}),
+    )
+    lowered = lower(graph, ctx)
+    assert lowered.nodes[0].implementation == "region/swiglu/decomposed"
+
+
 def test_swiglu_liger_wins_on_cuda_with_fused_post_gemm() -> None:
     graph = _swiglu_graph(seq_len=4, hidden_size=8, intermediate_size=16)
     ctx = reference_invocation(

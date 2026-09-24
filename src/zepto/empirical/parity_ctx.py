@@ -8,16 +8,16 @@ from zepto.analysis import PrecisionPolicy, reference_invocation
 from zepto.semantic.metadata import DType
 
 # ``requested ⊆ impl.capabilities``. ``{"fused"}`` lets RMSNorm / xIELU /
-# Softmax / linear-CE reference leaves win. ``sdpa``+``gqa`` is a GQA
-# profile that those ATen leaves cannot cover. Attention stays eager
-# identity (no Flash / SDPA). Pins lock ``*/reference`` so the study
-# names eager ATen, not Liger/CUDA variants.
+# Softmax / linear-CE / SwiGLU-decomposed leaves win. ``sdpa``+``gqa`` is
+# a GQA profile that those ATen leaves cannot cover. Attention stays
+# eager identity (no Flash / SDPA). Pins lock eager ATen, not Liger/CUDA.
 EAGER_ATEN_REGION_PINS = MappingProxyType(
     {
         "region/rmsnorm": "region/rmsnorm/reference",
         "region/xielu": "region/xielu/reference",
         "region/softmax": "region/softmax/reference",
         "region/linear_ce": "region/linear_ce/reference",
+        "region/swiglu": "region/swiglu/decomposed",
     }
 )
 
