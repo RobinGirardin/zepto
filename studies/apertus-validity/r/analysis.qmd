@@ -1,6 +1,6 @@
 ---
-title: "Apertus validity — primary analysis"
-subtitle: "Eight TOSTs, conjunction, Bland–Altman, and the sampling-frame ledger"
+title: "Apertus validity: primary analysis"
+subtitle: "Eight TOSTs, conjunction, Bland Altman, and the sampling frame ledger"
 format:
   html:
     toc: true
@@ -14,34 +14,44 @@ params:
   ledger: "../fixtures/ledger.csv"
 ---
 
-# What this document answers
+# What this document answers {#sec-purpose}
 
-The pre-registered design is
+The preregistered design is set out in
 [`docs/framework-empirical-evaluation.md`](../../docs/framework-empirical-evaluation.md).
-This Quarto document is the primary analysis, not an exploratory notebook.
+This Quarto document is the primary analysis of that design and is written as a
+confirmatory report rather than as an exploratory notebook.
 
-The estimand is the mean relative error on the executable Apertus-like grid.
-A **subject** is one architecture together with one \((B, S)\). Each subject
-contributes one relative error to each of eight cells (phase × precision ×
-hypothesis). Extra training steps are not extra \(n\).
+The estimand is the mean relative error on the executable grid that resembles
+Apertus. A **subject** is one architecture together with one $(B, S)$. Each
+subject contributes one relative error to each of eight cells formed by the
+crossing of phase, precision, and hypothesis. Additional training steps do not
+increase the sample size $n$.
 
-| Hypothesis | Zepto column \(y\) | Twin column \(t\) |
-|------------|--------------------|-------------------|
+| Hypothesis | Zepto column $y$ | Twin column $t$ |
+|------------|------------------|-----------------|
 | H1 VRAM | `y_vram` | `target_vram` |
 | H2 FLOPs | `y_flop_fcm` | `target_flop` |
 
-Relative error:
+: Columns that enter each hypothesis as the Zepto prediction $y$ and the twin probe $t$. {#tbl-hypotheses}
 
-\[
-\mathrm{RE} = \frac{y - t}{t}.
-\]
+The relative error is defined in @eq-relative-error.
 
-Equivalence margin \(\Delta = 0.10\). \(\alpha = 0.05\) for each pair of
-one-sided tests. No Bonferroni. Family validity is the **conjunction** of
-all eight TOSTs. An inconclusive TOST is not evidence that Zepto is
+$$
+\mathrm{RE} = \frac{y - t}{t}
+$$ {#eq-relative-error}
+
+The equivalence margin is $\Delta = 0.10$ and the significance level is
+$\alpha = 0.05$ for each pair of one sided tests. Multiplicity is not adjusted
+with a Bonferroni correction. Family validity is the **conjunction** of all
+eight TOSTs, so the family claim is supported only when every cell declares
+equivalence. An inconclusive TOST does not constitute evidence that Zepto is
 inaccurate to ten percent.
 
-`y_flop` is stored on the CSV as a diagnostic. It is not the H2 column.
+The column `y_flop` is stored on the CSV as a diagnostic and is not the column
+used for H2.
+
+The following chunk loads TOSTER, defines relative error, and reads the
+evaluation table together with the ledger.
 
 ```{r}
 #| label: setup
@@ -84,13 +94,16 @@ evaluation$re_vram <- relative_error(evaluation$y_vram, evaluation$target_vram)
 evaluation$re_flop <- relative_error(evaluation$y_flop_fcm, evaluation$target_flop)
 ```
 
-# Data
+# Data {#sec-data}
 
-Primary analysis uses **completed subjects only**. The ledger is the
-sampling-frame appendix (framework §5.3).
+The primary analysis uses **completed subjects only**. The ledger is retained as
+the sampling frame appendix described in framework section 5.3.
+@tbl-data-counts reports how many evaluation rows and completed subject
+identifiers are present, together with the number of ledger rows.
 
 ```{r}
-#| label: data-counts
+#| label: tbl-data-counts
+#| tbl-cap: "Completed measurements versus ledger rows."
 n_rows <- nrow(evaluation)
 n_subjects <- length(unique(evaluation$subject_id))
 n_ledger <- if (nrow(ledger) == 0) 0 else nrow(ledger)
@@ -100,32 +113,30 @@ knitr::kable(
     evaluation_rows = n_rows,
     completed_subject_ids = n_subjects,
     ledger_rows = n_ledger
-  ),
-  caption = "Completed measurements versus ledger rows."
+  )
 )
 ```
 
-# Eight one-sample TOSTs
+# Eight one sample TOSTs {#sec-tost}
 
-For each cell the tests are (framework §5.1):
+For each cell the tests follow framework section 5.1. The first one sided test
+is $H_{01}\colon \mu \le -0.10$ versus $H_{11}\colon \mu > -0.10$, and the
+second is $H_{02}\colon \mu \ge +0.10$ versus $H_{12}\colon \mu < +0.10$.
+Equivalence is declared only if both one sided tests reject, and the two
+`t.test` calls below implement that definition.
 
-- \(H_{01}\colon \mu \le -0.10\) versus \(H_{11}\colon \mu > -0.10\)
-- \(H_{02}\colon \mu \ge +0.10\) versus \(H_{12}\colon \mu < +0.10\)
-
-Equivalence is declared only if both one-sided tests reject. The two
-`t.test` calls below are that definition.
-
-`TOSTER::t_TOST` is the same two one-sided tests packaged by Lakens and
-Caldwell. It is confirmation only; it does not decide the cell. H2
-inference can have **zero** relative-error SD: every subject’s
-`y_flop_fcm` equals `target_flop`. That is a valid TOST input
-(\(t = \pm\infty\)). TOSTER 0.8.6 still tries to invert a non-central
-\(t\) for a Cohen’s \(d\) interval (`get_ncp_t2`) and errors with
-`object 'Best.Low' not found`. Confirmation is skipped when the SD is
-zero.
+`TOSTER::t_TOST` packages the same two one sided tests following Lakens and
+Caldwell. It is used only as confirmation and does not decide the cell. H2
+inference can have a relative error standard deviation of zero when every
+subject's `y_flop_fcm` equals `target_flop`. That configuration remains a valid
+TOST input, with $t = \pm\infty$. TOSTER 0.8.6 still tries to invert a
+noncentral $t$ for a Cohen's $d$ interval through `get_ncp_t2` and then errors
+with `object 'Best.Low' not found`. Confirmation is therefore skipped when the
+standard deviation is zero. @tbl-tost-cells reports the eight cells.
 
 ```{r}
-#| label: tost-cells
+#| label: tbl-tost-cells
+#| tbl-cap: "One sample TOST per phase, precision, and hypothesis. p_lower is H01 and p_upper is H02."
 cells <- expand.grid(
   hypothesis = c("vram", "flop"),
   phase = c("inference", "training"),
@@ -208,14 +219,15 @@ knitr::kable(
     "hypothesis", "phase", "precision", "n",
     "mean_re", "sd_re", "p_lower", "p_upper", "equivalent", "decision"
   )],
-  digits = 4,
-  caption = "One-sample TOST per phase × precision × hypothesis. p_lower is H01; p_upper is H02."
+  digits = 4
 )
 ```
 
-# Conjunction
+# Conjunction {#sec-conjunction}
 
-The family claim holds only if every cell above is `equivalent`.
+The family claim holds only if every cell in @tbl-tost-cells is marked
+`equivalent`. The following chunk states whether that conjunction holds and
+lists any cell that did not declare equivalence.
 
 ```{r}
 #| label: conjunction
@@ -238,14 +250,17 @@ knitr::kable(
 )
 ```
 
-# Bland–Altman
+# Bland Altman {#sec-bland-altman}
 
-Framework §5.2. These figures do not replace TOST. Horizontal axis
-\((y + t) / 2\); vertical axis signed difference \(y - t\). Each panel
-shows the mean difference and the limits of agreement (mean ± 1.96 SD).
+Framework section 5.2 asks for Bland Altman figures as a descriptive companion,
+and these figures do not replace TOST. @fig-bland-altman plots the pairwise
+average $(y + t) / 2$ on the horizontal axis and the signed difference $y - t$
+on the vertical axis. Each panel shows the mean difference and the limits of
+agreement, computed as the mean plus or minus 1.96 standard deviations.
 
 ```{r}
-#| label: bland-altman
+#| label: fig-bland-altman
+#| fig-cap: "Bland Altman panels for each phase, precision, and hypothesis. The horizontal axis is the pairwise average and the vertical axis is the signed difference."
 #| fig-width: 9
 #| fig-height: 8
 old_par <- par(mfrow = c(4, 2), mar = c(4, 4, 3, 1))
@@ -281,10 +296,11 @@ for (i in seq_len(nrow(cells))) {
 }
 ```
 
-# Ledger (sampling-frame appendix)
+# Ledger as the sampling frame appendix {#sec-ledger}
 
-Builds that fail, including out-of-memory failures, are not dropped
-silently. They are not in the eight TOSTs.
+Builds that fail, including failures caused by exhausting memory, are recorded
+rather than omitted without comment. Those failed attempts do not enter the
+eight TOSTs.
 
 ```{r}
 #| label: ledger
