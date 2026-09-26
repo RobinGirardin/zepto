@@ -137,6 +137,36 @@ def test_swiglu_liger_fused_gate_up_save_policy() -> None:
     assert not any(aux.endswith(":up") for aux in op.auxiliary_edges)
 
 
+def test_swiglu_persists_projection_grads_on_full_phase() -> None:
+    from zepto.analysis.memory.simulator import ResourceEventSimulator
+
+    hidden, intermediate = 8, 16
+    graph = _swiglu_graph(
+        seq_len=4, hidden_size=hidden, intermediate_size=intermediate
+    )
+    lowered = lower(graph, reference_invocation(phase="full"))
+    op = lowered.nodes[0]
+    persist = [ev for ev in op.resource_events if ev.kind is ResourceEventKind.PERSIST]
+    assert {ev.value.split(":")[-1] for ev in persist} == {
+        "grad_gate",
+        "grad_up",
+        "grad_down",
+    }
+    result = ResourceEventSimulator(lowered).run()
+    assert result.breakdown.weight_grads == 3 * hidden * intermediate * 4
+
+
+def test_swiglu_forward_skips_projection_persist_grads() -> None:
+    graph = _swiglu_graph(seq_len=4, hidden_size=8, intermediate_size=16)
+    lowered = lower(graph, reference_invocation())
+    persist = [
+        ev
+        for ev in lowered.nodes[0].resource_events
+        if ev.kind is ResourceEventKind.PERSIST
+    ]
+    assert persist == []
+
+
 def test_swiglu_no_backward_without_grad() -> None:
     graph = _swiglu_graph(
         seq_len=4,

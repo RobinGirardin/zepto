@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from zepto.analysis.lowered import LoweredNode
-from zepto.compose.values import Tensor
+from zepto.compose.values import Parameter, Tensor
 from zepto.graph.graph import Graph
 from zepto.semantic.metadata import TensorRole
 from zepto.semantic.operations.records import ResourceEvent, ResourceEventKind
-from zepto.semantic.operations.helpers import includes_backward
+from zepto.semantic.operations.helpers import includes_backward, weight_grad_accum_events
 
 from ....context import InvocationContext
 from ....helpers import (
@@ -264,6 +264,28 @@ class FusedSwiGLURegionImplementation:
                     )
                 )
 
+        if includes_backward(context.phase):
+            for name, weight in self.projection_weights(region, graph):
+                if not weight.trainable:
+                    continue
+                grad_id = f"region:{region.id}:grad_{name}"
+                register_auxiliary_edge(
+                    grad_id,
+                    Tensor(
+                        shape=weight.shape,
+                        semantic_type="weight",
+                        dtype=weight.dtype,
+                        requires_grad=False,
+                        persistent=True,
+                    ),
+                    role_ctx=RoleContext(explicit_role=TensorRole.GRADIENT),
+                    context=context,
+                    storage_id=grad_id,
+                    lowered_edges=lowered_edges,
+                )
+                events.extend(weight_grad_accum_events(grad_id))
+                auxiliary_edges.append(grad_id)
+
         return LoweredNode(
             id=f"region:{region.id}",
             node_id=region.operation_ids[0],
@@ -279,6 +301,25 @@ class FusedSwiGLURegionImplementation:
             component_type=region.anchor.component_type,
             region_id=region.id,
         )
+
+    @staticmethod
+    def projection_weights(
+        region: Region, graph: Graph
+    ) -> tuple[tuple[str, Parameter], ...]:
+        """Gate / up / down weights on the three fused linear_matmul ops."""
+        names = ("gate", "up", "down")
+        indices = (0, 1, 5)
+        found: list[tuple[str, Parameter]] = []
+        for index, name in zip(indices, names, strict=True):
+            op = graph.node(region.operation_ids[index])
+            for param_id in op.parameter_ids:
+                param = graph.parameter(param_id)
+                if param.shape and len(param.shape) == 2:
+                    found.append((name, param))
+                    break
+            else:
+                raise ValueError(f"SwiGLU {name}_proj missing weight parameter")
+        return tuple(found)
 
 
 def _descriptor(
